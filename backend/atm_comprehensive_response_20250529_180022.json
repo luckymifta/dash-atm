@@ -1,0 +1,202 @@
+{
+  "metadata": {
+    "export_timestamp": "2025-05-29T18:00:22.884137+09:00",
+    "data_source": "ATM Management System (172.31.1.46)",
+    "export_type": "comprehensive_response",
+    "data_retrieval_timestamp": "2025-05-29T18:00:22.882457+09:00",
+    "total_atms_retrieved": 5,
+    "status_types_processed": [
+      "WARNING"
+    ],
+    "requested_statuses": [
+      "WARNING"
+    ]
+  },
+  "summary": {
+    "status_counts": {
+      "WARNING": 5
+    },
+    "total_atms": 5,
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  },
+  "atm_data_by_status": {
+    "WARNING": [
+      {
+        "terminalId": "ATM3087",
+        "externalId": "TL122",
+        "terminalCode": "TL122",
+        "terminalName": "NCR SelfServ Lautem 1",
+        "bank": "Mandiri",
+        "cityName": "Lautem",
+        "city": "Lautem",
+        "geoLocation": "Lautem",
+        "location": "Lautem MAIN ROAD, 62",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T20:00:22.881971Z",
+        "geolocation": {
+          "latitude": "-8.448448053384668",
+          "longitude": "124.7948949881539"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN23394",
+        "businessId": "BIZ172",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM9582",
+        "externalId": "TL882",
+        "terminalCode": "TL882",
+        "terminalName": "NCR SelfServ Dili 2",
+        "bank": "Mandiri",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 87",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-29T03:00:22.881971Z",
+        "geolocation": {
+          "latitude": "-9.125854815923901",
+          "longitude": "126.542634455509"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN94271",
+        "businessId": "BIZ894",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM7376",
+        "externalId": "TL551",
+        "terminalCode": "TL551",
+        "terminalName": "Wincor ProCash Covalima 3",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 73",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T14:00:22.881971Z",
+        "geolocation": {
+          "latitude": "-9.333189503582366",
+          "longitude": "124.03226313017358"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN77014",
+        "businessId": "BIZ954",
+        "faultList": [
+          {
+            "creationDate": 1748439982881,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_8337",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM2227",
+        "externalId": "TL413",
+        "terminalCode": "TL413",
+        "terminalName": "Diebold 4900 Dili 4",
+        "bank": "Mandiri",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 64",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T21:00:22.881971Z",
+        "geolocation": {
+          "latitude": "-8.933774489026742",
+          "longitude": "125.66102429332456"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN57314",
+        "businessId": "BIZ110",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM2575",
+        "externalId": "TL762",
+        "terminalCode": "TL762",
+        "terminalName": "NCR SelfServ Baucau 5",
+        "bank": "BNU",
+        "cityName": "Baucau",
+        "city": "Baucau",
+        "geoLocation": "Baucau",
+        "location": "Baucau MAIN ROAD, 55",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T18:00:22.881971Z",
+        "geolocation": {
+          "latitude": "-9.487713049379234",
+          "longitude": "124.130849657417"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN24710",
+        "businessId": "BIZ378",
+        "faultList": [
+          {
+            "creationDate": 1748448622881,
+            "faultTypeCode": "SOFTWARE",
+            "componenTypeCode": "PRINTER",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_1223",
+            "agentErrorDescription": "Deposit module not responding"
+          },
+          {
+            "creationDate": 1748450002881,
+            "faultTypeCode": "CARD_READER",
+            "componenTypeCode": "NETWORK_MODULE",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_6145",
+            "agentErrorDescription": "Temperature sensor alarm"
+          },
+          {
+            "creationDate": 1748450062881,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_6343",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        ]
+      }
+    ]
+  },
+  "response_metadata": {
+    "source": "DEMO_MODE",
+    "api_endpoint": "SIMULATED",
+    "authentication_user": "DEMO_USER",
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  }
+}

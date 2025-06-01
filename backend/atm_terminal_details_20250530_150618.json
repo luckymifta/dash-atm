@@ -1,0 +1,242 @@
+{
+  "retrieval_metadata": {
+    "timestamp": "2025-05-30T15:06:18.668456",
+    "demo_mode": true,
+    "total_terminals": 5,
+    "statistics": {
+      "total_requested": 5,
+      "successful_retrievals": 0,
+      "failed_retrievals": 0,
+      "token_refreshes": 0,
+      "retries_performed": 0,
+      "success_rate": 0.0
+    }
+  },
+  "terminal_details": [
+    {
+      "terminal_id": "83",
+      "issue_state_code": "HARD",
+      "retrieval_timestamp": "2025-05-30T15:06:18.668200",
+      "response_status": "demo",
+      "body": [
+        {
+          "terminalId": "83",
+          "networkId": "P24",
+          "externalId": "45203",
+          "brand": "Nautilus Hyosun",
+          "model": "Monimax 5600",
+          "supplier": "BRI",
+          "location": "DEMO Location for Terminal 83",
+          "geoLocation": "TL-DL",
+          "terminalType": "ATM",
+          "osVersion": "00130035",
+          "issueStateName": "HARD",
+          "creationDate": 1748585178668,
+          "statusDate": 1748585178668,
+          "bank": "BRI",
+          "serialNumber": "YB762083",
+          "faultList": [
+            {
+              "faultId": "137983",
+              "faultTypeCode": "HARD",
+              "componentTypeCode": "PRR",
+              "issueStateName": "HARD",
+              "terminalId": 83,
+              "serviceRequestId": 63173,
+              "location": "DÍLI",
+              "bank": "BRI",
+              "brand": "Nautilus Hyosun",
+              "model": "Monimax 5600",
+              "year": "2025",
+              "month": "MAY",
+              "day": "30",
+              "externalFaultId": "PRR211983",
+              "agentErrorDescription": "MEDIA JAMMED - DEMO FAULT"
+            }
+          ]
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "85",
+      "issue_state_code": "HARD",
+      "retrieval_timestamp": "2025-05-30T15:06:18.668258",
+      "response_status": "demo",
+      "body": [
+        {
+          "terminalId": "85",
+          "networkId": "P24",
+          "externalId": "45205",
+          "brand": "Nautilus Hyosun",
+          "model": "Monimax 5600",
+          "supplier": "BRI",
+          "location": "DEMO Location for Terminal 85",
+          "geoLocation": "TL-DL",
+          "terminalType": "ATM",
+          "osVersion": "00130035",
+          "issueStateName": "HARD",
+          "creationDate": 1748585178668,
+          "statusDate": 1748585178668,
+          "bank": "BRI",
+          "serialNumber": "YB762085",
+          "faultList": [
+            {
+              "faultId": "137985",
+              "faultTypeCode": "HARD",
+              "componentTypeCode": "PRR",
+              "issueStateName": "HARD",
+              "terminalId": 85,
+              "serviceRequestId": 63173,
+              "location": "DÍLI",
+              "bank": "BRI",
+              "brand": "Nautilus Hyosun",
+              "model": "Monimax 5600",
+              "year": "2025",
+              "month": "MAY",
+              "day": "30",
+              "externalFaultId": "PRR211985",
+              "agentErrorDescription": "MEDIA JAMMED - DEMO FAULT"
+            }
+          ]
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "87",
+      "issue_state_code": "HARD",
+      "retrieval_timestamp": "2025-05-30T15:06:18.668294",
+      "response_status": "demo",
+      "body": [
+        {
+          "terminalId": "87",
+          "networkId": "P24",
+          "externalId": "45207",
+          "brand": "Nautilus Hyosun",
+          "model": "Monimax 5600",
+          "supplier": "BRI",
+          "location": "DEMO Location for Terminal 87",
+          "geoLocation": "TL-DL",
+          "terminalType": "ATM",
+          "osVersion": "00130035",
+          "issueStateName": "HARD",
+          "creationDate": 1748585178668,
+          "statusDate": 1748585178668,
+          "bank": "BRI",
+          "serialNumber": "YB762087",
+          "faultList": [
+            {
+              "faultId": "137987",
+              "faultTypeCode": "HARD",
+              "componentTypeCode": "PRR",
+              "issueStateName": "HARD",
+              "terminalId": 87,
+              "serviceRequestId": 63173,
+              "location": "DÍLI",
+              "bank": "BRI",
+              "brand": "Nautilus Hyosun",
+              "model": "Monimax 5600",
+              "year": "2025",
+              "month": "MAY",
+              "day": "30",
+              "externalFaultId": "PRR211987",
+              "agentErrorDescription": "MEDIA JAMMED - DEMO FAULT"
+            }
+          ]
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "88",
+      "issue_state_code": "HARD",
+      "retrieval_timestamp": "2025-05-30T15:06:18.668322",
+      "response_status": "demo",
+      "body": [
+        {
+          "terminalId": "88",
+          "networkId": "P24",
+          "externalId": "45208",
+          "brand": "Nautilus Hyosun",
+          "model": "Monimax 5600",
+          "supplier": "BRI",
+          "location": "DEMO Location for Terminal 88",
+          "geoLocation": "TL-DL",
+          "terminalType": "ATM",
+          "osVersion": "00130035",
+          "issueStateName": "HARD",
+          "creationDate": 1748585178668,
+          "statusDate": 1748585178668,
+          "bank": "BRI",
+          "serialNumber": "YB762088",
+          "faultList": [
+            {
+              "faultId": "137988",
+              "faultTypeCode": "HARD",
+              "componentTypeCode": "PRR",
+              "issueStateName": "HARD",
+              "terminalId": 88,
+              "serviceRequestId": 63173,
+              "location": "DÍLI",
+              "bank": "BRI",
+              "brand": "Nautilus Hyosun",
+              "model": "Monimax 5600",
+              "year": "2025",
+              "month": "MAY",
+              "day": "30",
+              "externalFaultId": "PRR211988",
+              "agentErrorDescription": "MEDIA JAMMED - DEMO FAULT"
+            }
+          ]
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "89",
+      "issue_state_code": "HARD",
+      "retrieval_timestamp": "2025-05-30T15:06:18.668348",
+      "response_status": "demo",
+      "body": [
+        {
+          "terminalId": "89",
+          "networkId": "P24",
+          "externalId": "45209",
+          "brand": "Nautilus Hyosun",
+          "model": "Monimax 5600",
+          "supplier": "BRI",
+          "location": "DEMO Location for Terminal 89",
+          "geoLocation": "TL-DL",
+          "terminalType": "ATM",
+          "osVersion": "00130035",
+          "issueStateName": "HARD",
+          "creationDate": 1748585178668,
+          "statusDate": 1748585178668,
+          "bank": "BRI",
+          "serialNumber": "YB762089",
+          "faultList": [
+            {
+              "faultId": "137989",
+              "faultTypeCode": "HARD",
+              "componentTypeCode": "PRR",
+              "issueStateName": "HARD",
+              "terminalId": 89,
+              "serviceRequestId": 63173,
+              "location": "DÍLI",
+              "bank": "BRI",
+              "brand": "Nautilus Hyosun",
+              "model": "Monimax 5600",
+              "year": "2025",
+              "month": "MAY",
+              "day": "30",
+              "externalFaultId": "PRR211989",
+              "agentErrorDescription": "MEDIA JAMMED - DEMO FAULT"
+            }
+          ]
+        }
+      ],
+      "fault_count": 1
+    }
+  ]
+}

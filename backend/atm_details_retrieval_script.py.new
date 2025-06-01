@@ -1,0 +1,1301 @@
+#!/usr/bin/env python3
+"""
+ATM Details Retrieval Script for Timor-Leste Banking System
+
+This script retrieves detailed information about individual ATM terminals
+including their status, location, and operational details.
+
+It can operate in demo mode (with simulated data) or production mode
+connecting to the actual API endpoint.
+"""
+
+import os
+import sys
+import time
+import uuid
+import json
+import logging
+import argparse
+import random
+import pytz
+import urllib3
+import requests
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional, Tuple
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+
+# Import db_connector or provide a stub if not available
+try:
+    from db_connector import get_connection
+    DB_AVAILABLE = True
+    logging.info("Database connector available")
+except ImportError:
+    logging.warning("db_connector module not found. Database operations will be disabled.")
+    DB_AVAILABLE = False
+    def get_connection():
+        logging.error("Database operations not available: db_connector module not found")
+        return None
+
+# Try to import tabulate, but provide fallback if not available
+try:
+    from tabulate import tabulate
+except ImportError:
+    logging.warning("tabulate module not found. Using simple table formatting.")
+    def tabulate(data, headers, tablefmt=None):
+        """Simple tabulate fallback function"""
+        result = []
+        # Add headers
+        result.append(" | ".join(str(h) for h in headers))
+        result.append("-" * (sum(len(str(h)) for h in headers) + 3 * len(headers)))
+        # Add rows
+        for row in data:
+            result.append(" | ".join(str(item) for item in row))
+        return "\n".join(result)
+
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Try to load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logging.info("Environment variables loaded from .env file")
+except ImportError:
+    logging.warning("python-dotenv not installed, skipping .env loading")
+
+# Configuration
+LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"
+ATM_DETAILS_URL = "https://172.31.1.46/sigit/terminal/searchTerminalDashBoard?number_of_occurrences=30&terminal_type=ATM"
+
+# Get credentials from environment variables or use defaults
+LOGIN_PAYLOAD = {
+    "user_name": os.environ.get("ATM_USERNAME", "Lucky.Saputra"),
+    "password": os.environ.get("ATM_PASSWORD", "TimlesMon2024")
+}
+
+COMMON_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Content-Type": "application/json;charset=UTF-8",
+    "Origin": "https://172.31.1.46",
+    "Referer": "https://172.31.1.46/sigitportal/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "sec-ch-ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Connection": "keep-alive"
+}
+
+# Constants for ATM status types
+ATM_STATUS_TYPES = [
+    "AVAILABLE", 
+    "WARNING", 
+    "WOUNDED",
+    "ZOMBIE", 
+    "OUT_OF_SERVICE"
+]
+
+class ATMDetailsRetriever:
+    """Main class for handling ATM details retrieval"""
+    
+    def __init__(self, demo_mode: bool = False, status_types: Optional[List[str]] = None):
+        """
+        Initialize the retriever
+        
+        Args:
+            demo_mode: Whether to use demo mode (no actual network requests)
+            status_types: List of status types to retrieve (default: all status types)
+        """
+        self.demo_mode = demo_mode
+        self.status_types = status_types if status_types else ATM_STATUS_TYPES
+        self.session = requests.Session()
+        self.user_token = None
+        
+        # Log timezone info for clarity
+        dili_tz = pytz.timezone('Asia/Dili')  # UTC+9
+        current_time = datetime.now(dili_tz)
+        
+        logging.info(f"Initialized ATMDetailsRetriever - Demo: {demo_mode}")
+        logging.info(f"Using Dili timezone (UTC+9) for timestamps: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+        logging.info(f"Status types to retrieve: {', '.join(self.status_types)}")
+    
+    def check_connectivity(self, timeout: int = 10) -> bool:
+        """Check connectivity to the target system"""
+        if self.demo_mode:
+            logging.info("Demo mode: Skipping connectivity check")
+            return True
+            
+        try:
+            logging.info(f"Testing connectivity to {LOGIN_URL}")
+            response = requests.head(LOGIN_URL, timeout=timeout, verify=False)
+            logging.info(f"Connectivity successful: HTTP {response.status_code}")
+            return True
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Connectivity test failed: {str(e)}")
+            return False
+    
+    def authenticate(self) -> bool:
+        """
+        Authenticate with the ATM monitoring system
+        
+        Returns:
+            bool: True if authentication successful, False otherwise
+        """
+        if self.demo_mode:
+            logging.info("Demo mode: Using mock authentication")
+            self.user_token = "demo_token_" + str(int(time.time()))
+            return True
+        
+        logging.info("Attempting authentication...")
+        
+        try:
+            response = self.session.post(
+                LOGIN_URL,
+                json=LOGIN_PAYLOAD,
+                headers=COMMON_HEADERS,
+                verify=False,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            login_data = response.json()
+            
+            # Extract user token using multiple fallback methods
+            user_token = None
+            
+            # Method 1: Direct keys
+            for key in ['user_token', 'token']:
+                if key in login_data:
+                    user_token = login_data[key]
+                    logging.info(f"User token extracted with key '{key}'")
+                    break
+            
+            # Method 2: From header field
+            if not user_token and 'header' in login_data:
+                user_token = login_data['header'].get('user_token')
+                if user_token:
+                    logging.info("User token extracted from 'header' field")
+            
+            if user_token:
+                self.user_token = user_token
+                logging.info(f"Authentication successful - Token length: {len(user_token)} characters")
+                return True
+            else:
+                logging.error("Authentication failed: Unable to extract user token from response")
+                logging.debug(f"Available keys in response: {list(login_data.keys())}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Authentication request failed: {str(e)}")
+            return False
+        except json.JSONDecodeError as e:
+            logging.error(f"Authentication response not valid JSON: {str(e)}")
+            return False
+        except Exception as e:
+            logging.error(f"Unexpected error during authentication: {str(e)}")
+            return False
+    
+    def refresh_token(self) -> bool:
+        """Refresh the authentication token if expired"""
+        logging.info("Attempting to refresh authentication token...")
+        return self.authenticate()
+    
+    def fetch_atm_details_for_status(self, status: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch ATM details for a specific status type
+        
+        Args:
+            status: ATM status type (e.g., AVAILABLE, WARNING, etc.)
+            
+        Returns:
+            Dict containing ATM details data or None if failed
+        """
+        if self.demo_mode:
+            logging.info(f"Demo mode: Generating sample ATM data for status {status}")
+            
+            # Return realistic mock data based on the actual API response structure
+            response = {
+                "header": {
+                    "result_code": "000",
+                    "result_description": "Success.",
+                    "user_token": f"eyJhbGciOiJIUzI1NiJ9.demo.token.{int(time.time())}"
+                },
+                "body": []
+            }
+            
+            # Generate mock data with realistic ATM information
+            num_terminals = 10 if status == "AVAILABLE" else 5 if status == "WARNING" else 2
+            
+            locations = [
+                "AERO PORTO NICOLAU LOBATU,DILI", 
+                "NOVO TURISMO, BIDAU LECIDERE",
+                "PLAZA SHOPPING CENTER DILI",
+                "TIMOR PLAZA LEVEL 1,DILI",
+                "BNU HQ LECIDERE,DILI",
+                "MANDARIN DILI, HOTEL",
+                "EMBASSY OF AUSTRALIA,DILI",
+                "PALACIO DO GOVERNO,DILI",
+                "COMORO MAIN ROAD,DILI",
+                "MOTAEL AREA,DILI",
+                "BAUCAU PLAZA CENTER",
+                "GLENO MARKET CENTER,ERMERA",
+                "MALIANA TOWN CENTER"
+            ]
+            
+            cities = {
+                "TL-DL": ["DOM ALEIXO", "VERA CRUZ", "NAINFETO", "CRISTO REI"],
+                "TL-AN": ["BAUCAU", "ERMERA", "MALIANA", "LIQUICA", "AILEU"]
+            }
+            
+            brands = ["Nautilus Hyosun", "NCR", "Diebold", "Wincor Nixdorf"]
+            models = ["Monimax 5600", "SelfServ 22e", "4900", "ProCash 2100xe"]
+            banks = ["BNCTL", "BNU", "BRI", "Mandiri"]
+            issue_state_codes = {
+                "AVAILABLE": "NORMAL",
+                "WARNING": "WARN",
+                "WOUNDED": "HARD",
+                "ZOMBIE": "ZOMBIE",
+                "OUT_OF_SERVICE": "CASH"
+            }
+            
+            # Generate terminals with the requested status
+            for i in range(num_terminals):
+                # Determine region and city
+                region = "TL-DL" if i % 3 != 0 else "TL-AN"
+                city = cities[region][i % len(cities[region])]
+                
+                # Determine terminal details
+                terminal_id = f"{80 + i}"
+                external_id = f"452{i:02d}"
+                business_id = f"006{i:02d}"
+                location = locations[i % len(locations)]
+                brand = brands[i % len(brands)]
+                model = models[i % len(models)]
+                bank = banks[i % len(banks)]
+                serial = f"YB7620{2000 + i}"
+                
+                # Create timestamp (milliseconds)
+                timestamp = int((datetime.now() - timedelta(days=i % 30)).timestamp() * 1000)
+                
+                terminal = {
+                    "terminalId": terminal_id,
+                    "networkId": "P24",
+                    "externalId": external_id,
+                    "brand": brand,
+                    "model": model,
+                    "supplier": bank,
+                    "businessId": business_id,
+                    "technicalCode": f"00{business_id}",
+                    "location": location,
+                    "geoLocation": region,
+                    "terminalType": "ATM",
+                    "osVersion": "00130035",
+                    "xfsVersion": None,
+                    "servicePeriod": None,
+                    "maintenancePeriod": None,
+                    "agentInfo": "00010000",
+                    "sw": None,
+                    "freeDiskSpace": f"0044{7500 - i*100}",
+                    "cpu": "x86 Family 6 Model 58 Stepping 9",
+                    "issueStateName": status,
+                    "creationDate": timestamp - 1000000,
+                    "statusDate": timestamp,
+                    "bank": bank,
+                    "serviceDays": None,
+                    "maintenanceDays": None,
+                    "terminalGroupList": None,
+                    "faultList": None,
+                    "slaList": None,
+                    "isConnectedWithCentralApp": None,
+                    "photogramFileDate": None,
+                    "dirFileDate": timestamp - 2000000 if i % 3 == 0 else None,
+                    "photogramUserRequest": None,
+                    "dirUserRequest": "Admin" if i % 3 == 0 else None,
+                    "issueStateCode": issue_state_codes[status],
+                    "terminalStatus": "MANAGED",
+                    "cityName": city,
+                    "fullyRegistered": True,
+                    "maintenanceStateCode": "UNEXISTENT",
+                    "physicalNetworkType": None,
+                    "servicePoint": None,
+                    "inkSystemState": None,
+                    "inkSystemBrandModel": None,
+                    "serialNumber": serial,
+                    "locationType": "Airport" if "AERO" in location else 
+                                   "Hotel" if "HOTEL" in location or "TURISMO" in location else
+                                   "Shopping Mall" if "PLAZA" in location or "CENTER" in location else
+                                   "Government" if "GOVERNO" in location or "EMBASSY" in location else
+                                   "Commercial Area",
+                    "hasAdvertising": i % 5 == 0,
+                    "componentsList": None,
+                    "terminalCashInfo": None
+                }
+                
+                response["body"].append(terminal)
+                
+            return response
+        
+        if not self.user_token:
+            logging.error("No authentication token available - please authenticate first")
+            return None
+        
+        payload = {
+            "header": {
+                "logged_user": LOGIN_PAYLOAD["user_name"],
+                "user_token": self.user_token
+            },
+            "body": {
+                "parameters_list": [
+                    {
+                        "parameter_name": "issueStateName",
+                        "parameter_values": [status]
+                    }
+                ]
+            }
+        }
+        
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                logging.info(f"Requesting ATM details for status {status}... (Attempt {retry_count + 1}/{max_retries})")
+                response = self.session.put(
+                    ATM_DETAILS_URL,
+                    json=payload,
+                    headers=COMMON_HEADERS,
+                    verify=False,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                atm_data = response.json()
+                
+                # Validate response structure
+                if not isinstance(atm_data, dict):
+                    logging.error("Response has unexpected format (not a dictionary)")
+                    retry_count += 1
+                    continue
+                
+                if "body" not in atm_data:
+                    logging.error("Response missing 'body' field")
+                    retry_count += 1
+                    continue
+                
+                body_data = atm_data.get("body", {})
+                logging.info(f"Successfully retrieved ATM data for status {status}")
+                
+                # Update token if a new one was provided
+                if "header" in atm_data and "user_token" in atm_data["header"]:
+                    new_token = atm_data["header"]["user_token"]
+                    if new_token != self.user_token:
+                        logging.info("Received updated token in response")
+                        self.user_token = new_token
+                
+                return body_data
+                
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Request failed (Attempt {retry_count + 1}): {str(e)}")
+                
+                # Check for token expiration
+                if hasattr(e, 'response') and e.response is not None and e.response.status_code == 401:
+                    logging.warning("Detected possible token expiration (401 Unauthorized)")
+                    if self.refresh_token():
+                        payload["header"]["user_token"] = self.user_token
+                        logging.info("Token refreshed, retrying request...")
+                        continue
+                
+                retry_count += 1
+                if retry_count < max_retries:
+                    logging.info("Retrying in 5 seconds...")
+                    time.sleep(5)
+                
+            except json.JSONDecodeError as e:
+                logging.error(f"Response not valid JSON (Attempt {retry_count + 1}): {str(e)}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(5)
+        
+        logging.error(f"All attempts failed to retrieve ATM details for status {status}")
+        return None
+    
+    def process_atm_data(self, raw_data: Dict[str, Any], status: str) -> List[Dict[str, Any]]:
+        """
+        Process raw ATM details data into structured format
+        
+        Args:
+            raw_data: Raw ATM details data from API response
+            status: The status type for this data
+            
+        Returns:
+            List of processed ATM records
+        """
+        processed_records = []
+        dili_tz = pytz.timezone('Asia/Dili')  # Asia/Dili is UTC+9 for Timor-Leste
+        current_time = datetime.now(dili_tz)
+        
+        if not raw_data:
+            logging.warning(f"No raw data provided for processing for status {status}")
+            return []
+        
+        # Extract terminals list from body
+        terminals = raw_data.get("body", [])
+        if not terminals:
+            logging.warning(f"No terminals found in data for status {status}")
+            return []
+        
+        logging.info(f"Processing {len(terminals)} ATMs with status {status}")
+        
+        for terminal in terminals:
+            atm_id = terminal.get("terminalId", "Unknown")
+            
+            # Convert timestamps to readable format if available
+            last_comm_date = None
+            if "statusDate" in terminal and terminal["statusDate"]:
+                try:
+                    # Convert milliseconds timestamp to datetime
+                    last_comm_date = datetime.fromtimestamp(terminal["statusDate"] / 1000.0)
+                    last_comm_date = last_comm_date.astimezone(dili_tz)
+                except (ValueError, TypeError) as e:
+                    logging.warning(f"Failed to parse timestamp for ATM {atm_id}: {e}")
+            
+            # Process each ATM data
+            record = {
+                'unique_request_id': str(uuid.uuid4()),
+                'request_timestamp': current_time,
+                'terminal_id': atm_id,
+                'external_id': terminal.get("externalId", ""),
+                'terminal_name': f"{terminal.get('brand', '')} {terminal.get('model', '')}".strip(),
+                'location': terminal.get("location", ""),
+                'city': terminal.get("cityName", ""),
+                'region': terminal.get("geoLocation", ""),
+                'status': terminal.get("issueStateName", status),
+                'status_code': terminal.get("issueStateCode", ""),
+                'bank': terminal.get("bank", ""),
+                'last_updated': last_comm_date.isoformat() if last_comm_date else "",
+                'last_updated_timestamp': last_comm_date,  # Keep datetime object for database operations
+                'serial_number': terminal.get("serialNumber", ""),
+                'business_id': terminal.get("businessId", ""),
+                'free_disk_space': terminal.get("freeDiskSpace", ""),
+                'location_type': terminal.get("locationType", ""),
+                'has_advertising': terminal.get("hasAdvertising", False),
+                'issue_type': terminal.get("issueTypeName", ""),
+                'issue_state': terminal.get("issueStateName", ""),
+                'contact_name': terminal.get("contactDisplayName", ""),
+                'raw_data': terminal  # Keep raw data for reference
+            }
+            
+            processed_records.append(record)
+            logging.debug(f"Processed ATM {atm_id}: {record['terminal_name']} ({record['status']})")
+        
+        logging.info(f"Successfully processed {len(processed_records)} ATM records with status {status}")
+        return processed_records
+    
+    def save_to_database(self, processed_data: List[Dict[str, Any]]) -> bool:
+        """
+        Save processed ATM details data to database
+        
+        Args:
+            processed_data: List of processed ATM records
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not DB_AVAILABLE:
+            logging.warning("Database not available - skipping database save")
+            return False
+        
+        if not processed_data:
+            logging.warning("No processed data to save")
+            return False
+        
+        logging.info(f"Saving {len(processed_data)} ATM records to database...")
+        
+        try:
+            db_connection = get_connection()
+            if not db_connection:
+                logging.error("Failed to get database connection")
+                return False
+                
+            # Use store_atm_data_in_db function to store in database
+            terminals_added, terminals_updated, status_records_added = store_atm_data_in_db(
+                db_connection, processed_data
+            )
+            
+            db_connection.close()
+            
+            logging.info(f"Database updated: {terminals_added} terminals added, "
+                        f"{terminals_updated} terminals updated, "
+                        f"{status_records_added} status records added")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Database error: {str(e)}")
+            return False
+    
+    def retrieve_all_atm_details(self, save_to_db: bool = False) -> Tuple[bool, Dict[str, List[Dict[str, Any]]]]:
+        """
+        Retrieve ATM details for all specified status types
+        
+        Args:
+            save_to_db: Whether to save processed data to database
+            
+        Returns:
+            Tuple of (success: bool, dict of status type to list of ATM records)
+        """
+        logging.info("=" * 80)
+        logging.info("STARTING ATM DETAILS RETRIEVAL")
+        logging.info("=" * 80)
+        
+        # Step 1: Check connectivity (unless demo mode)
+        if not self.demo_mode:
+            if not self.check_connectivity():
+                logging.error("Connectivity check failed - aborting")
+                return False, {}
+        
+        # Step 2: Authenticate
+        if not self.authenticate():
+            logging.error("Authentication failed - aborting")
+            return False, {}
+        
+        # Step 3: Fetch and process ATM details for each status type
+        all_atm_data = {}
+        success_count = 0
+        
+        for status in self.status_types:
+            logging.info(f"Retrieving ATM details for status: {status}")
+            
+            # Fetch raw data
+            raw_data = self.fetch_atm_details_for_status(status)
+            if not raw_data:
+                logging.error(f"Failed to retrieve ATM details for status {status}")
+                continue
+            
+            # Process the data
+            processed_data = self.process_atm_data(raw_data, status)
+            if processed_data:
+                all_atm_data[status] = processed_data
+                success_count += 1
+                
+                # Save to database if requested
+                if save_to_db:
+                    save_success = self.save_to_database(processed_data)
+                    if save_success:
+                        logging.info(f"Data for status {status} successfully saved to database")
+                    else:
+                        logging.warning(f"Database save failed for status {status}")
+        
+        # Check if we got any data at all
+        if not all_atm_data:
+            logging.error("Failed to retrieve any ATM details")
+            return False, {}
+        
+        logging.info("=" * 80)
+        logging.info(f"ATM DETAILS RETRIEVAL COMPLETED: {success_count}/{len(self.status_types)} status types successful")
+        logging.info("=" * 80)
+        
+        return True, all_atm_data
+
+
+def create_tables_if_not_exist(cursor):
+    """Create necessary tables if they don't exist"""
+    
+    # Create terminals table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS atm_terminals (
+        terminal_id VARCHAR(20) PRIMARY KEY,
+        terminal_name VARCHAR(255),
+        region VARCHAR(100),
+        city VARCHAR(100),
+        latitude DECIMAL(10, 6),
+        longitude DECIMAL(10, 6),
+        last_status VARCHAR(50),
+        last_updated TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    # Create status updates table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS atm_status_updates (
+        update_id SERIAL PRIMARY KEY,
+        terminal_id VARCHAR(20) REFERENCES atm_terminals(terminal_id),
+        status VARCHAR(50),
+        issue_type VARCHAR(100),
+        issue_state_name VARCHAR(100),
+        contact_name VARCHAR(255),
+        updated_at TIMESTAMP WITH TIME ZONE,
+        recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    # Create indexes for performance
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_atm_terminals_region 
+    ON atm_terminals(region)
+    """)
+    
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_atm_status_updates_terminal 
+    ON atm_status_updates(terminal_id)
+    """)
+    
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_atm_status_updates_status 
+    ON atm_status_updates(status)
+    """)
+
+
+def upsert_terminal_record(cursor, atm):
+    """Insert or update a terminal record"""
+    terminal_id = atm.get('terminal_id')
+    terminal_name = atm.get('terminal_name')
+    region = atm.get('region')
+    city = atm.get('city', region)  # Use region as fallback if city not available
+    status = atm.get('status')
+    last_updated = atm.get('last_updated_timestamp')
+    
+    # Extract location data
+    lat = None
+    long = None
+    if 'location' in atm and atm['location']:
+        lat = atm['location'].get('latitude')
+        long = atm['location'].get('longitude')
+    
+    # Check if terminal already exists
+    cursor.execute(
+        "SELECT terminal_id FROM atm_terminals WHERE terminal_id = %s",
+        (terminal_id,)
+    )
+    terminal_exists = cursor.fetchone() is not None
+    
+    if terminal_exists:
+        # Update existing terminal
+        cursor.execute("""
+        UPDATE atm_terminals 
+        SET terminal_name = %s,
+            region = %s,
+            city = %s,
+            latitude = %s,
+            longitude = %s,
+            last_status = %s,
+            last_updated = %s
+        WHERE terminal_id = %s
+        """, (
+            terminal_name, region, city, lat, long, 
+            status, last_updated, terminal_id
+        ))
+        return 0, 1  # 0 added, 1 updated
+    else:
+        # Insert new terminal
+        cursor.execute("""
+        INSERT INTO atm_terminals (
+            terminal_id, terminal_name, region, city,
+            latitude, longitude, last_status, last_updated
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            terminal_id, terminal_name, region, city,
+            lat, long, status, last_updated
+        ))
+        return 1, 0  # 1 added, 0 updated
+
+
+def add_status_update_record(cursor, atm):
+    """Add a status update record"""
+    terminal_id = atm.get('terminal_id')
+    status = atm.get('status')
+    issue_type = atm.get('issue_type')
+    issue_state = atm.get('issue_state')
+    contact_name = atm.get('contact_name')
+    updated_at = atm.get('last_updated_timestamp')
+    
+    # Skip if no status or timestamp
+    if not status or not updated_at:
+        return False
+        
+    # Insert status update record
+    cursor.execute("""
+    INSERT INTO atm_status_updates (
+        terminal_id, status, issue_type, issue_state_name,
+        contact_name, updated_at
+    ) VALUES (%s, %s, %s, %s, %s, %s)
+    """, (
+        terminal_id, status, issue_type, issue_state,
+        contact_name, updated_at
+    ))
+    
+    return True
+
+
+def store_atm_data_in_db(db_connection, atm_data):
+    """
+    Store ATM details in the database according to our schema
+    
+    Args:
+        db_connection: Database connection object
+        atm_data: List of processed ATM data objects
+        
+    Returns:
+        Tuple of (terminals_added, terminals_updated, status_records_added)
+    """
+    if not atm_data:
+        logging.warning("No ATM data to store in database")
+        return 0, 0, 0
+    
+    cursor = db_connection.cursor()
+    
+    terminals_added = 0
+    terminals_updated = 0
+    status_records_added = 0
+    
+    try:
+        # First ensure tables exist (idempotent operation)
+        create_tables_if_not_exist(cursor)
+        
+        # Process each ATM terminal
+        for atm in atm_data:
+            terminal_id = atm.get('terminal_id')
+            if not terminal_id:
+                logging.warning(f"Skipping ATM record without terminal_id: {atm}")
+                continue
+                
+            # Attempt to insert or update terminal record
+            added, updated = upsert_terminal_record(cursor, atm)
+            terminals_added += added
+            terminals_updated += updated
+            
+            # Add status update record
+            if add_status_update_record(cursor, atm):
+                status_records_added += 1
+        
+        # Commit the transaction
+        db_connection.commit()
+        
+        logging.info(f"Database updated: {terminals_added} terminals added, "
+                    f"{terminals_updated} terminals updated, "
+                    f"{status_records_added} status records added")
+        
+        return terminals_added, terminals_updated, status_records_added
+        
+    except Exception as e:
+        db_connection.rollback()
+        logging.error(f"Database error: {str(e)}")
+        return 0, 0, 0
+
+
+def display_atm_data(all_atm_data):
+    """Display the processed results in a formatted way"""
+    if not all_atm_data:
+        print("No data to display")
+        return
+    
+    total_atms = sum(len(atms) for atms in all_atm_data.values())
+    
+    print("\n" + "=" * 110)
+    print("ATM DETAILS DATA")
+    print("=" * 110)
+    
+    for status, atm_list in all_atm_data.items():
+        print(f"\n🔹 STATUS: {status} - {len(atm_list)} ATMs")
+        print("-" * 110)
+        
+        if not atm_list:
+            print("  No ATMs with this status")
+            continue
+        
+        print(f"{'ATM ID':<8} {'External':<8} {'Bank':<8} {'Model':<20} {'Location':<30} {'City':<15} {'Region':<6} {'Last Comm':<20}")
+        print("-" * 110)
+        
+        for atm in atm_list[:5]:  # Show first 5 ATMs for each status to keep output manageable
+            print(f"{atm['terminal_id']:<8} {atm.get('external_id', '')[:6]:<8} {atm.get('bank', '')[:6]:<8} {atm.get('terminal_name', '')[:18]:<20} "
+                  f"{atm.get('location', '')[:28]:<30} {atm.get('city', '')[:13]:<15} {atm.get('region', ''):<6} "
+                  f"{atm.get('last_updated', '')[:19] if atm.get('last_updated') else 'N/A':<20}")
+        
+        if len(atm_list) > 5:
+            print(f"... and {len(atm_list) - 5} more ATMs with status {status}")
+    
+    print("\n" + "-" * 110)
+    print(f"Total ATMs processed: {total_atms}")
+    print(f"Status types: {', '.join(sorted(all_atm_data.keys()))}")
+
+
+def save_to_json(all_atm_data, filename=None):
+    """Save processed ATM details to JSON file"""
+    if isinstance(all_atm_data, list):
+        # Called with a simple list of ATM data, not grouped by status
+        return save_atm_list_to_json(all_atm_data, filename)
+        
+    dili_tz = pytz.timezone('Asia/Dili')  # Asia/Dili is UTC+9 for Timor-Leste
+    current_time = datetime.now(dili_tz)
+    if not filename:
+        timestamp = current_time.strftime("%Y%m%d_%H%M%S")
+        filename = f"atm_details_{timestamp}.json"
+    
+    # Prepare data for JSON serialization
+    total_atms = sum(len(atms) for atms in all_atm_data.values())
+    
+    # Convert datetime objects to strings
+    json_data = {}
+    for status, atm_list in all_atm_data.items():
+        json_data[status] = []
+        for atm in atm_list:
+            atm_copy = {}
+            for key, value in atm.items():
+                if key == 'raw_data' or key == 'last_updated_timestamp':
+                    continue  # Skip these fields
+                elif isinstance(value, datetime):
+                    atm_copy[key] = value.isoformat()
+                else:
+                    atm_copy[key] = value
+            json_data[status].append(atm_copy)
+    
+    # Create the full JSON structure
+    output_data = {
+        "retrieval_timestamp": current_time.isoformat(),
+        "total_atms": total_atms,
+        "status_summary": {status: len(atms) for status, atms in all_atm_data.items()},
+        "atm_data": json_data
+    }
+    
+    with open(filename, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
+    logging.info(f"Data saved to JSON file: {filename}")
+    return filename
+
+
+def save_atm_list_to_json(atm_data, output_path=None):
+    """
+    Save a list of ATM data to JSON file
+    
+    Args:
+        atm_data: List of processed ATM data objects
+        output_path: Optional path to save to, otherwise uses default with timestamp
+        
+    Returns:
+        Path to the saved JSON file
+    """
+    if not atm_data:
+        logging.warning("No ATM data to save to JSON")
+        return None
+        
+    # Create a serializable version (remove datetime objects)
+    serializable_data = []
+    for atm in atm_data:
+        # Create a copy without the raw_data field to make the output more readable
+        atm_copy = {k: v for k, v in atm.items() if k != 'raw_data' and k != 'last_updated_timestamp'}
+        
+        # Convert datetime objects to ISO format strings
+        for key, value in atm_copy.items():
+            if isinstance(value, datetime):
+                atm_copy[key] = value.isoformat()
+                
+        serializable_data.append(atm_copy)
+    
+    # Generate filename with timestamp if not provided
+    if not output_path:
+        dili_tz = pytz.timezone('Asia/Dili')
+        timestamp = datetime.now(dili_tz).strftime("%Y%m%d_%H%M%S")
+        output_path = f"atm_details_{timestamp}.json"
+    
+    try:
+        with open(output_path, 'w') as f:
+            json.dump(
+                {"atm_data": serializable_data, 
+                 "timestamp": datetime.now(pytz.timezone('Asia/Dili')).isoformat(),
+                 "count": len(serializable_data)
+                }, 
+                f, 
+                indent=2
+            )
+        logging.info(f"ATM data saved to {output_path}")
+        return output_path
+    except Exception as e:
+        logging.error(f"Failed to save JSON: {str(e)}")
+        return None
+
+
+def get_demo_data(status_types=None):
+    """
+    Generate demo data for testing without API access
+    
+    Args:
+        status_types: List of status types to include or None for all
+        
+    Returns:
+        List of simulated ATM details
+    """
+    dili_tz = pytz.timezone('Asia/Dili')
+    current_time = datetime.now(dili_tz)
+    
+    # Define possible statuses with their properties
+    status_options = {
+        "AVAILABLE": {
+            "issueTypeName": None,
+            "issueStateName": None
+        },
+        "WARNING": {
+            "issueTypeName": "SERVICE_NEEDED",
+            "issueStateName": "PENDING"
+        },
+        "WOUNDED": {
+            "issueTypeName": "HARDWARE_ISSUE",
+            "issueStateName": "OPEN"
+        },
+        "OUT_OF_SERVICE": {
+            "issueTypeName": "POWER_ISSUE",
+            "issueStateName": "IN_PROGRESS"
+        },
+        "OFFLINE": {
+            "issueTypeName": "NETWORK_ISSUE",
+            "issueStateName": "OPEN"
+        }
+    }
+    
+    # Use requested statuses or all if none specified
+    if status_types:
+        # Filter to only include requested status types
+        status_options = {k: v for k, v in status_options.items() if k in status_types}
+    
+    # Generate random ATM data
+    atm_data = []
+    regions = ["Dili", "Baucau", "Bobonaro", "Covalima", "Lautem", "Liquiçá"]
+    
+    # Generate 5 ATMs for each status
+    for status, properties in status_options.items():
+        for i in range(1, 6):
+            region = random.choice(regions)
+            
+            # Generate lat/long within Timor-Leste bounds approximately
+            lat = random.uniform(-9.5, -8.1) 
+            long = random.uniform(124.0, 127.3)
+            
+            # Random time in the last 24 hours
+            update_time = current_time - timedelta(hours=random.randint(0, 24))
+            
+            atm = {
+                "terminalId": f"ATM{random.randint(1000, 9999)}",
+                "terminalCode": f"TL{random.randint(100, 999)}",
+                "terminalName": f"ATM {region} {i}",
+                "city": region,
+                "status": status,
+                "lastUpdate": update_time.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",
+                "geolocation": {
+                    "latitude": str(lat),
+                    "longitude": str(long)
+                },
+                "issueTypeName": properties["issueTypeName"],
+                "issueStateName": properties["issueStateName"],
+                "contactDisplayName": "ATM Service" if properties["issueTypeName"] else None
+            }
+            
+            atm_data.append(atm)
+    
+    logging.info(f"Generated {len(atm_data)} demo ATM records")
+    return atm_data
+
+
+def process_atm_data(raw_data):
+    """
+    Process raw ATM data into a structured format
+    
+    Args:
+        raw_data: List of ATM data objects from the API
+        
+    Returns:
+        List of processed ATM objects
+    """
+    processed_data = []
+    dili_tz = pytz.timezone('Asia/Dili')  # UTC+9
+    
+    for atm in raw_data:
+        # Process timestamps if available
+        last_updated = None
+        if atm.get("lastUpdate"):
+            # Convert timestamp to Dili timezone (UTC+9)
+            try:
+                # Parse timestamp (assuming UTC format from API)
+                last_updated_utc = datetime.strptime(
+                    atm["lastUpdate"], "%Y-%m-%dT%H:%M:%S.%fZ"
+                ).replace(tzinfo=pytz.UTC)
+                
+                # Convert to Dili timezone
+                last_updated = last_updated_utc.astimezone(dili_tz)
+            except Exception as e:
+                logging.warning(f"Failed to parse timestamp: {atm.get('lastUpdate')} - {str(e)}")
+        
+        # Extract location data if available
+        location = {}
+        if atm.get("city"):
+            location["city"] = atm["city"]
+        if atm.get("geolocation"):
+            try:
+                geo = atm["geolocation"]
+                location["latitude"] = float(geo["latitude"])
+                location["longitude"] = float(geo["longitude"])
+            except Exception as e:
+                logging.warning(f"Failed to parse geolocation for ATM {atm.get('terminalCode')}: {str(e)}")
+        
+        # Create structured ATM object
+        processed_atm = {
+            "terminal_id": atm.get("terminalCode"),
+            "terminal_name": atm.get("terminalName"),
+            "region": atm.get("city"),
+            "location": location,
+            "status": atm.get("status"),
+            "last_updated": last_updated.isoformat() if last_updated else None,
+            "last_updated_timestamp": last_updated,  # Keep datetime object for database operations
+            "issue_type": atm.get("issueTypeName"),
+            "issue_state": atm.get("issueStateName"),
+            "contact_name": atm.get("contactDisplayName"),
+            # Include additional fields as needed
+            "raw_data": atm  # Keep raw data for reference
+        }
+        
+        processed_data.append(processed_atm)
+    
+    return processed_data
+
+
+def authenticate(session):
+    """Authenticate to the ATM management system and return session token"""
+    logging.info(f"Authenticating to {LOGIN_URL}")
+    
+    try:
+        # Disable SSL warnings - for development only!
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # Make login request
+        response = session.post(
+            LOGIN_URL,
+            json=LOGIN_PAYLOAD,
+            headers=COMMON_HEADERS,
+            verify=False  # Skip SSL verification - not recommended for production
+        )
+        
+        if response.status_code != 200:
+            logging.error(f"Authentication failed with status code: {response.status_code}")
+            logging.error(f"Response: {response.text}")
+            return None
+        
+        # Parse auth token from response
+        auth_data = response.json()
+        if not auth_data.get("token"):
+            logging.error(f"No auth token in response: {auth_data}")
+            return None
+            
+        # Add auth token to session headers
+        session.headers.update({
+            "Authorization": f"Bearer {auth_data['token']}"
+        })
+        
+        logging.info("Authentication successful")
+        return auth_data['token']
+        
+    except Exception as e:
+        logging.error(f"Authentication error: {str(e)}")
+        return None
+
+
+def fetch_atm_details_for_status(session, status_types=None):
+    """
+    Fetch ATM details for specified status types or all if none specified
+    
+    Args:
+        session: Requests session with authentication
+        status_types: List of status types (e.g., ["AVAILABLE", "WOUNDED"]) or None for all
+    
+    Returns:
+        List of ATM detail objects
+    """
+    logging.info(f"Fetching ATM details for status(es): {status_types or 'ALL'}")
+    
+    # Construct payload based on requested status types
+    payload = {
+        "allIncluded": status_types is None,
+        "sort": [
+            {"fieldName": "terminal_code", "direction": "ASC"}
+        ],
+        "status": status_types if status_types else []
+    }
+    
+    try:
+        # Make request to get ATM details
+        response = session.post(
+            ATM_DETAILS_URL,
+            json=payload,
+            headers=COMMON_HEADERS,
+            verify=False  # Skip SSL verification - not for production
+        )
+        
+        if response.status_code != 200:
+            logging.error(f"Failed to fetch ATM details. Status code: {response.status_code}")
+            logging.error(f"Response: {response.text}")
+            return []
+            
+        # Parse response
+        response_data = response.json()
+        
+        # Check if we have a valid response structure
+        if "result" not in response_data or "content" not in response_data["result"]:
+            logging.error(f"Unexpected response structure: {response_data}")
+            return []
+            
+        atm_data = response_data["result"]["content"]
+        logging.info(f"Retrieved {len(atm_data)} ATM records")
+        
+        return atm_data
+        
+    except Exception as e:
+        logging.error(f"Error fetching ATM details: {str(e)}")
+        return []
+
+
+def main():
+    """Main execution function"""
+    parser = argparse.ArgumentParser(
+        description='Retrieve ATM details from management system'
+    )
+    
+    parser.add_argument(
+        '--demo',
+        action='store_true',
+        help='Run in demo mode with simulated data'
+    )
+    
+    parser.add_argument(
+        '--status',
+        nargs='+',
+        choices=['AVAILABLE', 'WARNING', 'WOUNDED', 'OUT_OF_SERVICE', 'OFFLINE'],
+        help='Filter by status (multiple allowed)'
+    )
+    
+    parser.add_argument(
+        '--save-json',
+        action='store_true',
+        help='Save results to JSON file'
+    )
+    
+    parser.add_argument(
+        '--save-db',
+        action='store_true',
+        help='Save results to database'
+    )
+    
+    parser.add_argument(
+        '--class-mode',
+        action='store_true',
+        help='Use class-based implementation instead of functional'
+    )
+    
+    args = parser.parse_args()
+    
+    # Log execution mode
+    if args.demo:
+        logging.info("Running in DEMO mode with simulated data")
+    else:
+        logging.info("Running in PRODUCTION mode connecting to actual API")
+    
+    if args.status:
+        logging.info(f"Filtering by status: {', '.join(args.status)}")
+    
+    try:
+        # Use class-based implementation if requested
+        if args.class_mode:
+            retriever = ATMDetailsRetriever(
+                demo_mode=args.demo,
+                status_types=args.status
+            )
+            
+            success, all_atm_data = retriever.retrieve_all_atm_details(
+                save_to_db=args.save_db
+            )
+            
+            if not success:
+                logging.error("Failed to retrieve ATM details")
+                return 1
+                
+            # Display the results
+            display_atm_data(all_atm_data)
+            
+            # Save to JSON if requested
+            if args.save_json:
+                json_path = save_to_json(all_atm_data)
+                print(f"\nData saved to: {json_path}")
+                
+            return 0
+        else:
+            # Use functional implementation
+            # Get ATM data (demo or production)
+            if args.demo:
+                atm_data = get_demo_data(args.status)
+            else:
+                # Create session for API calls
+                session = requests.Session()
+                
+                # Authenticate
+                auth_token = authenticate(session)
+                if not auth_token:
+                    logging.error("Authentication failed, exiting")
+                    return 1
+                    
+                # Fetch ATM details
+                atm_data = fetch_atm_details_for_status(session, args.status)
+                if not atm_data:
+                    logging.error("Failed to retrieve ATM data, exiting")
+                    return 1
+            
+            # Process ATM data into structured format
+            processed_data = process_atm_data(atm_data)
+            logging.info(f"Processed {len(processed_data)} ATM records")
+            
+            # Save to database if requested
+            if args.save_db and DB_AVAILABLE:
+                db_connection = get_connection()
+                if db_connection:
+                    store_atm_data_in_db(db_connection, processed_data)
+                    db_connection.close()
+                else:
+                    logging.error("Failed to connect to database")
+            
+            # Save to JSON if requested
+            if args.save_json:
+                json_path = save_atm_list_to_json(processed_data)
+                print(f"\nData saved to: {json_path}")
+            
+            # Display results in terminal
+            print("\n== ATM Details Retrieval Results ==")
+            print(f"Retrieved {len(processed_data)} ATM records")
+            print("Sample data:")
+            
+            # Display first 5 records
+            display_table = []
+            for atm in processed_data[:5]:
+                display_table.append([
+                    atm.get('terminal_id', 'Unknown'),
+                    atm.get('terminal_name', 'Unknown'),
+                    atm.get('status', 'Unknown'),
+                    atm.get('last_updated', 'Unknown')[:19] if atm.get('last_updated') else 'Unknown'
+                ])
+            
+            print(tabulate(
+                display_table,
+                headers=["Terminal ID", "Name", "Status", "Last Updated"],
+                tablefmt="simple"
+            ))
+            
+            if len(processed_data) > 5:
+                print(f"... and {len(processed_data) - 5} more records")
+            
+            return 0
+    except Exception as e:
+        logging.error(f"Error: {str(e)}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,796 @@
+{
+  "terminals": [
+    {
+      "terminal_id": "49",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "83",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "85",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "86",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "87",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "88",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "89",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "90",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "93",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "147",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "169",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "2603",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "2604",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "2605",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3938",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5422",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8783",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6229",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6284",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4897",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5570",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3964",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4017",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3762",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7339",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5555",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6669",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4335",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6795",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9180",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6178",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1000",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4300",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2720",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6423",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7625",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4135",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5589",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6636",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4958",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7680",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8874",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4581",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4763",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8843",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7690",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4182",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8921",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8316",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7769",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2037",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3749",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3211",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2733",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5418",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9131",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1334",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3012",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2095",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8046",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3641",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9041",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1844",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3750",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5562",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2012",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5786",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3323",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9872",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8537",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6290",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7725",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4191",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9814",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1114",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2714",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9379",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9687",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2446",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5400",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8803",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4183",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3073",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3121",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2291",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5609",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5792",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7376",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8032",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4241",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6888",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2227",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4042",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7018",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6030",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7591",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3564",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6639",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2590",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3680",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4450",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2145",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4513",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6845",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6519",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8436",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9930",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2481",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6591",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7320",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2423",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2119",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2575",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9471",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3445",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5775",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8187",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8206",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5697",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2799",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2309",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1026",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8420",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2933",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8872",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2923",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3841",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1300",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4318",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2424",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9923",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6786",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6769",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6397",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3141",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4606",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2426",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5060",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5596",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8452",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3383",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6788",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9037",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9010",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9066",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7660",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2232",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8158",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5817",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8638",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3087",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2533",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1314",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7300",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6139",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5108",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6320",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8157",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4468",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4273",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7363",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9909",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9658",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8478",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1919",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9130",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3376",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6023",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4466",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5767",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5736",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9631",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM3909",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5947",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7897",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6491",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5480",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM1011",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6602",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7455",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM2411",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4660",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7033",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9028",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5746",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9582",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4449",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4554",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5660",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM9427",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6734",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM6623",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM8859",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5401",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5742",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM4734",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM5533",
+      "issue_state_code": "HARD"
+    },
+    {
+      "terminal_id": "ATM7514",
+      "issue_state_code": "HARD"
+    }
+  ]
+}

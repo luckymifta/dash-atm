@@ -1,0 +1,160 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM2923",
+      "terminal_name": "Wincor ProCash Baucau 1",
+      "external_id": "TL323",
+      "bank": "BNCTL",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.013756958178368,
+        "longitude": 127.06087054554024
+      },
+      "location_str": "Baucau MAIN ROAD, 73",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T10:52:56.729914+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN31620",
+      "business_id": "BIZ790",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T09:43:56.729000+09:00",
+          "creation_date_timestamp": "2025-05-29 09:43:56.729000+09:00",
+          "external_fault_id": "ERR_4863",
+          "agent_error_description": "Receipt printer out of paper",
+          "raw_fault_data": {
+            "creationDate": 1748479436729,
+            "externalFaultId": "ERR_4863",
+            "agentErrorDescription": "Receipt printer out of paper"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T09:27:56.729000+09:00",
+          "creation_date_timestamp": "2025-05-29 09:27:56.729000+09:00",
+          "external_fault_id": "ERR_4995",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748478476729,
+            "externalFaultId": "ERR_4995",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T09:56:56.729000+09:00",
+          "creation_date_timestamp": "2025-05-29 09:56:56.729000+09:00",
+          "external_fault_id": "ERR_1552",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748480216729,
+            "externalFaultId": "ERR_1552",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        }
+      ],
+      "fault_count": 3
+    },
+    {
+      "terminal_id": "ATM9131",
+      "terminal_name": "Wincor ProCash Liqui\u00e7\u00e1 2",
+      "external_id": "TL723",
+      "bank": "BNU",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.858363912869047,
+        "longitude": 126.32161376577906
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 8",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T17:52:56.729914+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN67098",
+      "business_id": "BIZ111",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6030",
+      "terminal_name": "Nautilus Hyosun Bobonaro 3",
+      "external_id": "TL495",
+      "bank": "BRI",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -9.02180412646981,
+        "longitude": 127.12416849179502
+      },
+      "location_str": "Bobonaro MAIN ROAD, 37",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T17:52:56.729914+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN48289",
+      "business_id": "BIZ754",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6734",
+      "terminal_name": "Wincor ProCash Lautem 4",
+      "external_id": "TL225",
+      "bank": "BNU",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -9.142122162159552,
+        "longitude": 125.46149328635384
+      },
+      "location_str": "Lautem MAIN ROAD, 87",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T14:52:56.729914+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN59590",
+      "business_id": "BIZ646",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM5775",
+      "terminal_name": "Wincor ProCash Dili 5",
+      "external_id": "TL902",
+      "bank": "BNU",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.705786985235468,
+        "longitude": 125.00452950773797
+      },
+      "location_str": "Dili MAIN ROAD, 64",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T01:52:56.729914+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN36040",
+      "business_id": "BIZ363",
+      "fault_list": [],
+      "fault_count": 0
+    }
+  ],
+  "timestamp": "2025-05-29T13:52:56.734114+09:00",
+  "count": 5
+}

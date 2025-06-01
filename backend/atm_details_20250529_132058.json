@@ -1,0 +1,24 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "147",
+      "terminal_name": null,
+      "external_id": "45214",
+      "bank": "BRI",
+      "region": "TL-DL",
+      "city": "DOM ALEIXO",
+      "location": {},
+      "location_str": "CENTRO SUPERMERCADO PANTAI KELAPA",
+      "status": "WARNING",
+      "status_code": "WARNING",
+      "last_updated": null,
+      "issue_type": null,
+      "issue_state": "WARNING",
+      "contact_name": null,
+      "serial_number": "YB76202185",
+      "business_id": "00614"
+    }
+  ],
+  "timestamp": "2025-05-29T13:20:58.511263+09:00",
+  "count": 1
+}

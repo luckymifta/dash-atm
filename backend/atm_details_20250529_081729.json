@@ -1,0 +1,226 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM8452",
+      "terminal_name": "Wincor ProCash Bobonaro 1",
+      "external_id": "TL993",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.58496520824604,
+        "longitude": 125.58836026006664
+      },
+      "location_str": "Bobonaro MAIN ROAD, 100",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T13:17:29.478893+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN60304",
+      "business_id": "BIZ579"
+    },
+    {
+      "terminal_id": "ATM9872",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 2",
+      "external_id": "TL769",
+      "bank": "BRI",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -9.291105526807405,
+        "longitude": 125.11897245255747
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 4",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T22:17:29.478893+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN56839",
+      "business_id": "BIZ568"
+    },
+    {
+      "terminal_id": "ATM4513",
+      "terminal_name": "Wincor ProCash Baucau 3",
+      "external_id": "TL169",
+      "bank": "BNCTL",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -8.792003910033408,
+        "longitude": 126.09607347747493
+      },
+      "location_str": "Baucau MAIN ROAD, 24",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T12:17:29.478893+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN25323",
+      "business_id": "BIZ849"
+    },
+    {
+      "terminal_id": "ATM6290",
+      "terminal_name": "NCR SelfServ Dili 4",
+      "external_id": "TL419",
+      "bank": "BNCTL",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.840189230078368,
+        "longitude": 124.54807098190652
+      },
+      "location_str": "Dili MAIN ROAD, 74",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T19:17:29.478893+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN77810",
+      "business_id": "BIZ649"
+    },
+    {
+      "terminal_id": "ATM4183",
+      "terminal_name": "Wincor ProCash Baucau 5",
+      "external_id": "TL556",
+      "bank": "Mandiri",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.270523441400522,
+        "longitude": 124.25709536224237
+      },
+      "location_str": "Baucau MAIN ROAD, 59",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T12:17:29.478893+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN78675",
+      "business_id": "BIZ733"
+    },
+    {
+      "terminal_id": "ATM5562",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 1",
+      "external_id": "TL141",
+      "bank": "Mandiri",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.45842142629709,
+        "longitude": 124.18260996316633
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 80",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T21:17:29.478893+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN89508",
+      "business_id": "BIZ227"
+    },
+    {
+      "terminal_id": "ATM6636",
+      "terminal_name": "NCR SelfServ Baucau 2",
+      "external_id": "TL248",
+      "bank": "Mandiri",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -8.61789544738263,
+        "longitude": 125.05956108864288
+      },
+      "location_str": "Baucau MAIN ROAD, 13",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T14:17:29.478893+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN26771",
+      "business_id": "BIZ997"
+    },
+    {
+      "terminal_id": "ATM6023",
+      "terminal_name": "Wincor ProCash Lautem 3",
+      "external_id": "TL706",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -9.081523421275968,
+        "longitude": 125.84343012364135
+      },
+      "location_str": "Lautem MAIN ROAD, 26",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T18:17:29.478893+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN30835",
+      "business_id": "BIZ858"
+    },
+    {
+      "terminal_id": "ATM1314",
+      "terminal_name": "NCR SelfServ Bobonaro 4",
+      "external_id": "TL624",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.297211408410808,
+        "longitude": 124.52158181683588
+      },
+      "location_str": "Bobonaro MAIN ROAD, 63",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T04:17:29.478893+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN77583",
+      "business_id": "BIZ892"
+    },
+    {
+      "terminal_id": "ATM5589",
+      "terminal_name": "Diebold 4900 Dili 5",
+      "external_id": "TL465",
+      "bank": "BNCTL",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.130073866544405,
+        "longitude": 124.80895479253854
+      },
+      "location_str": "Dili MAIN ROAD, 56",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T18:17:29.478893+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN57677",
+      "business_id": "BIZ614"
+    }
+  ],
+  "timestamp": "2025-05-29T08:17:29.482046+09:00",
+  "count": 10
+}

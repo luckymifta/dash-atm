@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "export_timestamp": "2025-05-29T13:20:58.510252+09:00",
+    "data_source": "ATM Management System (172.31.1.46)",
+    "export_type": "comprehensive_response",
+    "data_retrieval_timestamp": "2025-05-29T13:20:58.423076+09:00",
+    "total_atms_retrieved": 1,
+    "status_types_processed": [
+      "WARNING"
+    ],
+    "requested_statuses": [
+      "WARNING"
+    ]
+  },
+  "summary": {
+    "status_counts": {
+      "WARNING": 1
+    },
+    "total_atms": 1,
+    "processing_notes": [
+      "Status WARNING: 1 terminals retrieved successfully",
+      "Total processing completed: 1 terminals across 1 status types"
+    ]
+  },
+  "atm_data_by_status": {
+    "WARNING": [
+      {
+        "terminalId": "147",
+        "networkId": "P24",
+        "externalId": "45214",
+        "brand": "Nautilus Hyosun",
+        "model": "Monimax 5600",
+        "supplier": "BRI",
+        "businessId": "00614",
+        "technicalCode": "00600614",
+        "location": "CENTRO SUPERMERCADO PANTAI KELAPA",
+        "geoLocation": "TL-DL",
+        "terminalType": "ATM",
+        "osVersion": "00130035",
+        "xfsVersion": null,
+        "servicePeriod": null,
+        "maintenancePeriod": null,
+        "agentInfo": "00010000",
+        "sw": null,
+        "freeDiskSpace": "00448096",
+        "cpu": "x86 Family 6 Model 58 Stepping 9",
+        "issueStateName": "WARNING",
+        "creationDate": 1703316507300,
+        "statusDate": 1703316507300,
+        "bank": "BRI",
+        "serviceDays": null,
+        "maintenanceDays": null,
+        "terminalGroupList": null,
+        "faultList": null,
+        "slaList": null,
+        "isConnectedWithCentralApp": null,
+        "photogramFileDate": null,
+        "dirFileDate": null,
+        "photogramUserRequest": null,
+        "dirUserRequest": null,
+        "issueStateCode": "WARNING",
+        "terminalStatus": "MANAGED",
+        "cityName": "DOM ALEIXO",
+        "fullyRegistered": true,
+        "maintenanceStateCode": "UNEXISTENT",
+        "physicalNetworkType": null,
+        "servicePoint": null,
+        "inkSystemState": null,
+        "inkSystemBrandModel": null,
+        "serialNumber": "YB76202185",
+        "locationType": "Supermarket",
+        "hasAdvertising": false,
+        "componentsList": null,
+        "terminalCashInfo": null,
+        "fetched_status": "WARNING",
+        "api_status_used": "WARNING",
+        "processing_order": 1
+      }
+    ]
+  },
+  "response_metadata": {
+    "source": "172.31.1.46",
+    "api_endpoint": "https://172.31.1.46/sigit/terminal/searchTerminalDashBoard?number_of_occurrences=30&terminal_type=ATM",
+    "authentication_user": "Lucky.Saputra",
+    "processing_notes": [
+      "Status WARNING: 1 terminals retrieved successfully",
+      "Total processing completed: 1 terminals across 1 status types"
+    ]
+  }
+}

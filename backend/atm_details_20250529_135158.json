@@ -1,0 +1,126 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM5401",
+      "terminal_name": "Nautilus Hyosun Lautem 1",
+      "external_id": "TL480",
+      "bank": "BNU",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.836929280815397,
+        "longitude": 124.64138996284687
+      },
+      "location_str": "Lautem MAIN ROAD, 75",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T16:51:58.688175+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN48875",
+      "business_id": "BIZ920",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9582",
+      "terminal_name": "Diebold 4900 Lautem 2",
+      "external_id": "TL622",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.148625351563448,
+        "longitude": 126.68054871990381
+      },
+      "location_str": "Lautem MAIN ROAD, 36",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T03:51:58.688175+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN76421",
+      "business_id": "BIZ120",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM4466",
+      "terminal_name": "Diebold 4900 Baucau 3",
+      "external_id": "TL540",
+      "bank": "BNCTL",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -8.719968466431999,
+        "longitude": 124.5606096370719
+      },
+      "location_str": "Baucau MAIN ROAD, 27",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T19:51:58.688175+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN66839",
+      "business_id": "BIZ971",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM8046",
+      "terminal_name": "NCR SelfServ Dili 4",
+      "external_id": "TL796",
+      "bank": "BRI",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -9.311602253023747,
+        "longitude": 125.08609702888913
+      },
+      "location_str": "Dili MAIN ROAD, 97",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T21:51:58.688175+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN63920",
+      "business_id": "BIZ771",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM8537",
+      "terminal_name": "Diebold 4900 Covalima 5",
+      "external_id": "TL473",
+      "bank": "BRI",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -8.987067437898666,
+        "longitude": 126.70759735490431
+      },
+      "location_str": "Covalima MAIN ROAD, 88",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T23:51:58.688175+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN49263",
+      "business_id": "BIZ542",
+      "fault_list": [],
+      "fault_count": 0
+    }
+  ],
+  "timestamp": "2025-05-29T13:51:58.691894+09:00",
+  "count": 5
+}

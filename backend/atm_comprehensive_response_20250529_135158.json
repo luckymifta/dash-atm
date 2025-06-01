@@ -1,0 +1,156 @@
+{
+  "metadata": {
+    "export_timestamp": "2025-05-29T13:51:58.690773+09:00",
+    "data_source": "ATM Management System (172.31.1.46)",
+    "export_type": "comprehensive_response",
+    "data_retrieval_timestamp": "2025-05-29T13:51:58.688835+09:00",
+    "total_atms_retrieved": 5,
+    "status_types_processed": [
+      "AVAILABLE"
+    ],
+    "requested_statuses": [
+      "AVAILABLE"
+    ]
+  },
+  "summary": {
+    "status_counts": {
+      "AVAILABLE": 5
+    },
+    "total_atms": 5,
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  },
+  "atm_data_by_status": {
+    "AVAILABLE": [
+      {
+        "terminalId": "ATM5401",
+        "externalId": "TL480",
+        "terminalCode": "TL480",
+        "terminalName": "Nautilus Hyosun Lautem 1",
+        "bank": "BNU",
+        "cityName": "Lautem",
+        "city": "Lautem",
+        "geoLocation": "Lautem",
+        "location": "Lautem MAIN ROAD, 75",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T07:51:58.688175Z",
+        "geolocation": {
+          "latitude": "-8.836929280815397",
+          "longitude": "124.64138996284687"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN48875",
+        "businessId": "BIZ920",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM9582",
+        "externalId": "TL622",
+        "terminalCode": "TL622",
+        "terminalName": "Diebold 4900 Lautem 2",
+        "bank": "BNCTL",
+        "cityName": "Lautem",
+        "city": "Lautem",
+        "geoLocation": "Lautem",
+        "location": "Lautem MAIN ROAD, 36",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T18:51:58.688175Z",
+        "geolocation": {
+          "latitude": "-8.148625351563448",
+          "longitude": "126.68054871990381"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN76421",
+        "businessId": "BIZ120",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM4466",
+        "externalId": "TL540",
+        "terminalCode": "TL540",
+        "terminalName": "Diebold 4900 Baucau 3",
+        "bank": "BNCTL",
+        "cityName": "Baucau",
+        "city": "Baucau",
+        "geoLocation": "Baucau",
+        "location": "Baucau MAIN ROAD, 27",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T10:51:58.688175Z",
+        "geolocation": {
+          "latitude": "-8.719968466431999",
+          "longitude": "124.5606096370719"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN66839",
+        "businessId": "BIZ971",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM8046",
+        "externalId": "TL796",
+        "terminalCode": "TL796",
+        "terminalName": "NCR SelfServ Dili 4",
+        "bank": "BRI",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 97",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T12:51:58.688175Z",
+        "geolocation": {
+          "latitude": "-9.311602253023747",
+          "longitude": "125.08609702888913"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN63920",
+        "businessId": "BIZ771",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM8537",
+        "externalId": "TL473",
+        "terminalCode": "TL473",
+        "terminalName": "Diebold 4900 Covalima 5",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 88",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T14:51:58.688175Z",
+        "geolocation": {
+          "latitude": "-8.987067437898666",
+          "longitude": "126.70759735490431"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN49263",
+        "businessId": "BIZ542",
+        "faultList": []
+      }
+    ]
+  },
+  "response_metadata": {
+    "source": "DEMO_MODE",
+    "api_endpoint": "SIMULATED",
+    "authentication_user": "DEMO_USER",
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  }
+}

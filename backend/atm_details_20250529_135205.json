@@ -1,0 +1,825 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM9066",
+      "terminal_name": "Diebold 4900 Lautem 1",
+      "external_id": "TL514",
+      "bank": "Mandiri",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.439958618475664,
+        "longitude": 126.24443993328356
+      },
+      "location_str": "Lautem MAIN ROAD, 16",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T12:52:05.746525+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN42332",
+      "business_id": "BIZ278",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9010",
+      "terminal_name": "NCR SelfServ Lautem 2",
+      "external_id": "TL369",
+      "bank": "Mandiri",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -9.124646964985326,
+        "longitude": 124.07569116389509
+      },
+      "location_str": "Lautem MAIN ROAD, 55",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T07:52:05.746525+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN64860",
+      "business_id": "BIZ963",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM7725",
+      "terminal_name": "Diebold 4900 Covalima 3",
+      "external_id": "TL187",
+      "bank": "BRI",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -8.782899662009171,
+        "longitude": 125.03773662626597
+      },
+      "location_str": "Covalima MAIN ROAD, 12",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T07:52:05.746525+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN34852",
+      "business_id": "BIZ330",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM1000",
+      "terminal_name": "Wincor ProCash Covalima 4",
+      "external_id": "TL830",
+      "bank": "BNCTL",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -9.1047802822284,
+        "longitude": 126.51282265752675
+      },
+      "location_str": "Covalima MAIN ROAD, 83",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T18:52:05.746525+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN65298",
+      "business_id": "BIZ256",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9379",
+      "terminal_name": "NCR SelfServ Bobonaro 5",
+      "external_id": "TL331",
+      "bank": "BRI",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.152394210730952,
+        "longitude": 124.61622514123297
+      },
+      "location_str": "Bobonaro MAIN ROAD, 66",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T11:52:05.746525+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN11262",
+      "business_id": "BIZ845",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM5792",
+      "terminal_name": "NCR SelfServ Lautem 1",
+      "external_id": "TL833",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -9.320476677850028,
+        "longitude": 127.24171179857832
+      },
+      "location_str": "Lautem MAIN ROAD, 15",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T14:52:05.746525+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN67162",
+      "business_id": "BIZ485",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T13:53:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 13:53:05.746000+09:00",
+          "external_fault_id": "ERR_3125",
+          "agent_error_description": "Card reader malfunction",
+          "raw_fault_data": {
+            "creationDate": 1748407985746,
+            "externalFaultId": "ERR_3125",
+            "agentErrorDescription": "Card reader malfunction"
+          }
+        },
+        {
+          "creation_date": "2025-05-28T13:31:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 13:31:05.746000+09:00",
+          "external_fault_id": "ERR_9304",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748406665746,
+            "externalFaultId": "ERR_9304",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        }
+      ],
+      "fault_count": 2
+    },
+    {
+      "terminal_id": "ATM5108",
+      "terminal_name": "Wincor ProCash Baucau 2",
+      "external_id": "TL345",
+      "bank": "BNU",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -8.212005078572862,
+        "longitude": 124.88922691407713
+      },
+      "location_str": "Baucau MAIN ROAD, 96",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T08:52:05.746525+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN16113",
+      "business_id": "BIZ402",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T07:18:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 07:18:05.746000+09:00",
+          "external_fault_id": "ERR_1818",
+          "agent_error_description": "Deposit module not responding",
+          "raw_fault_data": {
+            "creationDate": 1748470685746,
+            "externalFaultId": "ERR_1818",
+            "agentErrorDescription": "Deposit module not responding"
+          }
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "ATM6397",
+      "terminal_name": "Nautilus Hyosun Dili 3",
+      "external_id": "TL668",
+      "bank": "Mandiri",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.264590339538547,
+        "longitude": 126.155562554025
+      },
+      "location_str": "Dili MAIN ROAD, 81",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T11:52:05.746525+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN80159",
+      "business_id": "BIZ550",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T10:34:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 10:34:05.746000+09:00",
+          "external_fault_id": "ERR_5873",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748482445746,
+            "externalFaultId": "ERR_5873",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T11:08:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 11:08:05.746000+09:00",
+          "external_fault_id": "ERR_3413",
+          "agent_error_description": "Card reader malfunction",
+          "raw_fault_data": {
+            "creationDate": 1748484485746,
+            "externalFaultId": "ERR_3413",
+            "agentErrorDescription": "Card reader malfunction"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T10:42:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 10:42:05.746000+09:00",
+          "external_fault_id": "ERR_7260",
+          "agent_error_description": "Power supply voltage fluctuation",
+          "raw_fault_data": {
+            "creationDate": 1748482925746,
+            "externalFaultId": "ERR_7260",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          }
+        }
+      ],
+      "fault_count": 3
+    },
+    {
+      "terminal_id": "ATM6519",
+      "terminal_name": "NCR SelfServ Liqui\u00e7\u00e1 4",
+      "external_id": "TL129",
+      "bank": "BNCTL",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.177627946780968,
+        "longitude": 125.15448348579116
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 25",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T13:52:05.746525+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN75493",
+      "business_id": "BIZ901",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM2714",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 5",
+      "external_id": "TL414",
+      "bank": "BNU",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.809059119982406,
+        "longitude": 124.51120256347934
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 83",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T10:52:05.746525+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN94543",
+      "business_id": "BIZ720",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM8436",
+      "terminal_name": "Wincor ProCash Bobonaro 1",
+      "external_id": "TL871",
+      "bank": "BNCTL",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -9.30040649586823,
+        "longitude": 125.77623447085975
+      },
+      "location_str": "Bobonaro MAIN ROAD, 67",
+      "status": "WOUNDED",
+      "status_code": "HARD",
+      "last_updated": "2025-05-29T03:52:05.746525+09:00",
+      "issue_type": "HARDWARE_ISSUE",
+      "issue_state": "WOUNDED",
+      "contact_name": "ATM Service",
+      "serial_number": "SN66113",
+      "business_id": "BIZ350",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM2799",
+      "terminal_name": "Wincor ProCash Lautem 2",
+      "external_id": "TL623",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.102881638722781,
+        "longitude": 124.20472250966547
+      },
+      "location_str": "Lautem MAIN ROAD, 44",
+      "status": "WOUNDED",
+      "status_code": "HARD",
+      "last_updated": "2025-05-29T12:52:05.746525+09:00",
+      "issue_type": "HARDWARE_ISSUE",
+      "issue_state": "WOUNDED",
+      "contact_name": "ATM Service",
+      "serial_number": "SN91365",
+      "business_id": "BIZ663",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T12:20:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 12:20:05.746000+09:00",
+          "external_fault_id": "ERR_3251",
+          "agent_error_description": "Receipt printer out of paper",
+          "raw_fault_data": {
+            "creationDate": 1748488805746,
+            "externalFaultId": "ERR_3251",
+            "agentErrorDescription": "Receipt printer out of paper"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T10:54:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 10:54:05.746000+09:00",
+          "external_fault_id": "ERR_3075",
+          "agent_error_description": "Receipt printer out of paper",
+          "raw_fault_data": {
+            "creationDate": 1748483645746,
+            "externalFaultId": "ERR_3075",
+            "agentErrorDescription": "Receipt printer out of paper"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T11:21:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 11:21:05.746000+09:00",
+          "external_fault_id": "ERR_2686",
+          "agent_error_description": "Power supply voltage fluctuation",
+          "raw_fault_data": {
+            "creationDate": 1748485265746,
+            "externalFaultId": "ERR_2686",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          }
+        }
+      ],
+      "fault_count": 3
+    },
+    {
+      "terminal_id": "ATM7897",
+      "terminal_name": "Nautilus Hyosun Baucau 3",
+      "external_id": "TL603",
+      "bank": "BNCTL",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -8.78468039382323,
+        "longitude": 126.39533524428339
+      },
+      "location_str": "Baucau MAIN ROAD, 91",
+      "status": "WOUNDED",
+      "status_code": "HARD",
+      "last_updated": "2025-05-28T18:52:05.746525+09:00",
+      "issue_type": "HARDWARE_ISSUE",
+      "issue_state": "WOUNDED",
+      "contact_name": "ATM Service",
+      "serial_number": "SN11044",
+      "business_id": "BIZ453",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T18:28:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 18:28:05.746000+09:00",
+          "external_fault_id": "ERR_8246",
+          "agent_error_description": "Network connectivity issue",
+          "raw_fault_data": {
+            "creationDate": 1748424485746,
+            "externalFaultId": "ERR_8246",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        },
+        {
+          "creation_date": "2025-05-28T18:21:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 18:21:05.746000+09:00",
+          "external_fault_id": "ERR_7992",
+          "agent_error_description": "Power supply voltage fluctuation",
+          "raw_fault_data": {
+            "creationDate": 1748424065746,
+            "externalFaultId": "ERR_7992",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          }
+        }
+      ],
+      "fault_count": 2
+    },
+    {
+      "terminal_id": "ATM2037",
+      "terminal_name": "NCR SelfServ Lautem 4",
+      "external_id": "TL713",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -9.03432939144972,
+        "longitude": 125.78382952971646
+      },
+      "location_str": "Lautem MAIN ROAD, 80",
+      "status": "WOUNDED",
+      "status_code": "HARD",
+      "last_updated": "2025-05-29T06:52:05.746525+09:00",
+      "issue_type": "HARDWARE_ISSUE",
+      "issue_state": "WOUNDED",
+      "contact_name": "ATM Service",
+      "serial_number": "SN94077",
+      "business_id": "BIZ817",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM7690",
+      "terminal_name": "NCR SelfServ Bobonaro 5",
+      "external_id": "TL362",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -9.252358265845821,
+        "longitude": 125.09719892145704
+      },
+      "location_str": "Bobonaro MAIN ROAD, 94",
+      "status": "WOUNDED",
+      "status_code": "HARD",
+      "last_updated": "2025-05-28T18:52:05.746525+09:00",
+      "issue_type": "HARDWARE_ISSUE",
+      "issue_state": "WOUNDED",
+      "contact_name": "ATM Service",
+      "serial_number": "SN78791",
+      "business_id": "BIZ273",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM3564",
+      "terminal_name": "NCR SelfServ Liqui\u00e7\u00e1 1",
+      "external_id": "TL396",
+      "bank": "BNU",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -9.336367834043305,
+        "longitude": 124.26959016229725
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 24",
+      "status": "OFFLINE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-28T13:52:05.746525+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "OFFLINE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN55047",
+      "business_id": "BIZ273",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T12:50:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 12:50:05.746000+09:00",
+          "external_fault_id": "ERR_9187",
+          "agent_error_description": "Deposit module not responding",
+          "raw_fault_data": {
+            "creationDate": 1748404205746,
+            "externalFaultId": "ERR_9187",
+            "agentErrorDescription": "Deposit module not responding"
+          }
+        },
+        {
+          "creation_date": "2025-05-28T13:43:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 13:43:05.746000+09:00",
+          "external_fault_id": "ERR_2050",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748407385746,
+            "externalFaultId": "ERR_2050",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        }
+      ],
+      "fault_count": 2
+    },
+    {
+      "terminal_id": "ATM3749",
+      "terminal_name": "NCR SelfServ Dili 2",
+      "external_id": "TL601",
+      "bank": "Mandiri",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.39849365548963,
+        "longitude": 126.25789721033814
+      },
+      "location_str": "Dili MAIN ROAD, 53",
+      "status": "OFFLINE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-29T08:52:05.746525+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "OFFLINE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN16908",
+      "business_id": "BIZ926",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9658",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 3",
+      "external_id": "TL402",
+      "bank": "BRI",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.333844470510902,
+        "longitude": 126.73879647342906
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 82",
+      "status": "OFFLINE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-28T13:52:05.746525+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "OFFLINE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN49035",
+      "business_id": "BIZ165",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6788",
+      "terminal_name": "NCR SelfServ Lautem 4",
+      "external_id": "TL816",
+      "bank": "BNU",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.66399415637657,
+        "longitude": 126.84491769232771
+      },
+      "location_str": "Lautem MAIN ROAD, 13",
+      "status": "OFFLINE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-28T19:52:05.746525+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "OFFLINE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN73356",
+      "business_id": "BIZ757",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T18:12:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 18:12:05.746000+09:00",
+          "external_fault_id": "ERR_6262",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748423525746,
+            "externalFaultId": "ERR_6262",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "ATM2426",
+      "terminal_name": "NCR SelfServ Dili 5",
+      "external_id": "TL630",
+      "bank": "BNCTL",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.223142006050699,
+        "longitude": 125.26322911942245
+      },
+      "location_str": "Dili MAIN ROAD, 97",
+      "status": "OFFLINE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-29T06:52:05.746525+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "OFFLINE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN29206",
+      "business_id": "BIZ667",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM5533",
+      "terminal_name": "Wincor ProCash Lautem 1",
+      "external_id": "TL462",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.126110655029555,
+        "longitude": 124.82908118492858
+      },
+      "location_str": "Lautem MAIN ROAD, 95",
+      "status": "OUT_OF_SERVICE",
+      "status_code": "CASH",
+      "last_updated": "2025-05-29T06:52:05.746525+09:00",
+      "issue_type": "POWER_ISSUE",
+      "issue_state": "OUT_OF_SERVICE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN53018",
+      "business_id": "BIZ514",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM7455",
+      "terminal_name": "Diebold 4900 Baucau 2",
+      "external_id": "TL883",
+      "bank": "BNCTL",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.124182694619558,
+        "longitude": 126.3687531997123
+      },
+      "location_str": "Baucau MAIN ROAD, 6",
+      "status": "OUT_OF_SERVICE",
+      "status_code": "CASH",
+      "last_updated": "2025-05-28T20:52:05.746525+09:00",
+      "issue_type": "POWER_ISSUE",
+      "issue_state": "OUT_OF_SERVICE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN41046",
+      "business_id": "BIZ608",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T20:27:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 20:27:05.746000+09:00",
+          "external_fault_id": "ERR_4772",
+          "agent_error_description": "Temperature sensor alarm",
+          "raw_fault_data": {
+            "creationDate": 1748431625746,
+            "externalFaultId": "ERR_4772",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        },
+        {
+          "creation_date": "2025-05-28T19:53:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-28 19:53:05.746000+09:00",
+          "external_fault_id": "ERR_8035",
+          "agent_error_description": "Receipt printer out of paper",
+          "raw_fault_data": {
+            "creationDate": 1748429585746,
+            "externalFaultId": "ERR_8035",
+            "agentErrorDescription": "Receipt printer out of paper"
+          }
+        }
+      ],
+      "fault_count": 2
+    },
+    {
+      "terminal_id": "ATM3909",
+      "terminal_name": "Wincor ProCash Bobonaro 3",
+      "external_id": "TL327",
+      "bank": "BNCTL",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.890192874366976,
+        "longitude": 124.03994892874137
+      },
+      "location_str": "Bobonaro MAIN ROAD, 79",
+      "status": "OUT_OF_SERVICE",
+      "status_code": "CASH",
+      "last_updated": "2025-05-29T01:52:05.746525+09:00",
+      "issue_type": "POWER_ISSUE",
+      "issue_state": "OUT_OF_SERVICE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN15693",
+      "business_id": "BIZ118",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T00:23:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 00:23:05.746000+09:00",
+          "external_fault_id": "ERR_8063",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748445785746,
+            "externalFaultId": "ERR_8063",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "ATM8158",
+      "terminal_name": "Nautilus Hyosun Lautem 4",
+      "external_id": "TL131",
+      "bank": "BNCTL",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -8.492768398429856,
+        "longitude": 124.60142534079701
+      },
+      "location_str": "Lautem MAIN ROAD, 42",
+      "status": "OUT_OF_SERVICE",
+      "status_code": "CASH",
+      "last_updated": "2025-05-28T13:52:05.746525+09:00",
+      "issue_type": "POWER_ISSUE",
+      "issue_state": "OUT_OF_SERVICE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN96273",
+      "business_id": "BIZ181",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM3383",
+      "terminal_name": "Nautilus Hyosun Dili 5",
+      "external_id": "TL384",
+      "bank": "Mandiri",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.857812453759799,
+        "longitude": 124.59998593641532
+      },
+      "location_str": "Dili MAIN ROAD, 5",
+      "status": "OUT_OF_SERVICE",
+      "status_code": "CASH",
+      "last_updated": "2025-05-29T08:52:05.746525+09:00",
+      "issue_type": "POWER_ISSUE",
+      "issue_state": "OUT_OF_SERVICE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN37846",
+      "business_id": "BIZ604",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T07:39:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 07:39:05.746000+09:00",
+          "external_fault_id": "ERR_9803",
+          "agent_error_description": "Network connectivity issue",
+          "raw_fault_data": {
+            "creationDate": 1748471945746,
+            "externalFaultId": "ERR_9803",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        },
+        {
+          "creation_date": "2025-05-29T08:11:05.746000+09:00",
+          "creation_date_timestamp": "2025-05-29 08:11:05.746000+09:00",
+          "external_fault_id": "ERR_2333",
+          "agent_error_description": "Cash dispenser jam detected",
+          "raw_fault_data": {
+            "creationDate": 1748473865746,
+            "externalFaultId": "ERR_2333",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        }
+      ],
+      "fault_count": 2
+    }
+  ],
+  "timestamp": "2025-05-29T13:52:05.751158+09:00",
+  "count": 25
+}

@@ -1,0 +1,191 @@
+{
+  "metadata": {
+    "export_timestamp": "2025-05-29T18:01:42.169374+09:00",
+    "data_source": "ATM Management System (172.31.1.46)",
+    "export_type": "comprehensive_response",
+    "data_retrieval_timestamp": "2025-05-29T18:01:42.167572+09:00",
+    "total_atms_retrieved": 5,
+    "status_types_processed": [
+      "WARNING"
+    ],
+    "requested_statuses": [
+      "WARNING"
+    ]
+  },
+  "summary": {
+    "status_counts": {
+      "WARNING": 5
+    },
+    "total_atms": 5,
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  },
+  "atm_data_by_status": {
+    "WARNING": [
+      {
+        "terminalId": "ATM7660",
+        "externalId": "TL284",
+        "terminalCode": "TL284",
+        "terminalName": "Wincor ProCash Covalima 1",
+        "bank": "Mandiri",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 34",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-29T02:01:42.167057Z",
+        "geolocation": {
+          "latitude": "-8.59297715535763",
+          "longitude": "125.70683741024845"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN63873",
+        "businessId": "BIZ353",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM6284",
+        "externalId": "TL812",
+        "terminalCode": "TL812",
+        "terminalName": "Nautilus Hyosun Dili 2",
+        "bank": "BNU",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 69",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T15:01:42.167057Z",
+        "geolocation": {
+          "latitude": "-8.930999204655047",
+          "longitude": "125.55632840128362"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN50178",
+        "businessId": "BIZ701",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM3641",
+        "externalId": "TL211",
+        "terminalCode": "TL211",
+        "terminalName": "Nautilus Hyosun Bobonaro 3",
+        "bank": "Mandiri",
+        "cityName": "Bobonaro",
+        "city": "Bobonaro",
+        "geoLocation": "Bobonaro",
+        "location": "Bobonaro MAIN ROAD, 18",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T21:01:42.167057Z",
+        "geolocation": {
+          "latitude": "-8.779161666089685",
+          "longitude": "124.00664932957098"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN58343",
+        "businessId": "BIZ836",
+        "faultList": [
+          {
+            "creationDate": 1748464122167,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_9806",
+            "agentErrorDescription": "Card reader malfunction"
+          },
+          {
+            "creationDate": 1748460042167,
+            "faultTypeCode": "CARD_READER",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_4397",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM5736",
+        "externalId": "TL315",
+        "terminalCode": "TL315",
+        "terminalName": "NCR SelfServ Dili 4",
+        "bank": "BNCTL",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 93",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T21:01:42.167057Z",
+        "geolocation": {
+          "latitude": "-9.129596938145172",
+          "longitude": "124.56333002669096"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN94271",
+        "businessId": "BIZ150",
+        "faultList": [
+          {
+            "creationDate": 1748459502167,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_8181",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM4191",
+        "externalId": "TL112",
+        "terminalCode": "TL112",
+        "terminalName": "NCR SelfServ Dili 5",
+        "bank": "BNU",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 82",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T15:01:42.167057Z",
+        "geolocation": {
+          "latitude": "-8.841761051768454",
+          "longitude": "124.1729993311316"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN21659",
+        "businessId": "BIZ428",
+        "faultList": []
+      }
+    ]
+  },
+  "response_metadata": {
+    "source": "DEMO_MODE",
+    "api_endpoint": "SIMULATED",
+    "authentication_user": "DEMO_USER",
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  }
+}

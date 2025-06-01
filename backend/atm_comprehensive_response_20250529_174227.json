@@ -1,0 +1,202 @@
+{
+  "metadata": {
+    "export_timestamp": "2025-05-29T17:42:27.956612+09:00",
+    "data_source": "ATM Management System (172.31.1.46)",
+    "export_type": "comprehensive_response",
+    "data_retrieval_timestamp": "2025-05-29T17:42:27.955017+09:00",
+    "total_atms_retrieved": 5,
+    "status_types_processed": [
+      "WARNING"
+    ],
+    "requested_statuses": [
+      "WARNING"
+    ]
+  },
+  "summary": {
+    "status_counts": {
+      "WARNING": 5
+    },
+    "total_atms": 5,
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  },
+  "atm_data_by_status": {
+    "WARNING": [
+      {
+        "terminalId": "ATM7363",
+        "externalId": "TL722",
+        "terminalCode": "TL722",
+        "terminalName": "Diebold 4900 Bobonaro 1",
+        "bank": "Mandiri",
+        "cityName": "Bobonaro",
+        "city": "Bobonaro",
+        "geoLocation": "Bobonaro",
+        "location": "Bobonaro MAIN ROAD, 61",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T12:42:27.954404Z",
+        "geolocation": {
+          "latitude": "-8.484191793858901",
+          "longitude": "125.62986105067198"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN78789",
+        "businessId": "BIZ500",
+        "faultList": [
+          {
+            "creationDate": 1748433087954,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_4407",
+            "agentErrorDescription": "Network connectivity issue"
+          },
+          {
+            "creationDate": 1748432247954,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "PRINTER",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_9561",
+            "agentErrorDescription": "Card reader malfunction"
+          },
+          {
+            "creationDate": 1748433207954,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "READER",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_7954",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM3211",
+        "externalId": "TL996",
+        "terminalCode": "TL996",
+        "terminalName": "Diebold 4900 Liquiçá 2",
+        "bank": "BRI",
+        "cityName": "Liquiçá",
+        "city": "Liquiçá",
+        "geoLocation": "Liquiçá",
+        "location": "Liquiçá MAIN ROAD, 87",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T19:42:27.954404Z",
+        "geolocation": {
+          "latitude": "-8.627732572427247",
+          "longitude": "124.72143917208257"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN76754",
+        "businessId": "BIZ845",
+        "faultList": [
+          {
+            "creationDate": 1748455707954,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_3618",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM8783",
+        "externalId": "TL491",
+        "terminalCode": "TL491",
+        "terminalName": "Wincor ProCash Baucau 3",
+        "bank": "BRI",
+        "cityName": "Baucau",
+        "city": "Baucau",
+        "geoLocation": "Baucau",
+        "location": "Baucau MAIN ROAD, 54",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T11:42:27.954404Z",
+        "geolocation": {
+          "latitude": "-9.122586674138047",
+          "longitude": "126.037822664211"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN84664",
+        "businessId": "BIZ951",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM9028",
+        "externalId": "TL583",
+        "terminalCode": "TL583",
+        "terminalName": "Diebold 4900 Covalima 4",
+        "bank": "BNU",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 42",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-29T06:42:27.954404Z",
+        "geolocation": {
+          "latitude": "-9.298418885252309",
+          "longitude": "126.8111344987422"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN17760",
+        "businessId": "BIZ853",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM8157",
+        "externalId": "TL500",
+        "terminalCode": "TL500",
+        "terminalName": "NCR SelfServ Liquiçá 5",
+        "bank": "BRI",
+        "cityName": "Liquiçá",
+        "city": "Liquiçá",
+        "geoLocation": "Liquiçá",
+        "location": "Liquiçá MAIN ROAD, 55",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-29T03:42:27.954404Z",
+        "geolocation": {
+          "latitude": "-8.609747403594648",
+          "longitude": "126.66142799925674"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN88113",
+        "businessId": "BIZ178",
+        "faultList": []
+      }
+    ]
+  },
+  "response_metadata": {
+    "source": "DEMO_MODE",
+    "api_endpoint": "SIMULATED",
+    "authentication_user": "DEMO_USER",
+    "processing_notes": [
+      "Generated 5 demo ATM records"
+    ]
+  }
+}

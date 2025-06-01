@@ -1,0 +1,220 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM7363",
+      "terminal_name": "Diebold 4900 Bobonaro 1",
+      "external_id": "TL722",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.484191793858901,
+        "longitude": 125.62986105067198
+      },
+      "location_str": "Bobonaro MAIN ROAD, 61",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T21:42:27.954404+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN78789",
+      "business_id": "BIZ500",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T20:51:27.954000+09:00",
+          "creation_date_timestamp": "2025-05-28 20:51:27.954000+09:00",
+          "fault_type_code": "RECEIPT",
+          "component_type_code": "DEPOSIT_MODULE",
+          "issue_state_name": "WARNING",
+          "year": "2025",
+          "month": "05",
+          "date": "28",
+          "external_fault_id": "ERR_4407",
+          "agent_error_description": "Network connectivity issue",
+          "raw_fault_data": {
+            "creationDate": 1748433087954,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_4407",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        },
+        {
+          "creation_date": "2025-05-28T20:37:27.954000+09:00",
+          "creation_date_timestamp": "2025-05-28 20:37:27.954000+09:00",
+          "fault_type_code": "RECEIPT",
+          "component_type_code": "PRINTER",
+          "issue_state_name": "CRITICAL",
+          "year": "2025",
+          "month": "05",
+          "date": "28",
+          "external_fault_id": "ERR_9561",
+          "agent_error_description": "Card reader malfunction",
+          "raw_fault_data": {
+            "creationDate": 1748432247954,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "PRINTER",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_9561",
+            "agentErrorDescription": "Card reader malfunction"
+          }
+        },
+        {
+          "creation_date": "2025-05-28T20:53:27.954000+09:00",
+          "creation_date_timestamp": "2025-05-28 20:53:27.954000+09:00",
+          "fault_type_code": "NETWORK",
+          "component_type_code": "READER",
+          "issue_state_name": "ERROR",
+          "year": "2025",
+          "month": "05",
+          "date": "28",
+          "external_fault_id": "ERR_7954",
+          "agent_error_description": "Temperature sensor alarm",
+          "raw_fault_data": {
+            "creationDate": 1748433207954,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "READER",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_7954",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        }
+      ],
+      "fault_count": 3
+    },
+    {
+      "terminal_id": "ATM3211",
+      "terminal_name": "Diebold 4900 Liqui\u00e7\u00e1 2",
+      "external_id": "TL996",
+      "bank": "BRI",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.627732572427247,
+        "longitude": 124.72143917208257
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 87",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T04:42:27.954404+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN76754",
+      "business_id": "BIZ845",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T03:08:27.954000+09:00",
+          "creation_date_timestamp": "2025-05-29 03:08:27.954000+09:00",
+          "fault_type_code": "HARDWARE",
+          "component_type_code": "SENSOR",
+          "issue_state_name": "WARNING",
+          "year": "2025",
+          "month": "05",
+          "date": "29",
+          "external_fault_id": "ERR_3618",
+          "agent_error_description": "Network connectivity issue",
+          "raw_fault_data": {
+            "creationDate": 1748455707954,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_3618",
+            "agentErrorDescription": "Network connectivity issue"
+          }
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "ATM8783",
+      "terminal_name": "Wincor ProCash Baucau 3",
+      "external_id": "TL491",
+      "bank": "BRI",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.122586674138047,
+        "longitude": 126.037822664211
+      },
+      "location_str": "Baucau MAIN ROAD, 54",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-28T20:42:27.954404+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN84664",
+      "business_id": "BIZ951",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9028",
+      "terminal_name": "Diebold 4900 Covalima 4",
+      "external_id": "TL583",
+      "bank": "BNU",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -9.298418885252309,
+        "longitude": 126.8111344987422
+      },
+      "location_str": "Covalima MAIN ROAD, 42",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T15:42:27.954404+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN17760",
+      "business_id": "BIZ853",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM8157",
+      "terminal_name": "NCR SelfServ Liqui\u00e7\u00e1 5",
+      "external_id": "TL500",
+      "bank": "BRI",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.609747403594648,
+        "longitude": 126.66142799925674
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 55",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T12:42:27.954404+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN88113",
+      "business_id": "BIZ178",
+      "fault_list": [],
+      "fault_count": 0
+    }
+  ],
+  "timestamp": "2025-05-29T17:42:27.957561+09:00",
+  "count": 5
+}

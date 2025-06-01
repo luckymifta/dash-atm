@@ -1,0 +1,147 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM3208",
+      "terminal_name": "Wincor ProCash Covalima 1",
+      "external_id": "TL233",
+      "bank": "BRI",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -9.109335283194635,
+        "longitude": 124.8305194421687
+      },
+      "location_str": "Covalima MAIN ROAD, 98",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T14:50:34.599184+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN55292",
+      "business_id": "BIZ845",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM4388",
+      "terminal_name": "Diebold 4900 Baucau 2",
+      "external_id": "TL568",
+      "bank": "Mandiri",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.043715960109386,
+        "longitude": 124.074438811702
+      },
+      "location_str": "Baucau MAIN ROAD, 96",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T10:50:34.599184+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN13193",
+      "business_id": "BIZ202",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6552",
+      "terminal_name": "Nautilus Hyosun Baucau 3",
+      "external_id": "TL346",
+      "bank": "BNCTL",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.432000146337717,
+        "longitude": 126.43421996616995
+      },
+      "location_str": "Baucau MAIN ROAD, 11",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T14:50:34.599184+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN53341",
+      "business_id": "BIZ685",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM8661",
+      "terminal_name": "Wincor ProCash Bobonaro 4",
+      "external_id": "TL938",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.323981183103108,
+        "longitude": 125.97456242755456
+      },
+      "location_str": "Bobonaro MAIN ROAD, 8",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T17:50:34.599184+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN88818",
+      "business_id": "BIZ423",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9785",
+      "terminal_name": "NCR SelfServ Lautem 5",
+      "external_id": "TL948",
+      "bank": "BRI",
+      "region": "Lautem",
+      "city": "Lautem",
+      "location": {
+        "city": "Lautem",
+        "latitude": -9.125762989030216,
+        "longitude": 125.4498557571306
+      },
+      "location_str": "Lautem MAIN ROAD, 39",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T10:50:34.599184+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN11142",
+      "business_id": "BIZ869",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM8930",
+      "terminal_name": "Diebold 4900 Covalima 1",
+      "external_id": "TL986",
+      "bank": "BRI",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -9.044707981353307,
+        "longitude": 125.436668687253
+      },
+      "location_str": "Covalima MAIN ROAD, 98",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T02:50:34.599184+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN59663",
+      "business_id": "BIZ942",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T01:20:34.599000+09:00",
+          "creation_date_timestamp": 

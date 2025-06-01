@@ -1,0 +1,138 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM4897",
+      "terminal_name": "NCR SelfServ Dili 1",
+      "external_id": "TL160",
+      "bank": "Mandiri",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -9.078504969779582,
+        "longitude": 124.01553328760416
+      },
+      "location_str": "Dili MAIN ROAD, 56",
+      "status": "ZOMBIE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-29T00:03:27.432468+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "ZOMBIE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN25892",
+      "business_id": "BIZ521",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-28T22:43:27.432000+09:00",
+          "creation_date_timestamp": "2025-05-28 22:43:27.432000+09:00",
+          "external_fault_id": "ERR_4816",
+          "agent_error_description": "Receipt printer out of paper",
+          "raw_fault_data": {
+            "creationDate": 1748439807432,
+            "externalFaultId": "ERR_4816",
+            "agentErrorDescription": "Receipt printer out of paper"
+          }
+        }
+      ],
+      "fault_count": 1
+    },
+    {
+      "terminal_id": "ATM5596",
+      "terminal_name": "Wincor ProCash Baucau 2",
+      "external_id": "TL992",
+      "bank": "Mandiri",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.237661027258039,
+        "longitude": 125.66185464883574
+      },
+      "location_str": "Baucau MAIN ROAD, 16",
+      "status": "ZOMBIE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-28T21:03:27.432468+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "ZOMBIE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN27987",
+      "business_id": "BIZ191",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM5422",
+      "terminal_name": "NCR SelfServ Bobonaro 3",
+      "external_id": "TL941",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.36963728628708,
+        "longitude": 127.22921417701103
+      },
+      "location_str": "Bobonaro MAIN ROAD, 94",
+      "status": "ZOMBIE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-29T00:03:27.432468+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "ZOMBIE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN89973",
+      "business_id": "BIZ856",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9930",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 4",
+      "external_id": "TL900",
+      "bank": "BNCTL",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.997786346894658,
+        "longitude": 125.70863601781429
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 77",
+      "status": "ZOMBIE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-28T16:03:27.432468+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "ZOMBIE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN56113",
+      "business_id": "BIZ736",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM3841",
+      "terminal_name": "Diebold 4900 Bobonaro 5",
+      "external_id": "TL384",
+      "bank": "BNCTL",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.234535792092224,
+        "longitude": 126.60262083676328
+      },
+      "location_str": "Bobonaro MAIN ROAD, 21",
+      "status": "ZOMBIE",
+      "status_code": "ZOMBIE",
+      "last_updated": "2025-05-29T02:03:27.432468+09:00",
+      "issue_type": "NETWORK_ISSUE",
+      "issue_state": "ZOMBIE",
+      "contact_name": "ATM Service",
+      "serial_number": "SN49432",
+      "business_id": "BIZ377",
+      "fault_list": [],
+      "fault_count": 0
+    }
+  ],
+  "timestamp": "2025-05-29T14:03:27.435702+09:00",
+  "count": 5
+}

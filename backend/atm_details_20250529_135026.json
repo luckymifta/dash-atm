@@ -1,0 +1,126 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM2012",
+      "terminal_name": "Nautilus Hyosun Dili 1",
+      "external_id": "TL943",
+      "bank": "BRI",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.38002394970136,
+        "longitude": 126.43297474914783
+      },
+      "location_str": "Dili MAIN ROAD, 81",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T21:50:26.029328+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN31668",
+      "business_id": "BIZ703",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6639",
+      "terminal_name": "NCR SelfServ Dili 2",
+      "external_id": "TL470",
+      "bank": "BNU",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.459357826901897,
+        "longitude": 124.87760352710627
+      },
+      "location_str": "Dili MAIN ROAD, 64",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T00:50:26.029328+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN47837",
+      "business_id": "BIZ694",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6623",
+      "terminal_name": "Diebold 4900 Liqui\u00e7\u00e1 3",
+      "external_id": "TL734",
+      "bank": "BNU",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -8.249130769631309,
+        "longitude": 127.03659357988951
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 1",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T02:50:26.029328+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN91393",
+      "business_id": "BIZ172",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM2095",
+      "terminal_name": "NCR SelfServ Dili 4",
+      "external_id": "TL224",
+      "bank": "BNCTL",
+      "region": "Dili",
+      "city": "Dili",
+      "location": {
+        "city": "Dili",
+        "latitude": -8.627365764158741,
+        "longitude": 126.41861572775933
+      },
+      "location_str": "Dili MAIN ROAD, 81",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T13:50:26.029328+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN31089",
+      "business_id": "BIZ984",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM4182",
+      "terminal_name": "Wincor ProCash Baucau 5",
+      "external_id": "TL114",
+      "bank": "BRI",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.039652753327893,
+        "longitude": 124.90885070775354
+      },
+      "location_str": "Baucau MAIN ROAD, 9",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T14:50:26.029328+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN26490",
+      "business_id": "BIZ931",
+      "fault_list": [],
+      "fault_count": 0
+    }
+  ],
+  "timestamp": "2025-05-29T13:50:26.032996+09:00",
+  "count": 5
+}

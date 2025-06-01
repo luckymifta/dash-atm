@@ -1,0 +1,26 @@
+{
+  "timestamp": "20250529_102022",
+  "date_request": "29-05-2025 10:20:22",
+  "fifth_graphic": [
+    {
+      "hc-key": "TL-DL",
+      "state_count": {
+        "AVAILABLE": "0.78571427",
+        "WOUNDED": "0.21428572"
+      }
+    }
+  ],
+  "full_reports_response": {
+    "body": {
+      "fifth_graphic": [
+        {
+          "hc-key": "TL-DL",
+          "state_count": {
+            "AVAILABLE": "0.78571427",
+            "WOUNDED": "0.21428572"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "header": {
+    "result_code": "000",
+    "result_description": "Success.",
+    "user_token": "eyJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NDgzOTI3MjMsInN1YiI6Ikx1Y2t5LlNhcHV0cmEiLCJleHAiOjE3NDgzOTk5MjN9.jRLpYK7Fc0mpUqdcWzgHCsyXb0NoPv56Z-tO2Kvuak0"
+  },
+  "body": {
+    "result": null,
+    "second_graphic": {
+      "All groups": {
+        "OUT_OF_SERVICE": "0.04819277",
+        "ZOMBIE": "0.036144577",
+        "HARD": "0.06626506",
+        "PAPER": "0.018072288",
+        "CASH_AND_PAPER": "0.006024096",
+        "OK": "0.7710843",
+        "CASH": "0.036144577",
+        "WARNING": "0.018072288"
+      }
+    },
+    "fourth_graphic": {
+      "UNAVAILABLE": {
+        "0H": "1",
+        "23H": "1",
+        "22H": "1",
+        "21H": "1",
+        "20H": "1",
+        "19H": "1",
+        "18H": "1",
+        "17H": "1",
+        "16H": "1",
+        "15H": "1",
+        "14H": "1",
+        "13H": "1",
+        "12H": "1",
+        "11H": "1",
+        "10H": "0",
+        "9H": "0",
+        "8H": "0",
+        "7H": "0",
+        "6H": "0",
+        "5H": "0",
+        "4H": "0",
+        "3H": "0",
+        "2H": "0",
+        "1H": "0"
+      },
+      "WOUNDED": {
+        "0H": "4",
+        "23H": "4",
+        "22H": "4",
+        "21H": "4",
+        "20H": "4",
+        "19H": "4",
+        "18H": "4",
+        "17H": "4",
+        "16H": "4",
+        "15H": "4",
+        "14H": "4",
+        "13H": "4",
+        "12H": "3",
+        "11H": "2",
+        "10H": "2",
+        "9H": "2",
+        "8H": "2",
+        "7H": "2",
+        "6H": "2",
+        "5H": "2",
+        "4H": "2",
+        "3H": "2",
+        "2H": "2",
+        "1H": "2"
+      },
+      "WARNING": {
+        "0H": "0",
+        "23H": "0",
+        "22H": "0",
+        "21H": "0",
+        "20H": "0",
+        "19H": "0",
+        "18H": "0",
+        "17H": "0",
+        "16H": "0",
+        "15H": "0",
+        "14H": "0",
+        "13H": "0",
+        "12H": "0",
+        "11H": "0",
+        "10H": "0",
+        "9H": "0",
+        "8H": "0",
+        "7H": "0",
+        "6H": "0",
+        "5H": "0",
+        "4H": "0",
+        "3H": "0",
+        "2H": "0",
+        "1H": "1"
+      }
+    },
+    "fifth_graphic": [
+      {
+        "hc-key": "TL-DL",
+        "state_count": {
+          "CASH_AND_PAPER": "0.071428575",
+          "HARD": "0.071428575",
+          "OK": "0.78571427",
+          "CASH": "0.071428575"
+        }
+      }
+    ],
+    "sixth_graphic": {
+      "MAINTENANCE": "0.0",
+      "OUT_OF_SERVICE": "243.0",
+      "ZOMBIE": "21.6",
+      "WOUNDED": "34.27272727272727",
+      "WARNING": "0.0"
+    },
+    "seventh_graphic": {
+      "MNT": "2271",
+      "OUT_OF_SERVICE": "279",
+      "ZOMBIE": "460",
+      "HARD": "757",
+      "CASH": "308",
+      "WARNING": "350"
+    },
+    "first_and_third_graphic": {
+      "CASH_AND_PAPER": "1",
+      "HARD": "1",
+      "OK": "11",
+      "CASH": "1"
+    }
+  }
+}

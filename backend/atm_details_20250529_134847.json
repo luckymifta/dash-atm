@@ -1,0 +1,147 @@
+{
+  "atm_data": [
+    {
+      "terminal_id": "ATM7749",
+      "terminal_name": "NCR SelfServ Bobonaro 1",
+      "external_id": "TL118",
+      "bank": "BRI",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.794092720217527,
+        "longitude": 124.72152173863525
+      },
+      "location_str": "Bobonaro MAIN ROAD, 80",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T17:48:47.217543+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN55682",
+      "business_id": "BIZ451",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM6588",
+      "terminal_name": "Diebold 4900 Covalima 2",
+      "external_id": "TL751",
+      "bank": "BNU",
+      "region": "Covalima",
+      "city": "Covalima",
+      "location": {
+        "city": "Covalima",
+        "latitude": -8.999278922888168,
+        "longitude": 125.29040451513863
+      },
+      "location_str": "Covalima MAIN ROAD, 55",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T06:48:47.217543+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN19183",
+      "business_id": "BIZ912",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9372",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 3",
+      "external_id": "TL488",
+      "bank": "BNCTL",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -9.482991721763842,
+        "longitude": 126.83822625019708
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 77",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-28T22:48:47.217543+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN43916",
+      "business_id": "BIZ703",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM5703",
+      "terminal_name": "Nautilus Hyosun Baucau 4",
+      "external_id": "TL400",
+      "bank": "BNU",
+      "region": "Baucau",
+      "city": "Baucau",
+      "location": {
+        "city": "Baucau",
+        "latitude": -9.076176713912272,
+        "longitude": 126.64516077775522
+      },
+      "location_str": "Baucau MAIN ROAD, 73",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T12:48:47.217543+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN77950",
+      "business_id": "BIZ698",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM9414",
+      "terminal_name": "Nautilus Hyosun Liqui\u00e7\u00e1 5",
+      "external_id": "TL909",
+      "bank": "BNU",
+      "region": "Liqui\u00e7\u00e1",
+      "city": "Liqui\u00e7\u00e1",
+      "location": {
+        "city": "Liqui\u00e7\u00e1",
+        "latitude": -9.411395246334154,
+        "longitude": 124.44461729082154
+      },
+      "location_str": "Liqui\u00e7\u00e1 MAIN ROAD, 20",
+      "status": "AVAILABLE",
+      "status_code": "NORMAL",
+      "last_updated": "2025-05-29T13:48:47.217543+09:00",
+      "issue_type": null,
+      "issue_state": "AVAILABLE",
+      "contact_name": null,
+      "serial_number": "SN26771",
+      "business_id": "BIZ332",
+      "fault_list": [],
+      "fault_count": 0
+    },
+    {
+      "terminal_id": "ATM3350",
+      "terminal_name": "NCR SelfServ Bobonaro 1",
+      "external_id": "TL655",
+      "bank": "Mandiri",
+      "region": "Bobonaro",
+      "city": "Bobonaro",
+      "location": {
+        "city": "Bobonaro",
+        "latitude": -8.299865842686401,
+        "longitude": 124.03064112428578
+      },
+      "location_str": "Bobonaro MAIN ROAD, 58",
+      "status": "WARNING",
+      "status_code": "WARN",
+      "last_updated": "2025-05-29T08:48:47.217543+09:00",
+      "issue_type": "SERVICE_NEEDED",
+      "issue_state": "WARNING",
+      "contact_name": "ATM Service",
+      "serial_number": "SN27988",
+      "business_id": "BIZ194",
+      "fault_list": [
+        {
+          "creation_date": "2025-05-29T07:16:47.217000+09:00",
+          "creation_date_timestamp": 

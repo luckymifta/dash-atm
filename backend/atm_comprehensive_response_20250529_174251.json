@@ -1,0 +1,965 @@
+{
+  "metadata": {
+    "export_timestamp": "2025-05-29T17:42:51.393294+09:00",
+    "data_source": "ATM Management System (172.31.1.46)",
+    "export_type": "comprehensive_response",
+    "data_retrieval_timestamp": "2025-05-29T17:42:51.391557+09:00",
+    "total_atms_retrieved": 25,
+    "status_types_processed": [
+      "AVAILABLE",
+      "WARNING",
+      "WOUNDED",
+      "ZOMBIE",
+      "OUT_OF_SERVICE"
+    ],
+    "requested_statuses": [
+      "AVAILABLE",
+      "WARNING",
+      "WOUNDED",
+      "ZOMBIE",
+      "OUT_OF_SERVICE"
+    ]
+  },
+  "summary": {
+    "status_counts": {
+      "AVAILABLE": 5,
+      "WARNING": 5,
+      "WOUNDED": 5,
+      "ZOMBIE": 5,
+      "OUT_OF_SERVICE": 5
+    },
+    "total_atms": 25,
+    "processing_notes": [
+      "Generated 25 demo ATM records"
+    ]
+  },
+  "atm_data_by_status": {
+    "AVAILABLE": [
+      {
+        "terminalId": "ATM5609",
+        "externalId": "TL528",
+        "terminalCode": "TL528",
+        "terminalName": "NCR SelfServ Bobonaro 1",
+        "bank": "BNU",
+        "cityName": "Bobonaro",
+        "city": "Bobonaro",
+        "geoLocation": "Bobonaro",
+        "location": "Bobonaro MAIN ROAD, 95",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T18:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.844709902610665",
+          "longitude": "124.9512373444059"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN86618",
+        "businessId": "BIZ859",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM2411",
+        "externalId": "TL880",
+        "terminalCode": "TL880",
+        "terminalName": "NCR SelfServ Liquiçá 2",
+        "bank": "BNU",
+        "cityName": "Liquiçá",
+        "city": "Liquiçá",
+        "geoLocation": "Liquiçá",
+        "location": "Liquiçá MAIN ROAD, 25",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T10:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.685917886924425",
+          "longitude": "125.88209369782399"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN95026",
+        "businessId": "BIZ649",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM1844",
+        "externalId": "TL991",
+        "terminalCode": "TL991",
+        "terminalName": "Wincor ProCash Baucau 3",
+        "bank": "BRI",
+        "cityName": "Baucau",
+        "city": "Baucau",
+        "geoLocation": "Baucau",
+        "location": "Baucau MAIN ROAD, 91",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-29T00:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.603405073534676",
+          "longitude": "124.1936021777964"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN69099",
+        "businessId": "BIZ337",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM9180",
+        "externalId": "TL977",
+        "terminalCode": "TL977",
+        "terminalName": "Diebold 4900 Lautem 4",
+        "bank": "BNCTL",
+        "cityName": "Lautem",
+        "city": "Lautem",
+        "geoLocation": "Lautem",
+        "location": "Lautem MAIN ROAD, 40",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-29T00:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.533545252787482",
+          "longitude": "125.45617847162018"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN37613",
+        "businessId": "BIZ480",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM2933",
+        "externalId": "TL824",
+        "terminalCode": "TL824",
+        "terminalName": "NCR SelfServ Dili 5",
+        "bank": "Mandiri",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 40",
+        "status": "AVAILABLE",
+        "issueStateName": "AVAILABLE",
+        "issueStateCode": "NORMAL",
+        "lastUpdate": "2025-05-28T11:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.70107482038054",
+          "longitude": "124.07072798667527"
+        },
+        "issueTypeName": null,
+        "contactDisplayName": null,
+        "serialNumber": "SN66219",
+        "businessId": "BIZ480",
+        "faultList": []
+      }
+    ],
+    "WARNING": [
+      {
+        "terminalId": "ATM4017",
+        "externalId": "TL259",
+        "terminalCode": "TL259",
+        "terminalName": "Wincor ProCash Dili 1",
+        "bank": "BRI",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 34",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T08:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.188184403034647",
+          "longitude": "126.1670511360419"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN55257",
+        "businessId": "BIZ505",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM8803",
+        "externalId": "TL293",
+        "terminalCode": "TL293",
+        "terminalName": "Wincor ProCash Liquiçá 2",
+        "bank": "BNU",
+        "cityName": "Liquiçá",
+        "city": "Liquiçá",
+        "geoLocation": "Liquiçá",
+        "location": "Liquiçá MAIN ROAD, 72",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-29T02:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.96018778708065",
+          "longitude": "126.47677280746026"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN54447",
+        "businessId": "BIZ979",
+        "faultList": [
+          {
+            "creationDate": 1748479791390,
+            "faultTypeCode": "CASH",
+            "componenTypeCode": "READER",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_8064",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          },
+          {
+            "creationDate": 1748482851390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_2603",
+            "agentErrorDescription": "Cash dispenser jam detected"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM6591",
+        "externalId": "TL389",
+        "terminalCode": "TL389",
+        "terminalName": "Diebold 4900 Covalima 3",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 86",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-29T06:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.31122376200202",
+          "longitude": "126.17710423169704"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN82847",
+        "businessId": "BIZ104",
+        "faultList": [
+          {
+            "creationDate": 1748493951390,
+            "faultTypeCode": "SOFTWARE",
+            "componenTypeCode": "NETWORK_MODULE",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_6202",
+            "agentErrorDescription": "Card reader malfunction"
+          },
+          {
+            "creationDate": 1748497011390,
+            "faultTypeCode": "SOFTWARE",
+            "componenTypeCode": "PRINTER",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_6884",
+            "agentErrorDescription": "Temperature sensor alarm"
+          },
+          {
+            "creationDate": 1748500611390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_9574",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM5817",
+        "externalId": "TL631",
+        "terminalCode": "TL631",
+        "terminalName": "Wincor ProCash Liquiçá 4",
+        "bank": "BRI",
+        "cityName": "Liquiçá",
+        "city": "Liquiçá",
+        "geoLocation": "Liquiçá",
+        "location": "Liquiçá MAIN ROAD, 78",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T23:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.387607814421374",
+          "longitude": "124.10089436806196"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN60747",
+        "businessId": "BIZ773",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM5786",
+        "externalId": "TL952",
+        "terminalCode": "TL952",
+        "terminalName": "Nautilus Hyosun Dili 5",
+        "bank": "Mandiri",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 66",
+        "status": "WARNING",
+        "issueStateName": "WARNING",
+        "issueStateCode": "WARN",
+        "lastUpdate": "2025-05-28T11:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.488726525575592",
+          "longitude": "124.18785505697649"
+        },
+        "issueTypeName": "SERVICE_NEEDED",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN70372",
+        "businessId": "BIZ730",
+        "faultList": []
+      }
+    ],
+    "WOUNDED": [
+      {
+        "terminalId": "ATM8478",
+        "externalId": "TL181",
+        "terminalCode": "TL181",
+        "terminalName": "Nautilus Hyosun Dili 1",
+        "bank": "BNU",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 72",
+        "status": "WOUNDED",
+        "issueStateName": "WOUNDED",
+        "issueStateCode": "HARD",
+        "lastUpdate": "2025-05-29T03:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.334342080703479",
+          "longitude": "124.45989661730185"
+        },
+        "issueTypeName": "HARDWARE_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN21435",
+        "businessId": "BIZ160",
+        "faultList": [
+          {
+            "creationDate": 1748490111390,
+            "faultTypeCode": "CARD_READER",
+            "componenTypeCode": "PRINTER",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_5762",
+            "agentErrorDescription": "Card reader malfunction"
+          },
+          {
+            "creationDate": 1748488851390,
+            "faultTypeCode": "CASH",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_5869",
+            "agentErrorDescription": "Card reader malfunction"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM4734",
+        "externalId": "TL323",
+        "terminalCode": "TL323",
+        "terminalName": "Nautilus Hyosun Covalima 2",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 7",
+        "status": "WOUNDED",
+        "issueStateName": "WOUNDED",
+        "issueStateCode": "HARD",
+        "lastUpdate": "2025-05-28T16:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.065132769537366",
+          "longitude": "125.36605027838421"
+        },
+        "issueTypeName": "HARDWARE_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN35076",
+        "businessId": "BIZ631",
+        "faultList": [
+          {
+            "creationDate": 1748446491390,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_3688",
+            "agentErrorDescription": "Deposit module not responding"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM5742",
+        "externalId": "TL166",
+        "terminalCode": "TL166",
+        "terminalName": "NCR SelfServ Lautem 3",
+        "bank": "BNCTL",
+        "cityName": "Lautem",
+        "city": "Lautem",
+        "geoLocation": "Lautem",
+        "location": "Lautem MAIN ROAD, 41",
+        "status": "WOUNDED",
+        "issueStateName": "WOUNDED",
+        "issueStateCode": "HARD",
+        "lastUpdate": "2025-05-28T18:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.379099175996549",
+          "longitude": "127.06155137322993"
+        },
+        "issueTypeName": "HARDWARE_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN55158",
+        "businessId": "BIZ434",
+        "faultList": [
+          {
+            "creationDate": 1748454291390,
+            "faultTypeCode": "CASH",
+            "componenTypeCode": "NETWORK_MODULE",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_6395",
+            "agentErrorDescription": "Network connectivity issue"
+          },
+          {
+            "creationDate": 1748452671390,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_2997",
+            "agentErrorDescription": "Temperature sensor alarm"
+          },
+          {
+            "creationDate": 1748455551390,
+            "faultTypeCode": "CASH",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_2071",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM2423",
+        "externalId": "TL422",
+        "terminalCode": "TL422",
+        "terminalName": "Wincor ProCash Lautem 4",
+        "bank": "Mandiri",
+        "cityName": "Lautem",
+        "city": "Lautem",
+        "geoLocation": "Lautem",
+        "location": "Lautem MAIN ROAD, 56",
+        "status": "WOUNDED",
+        "issueStateName": "WOUNDED",
+        "issueStateCode": "HARD",
+        "lastUpdate": "2025-05-28T08:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.275519585611402",
+          "longitude": "126.12015505131367"
+        },
+        "issueTypeName": "HARDWARE_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN50450",
+        "businessId": "BIZ175",
+        "faultList": [
+          {
+            "creationDate": 1748417571390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "READER",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_5808",
+            "agentErrorDescription": "Card reader malfunction"
+          },
+          {
+            "creationDate": 1748417151390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_8166",
+            "agentErrorDescription": "Receipt printer out of paper"
+          },
+          {
+            "creationDate": 1748418171390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_3369",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM5767",
+        "externalId": "TL316",
+        "terminalCode": "TL316",
+        "terminalName": "Wincor ProCash Liquiçá 5",
+        "bank": "BRI",
+        "cityName": "Liquiçá",
+        "city": "Liquiçá",
+        "geoLocation": "Liquiçá",
+        "location": "Liquiçá MAIN ROAD, 76",
+        "status": "WOUNDED",
+        "issueStateName": "WOUNDED",
+        "issueStateCode": "HARD",
+        "lastUpdate": "2025-05-28T13:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.416262435010246",
+          "longitude": "124.76579285088359"
+        },
+        "issueTypeName": "HARDWARE_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN59338",
+        "businessId": "BIZ512",
+        "faultList": [
+          {
+            "creationDate": 1748437851390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "ERROR",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_2076",
+            "agentErrorDescription": "Temperature sensor alarm"
+          },
+          {
+            "creationDate": 1748435151390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_1872",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          },
+          {
+            "creationDate": 1748436351390,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_1462",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      }
+    ],
+    "ZOMBIE": [
+      {
+        "terminalId": "ATM8316",
+        "externalId": "TL275",
+        "terminalCode": "TL275",
+        "terminalName": "Diebold 4900 Covalima 1",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 13",
+        "status": "ZOMBIE",
+        "issueStateName": "ZOMBIE",
+        "issueStateCode": "ZOMBIE",
+        "lastUpdate": "2025-05-28T09:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.27170561024635",
+          "longitude": "124.29096854407027"
+        },
+        "issueTypeName": "NETWORK_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN57537",
+        "businessId": "BIZ931",
+        "faultList": [
+          {
+            "creationDate": 1748422911390,
+            "faultTypeCode": "CARD_READER",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_3699",
+            "agentErrorDescription": "Network connectivity issue"
+          },
+          {
+            "creationDate": 1748423931390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "READER",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "28",
+            "externalFaultId": "ERR_6733",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM6769",
+        "externalId": "TL703",
+        "terminalCode": "TL703",
+        "terminalName": "Wincor ProCash Covalima 2",
+        "bank": "Mandiri",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 14",
+        "status": "ZOMBIE",
+        "issueStateName": "ZOMBIE",
+        "issueStateCode": "ZOMBIE",
+        "lastUpdate": "2025-05-28T20:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.063794596277491",
+          "longitude": "127.22682058412826"
+        },
+        "issueTypeName": "NETWORK_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN22695",
+        "businessId": "BIZ225",
+        "faultList": [
+          {
+            "creationDate": 1748459811390,
+            "faultTypeCode": "SOFTWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "WARNING",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_8986",
+            "agentErrorDescription": "Deposit module not responding"
+          },
+          {
+            "creationDate": 1748462751390,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_4164",
+            "agentErrorDescription": "Card reader malfunction"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM2291",
+        "externalId": "TL519",
+        "terminalCode": "TL519",
+        "terminalName": "NCR SelfServ Covalima 3",
+        "bank": "Mandiri",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 26",
+        "status": "ZOMBIE",
+        "issueStateName": "ZOMBIE",
+        "issueStateCode": "ZOMBIE",
+        "lastUpdate": "2025-05-29T08:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.466665190952035",
+          "longitude": "125.83516302306164"
+        },
+        "issueTypeName": "NETWORK_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN58807",
+        "businessId": "BIZ425",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM7300",
+        "externalId": "TL414",
+        "terminalCode": "TL414",
+        "terminalName": "Nautilus Hyosun Dili 4",
+        "bank": "Mandiri",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 92",
+        "status": "ZOMBIE",
+        "issueStateName": "ZOMBIE",
+        "issueStateCode": "ZOMBIE",
+        "lastUpdate": "2025-05-28T17:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.478927277648319",
+          "longitude": "126.6120765639551"
+        },
+        "issueTypeName": "NETWORK_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN67682",
+        "businessId": "BIZ512",
+        "faultList": [
+          {
+            "creationDate": 1748451771390,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "DEPOSIT_MODULE",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_7915",
+            "agentErrorDescription": "Power supply voltage fluctuation"
+          },
+          {
+            "creationDate": 1748451831390,
+            "faultTypeCode": "NETWORK",
+            "componenTypeCode": "DISPENSER",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_5215",
+            "agentErrorDescription": "Temperature sensor alarm"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM1919",
+        "externalId": "TL244",
+        "terminalCode": "TL244",
+        "terminalName": "Diebold 4900 Covalima 5",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 79",
+        "status": "ZOMBIE",
+        "issueStateName": "ZOMBIE",
+        "issueStateCode": "ZOMBIE",
+        "lastUpdate": "2025-05-29T05:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.521488008659164",
+          "longitude": "124.38637670755497"
+        },
+        "issueTypeName": "NETWORK_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN90570",
+        "businessId": "BIZ561",
+        "faultList": []
+      }
+    ],
+    "OUT_OF_SERVICE": [
+      {
+        "terminalId": "ATM8872",
+        "externalId": "TL560",
+        "terminalCode": "TL560",
+        "terminalName": "Diebold 4900 Covalima 1",
+        "bank": "BRI",
+        "cityName": "Covalima",
+        "city": "Covalima",
+        "geoLocation": "Covalima",
+        "location": "Covalima MAIN ROAD, 90",
+        "status": "OUT_OF_SERVICE",
+        "issueStateName": "OUT_OF_SERVICE",
+        "issueStateCode": "CASH",
+        "lastUpdate": "2025-05-28T18:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.383219427049937",
+          "longitude": "126.77321940736478"
+        },
+        "issueTypeName": "POWER_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN88832",
+        "businessId": "BIZ439",
+        "faultList": [
+          {
+            "creationDate": 1748451231390,
+            "faultTypeCode": "HARDWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_9506",
+            "agentErrorDescription": "Network connectivity issue"
+          },
+          {
+            "creationDate": 1748453091390,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "PRINTER",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_5681",
+            "agentErrorDescription": "Receipt printer out of paper"
+          }
+        ]
+      },
+      {
+        "terminalId": "ATM3121",
+        "externalId": "TL282",
+        "terminalCode": "TL282",
+        "terminalName": "Diebold 4900 Bobonaro 2",
+        "bank": "Mandiri",
+        "cityName": "Bobonaro",
+        "city": "Bobonaro",
+        "geoLocation": "Bobonaro",
+        "location": "Bobonaro MAIN ROAD, 33",
+        "status": "OUT_OF_SERVICE",
+        "issueStateName": "OUT_OF_SERVICE",
+        "issueStateCode": "CASH",
+        "lastUpdate": "2025-05-28T12:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.207915921308825",
+          "longitude": "124.12702764819578"
+        },
+        "issueTypeName": "POWER_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN26462",
+        "businessId": "BIZ854",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM9909",
+        "externalId": "TL276",
+        "terminalCode": "TL276",
+        "terminalName": "Nautilus Hyosun Bobonaro 3",
+        "bank": "BNU",
+        "cityName": "Bobonaro",
+        "city": "Bobonaro",
+        "geoLocation": "Bobonaro",
+        "location": "Bobonaro MAIN ROAD, 9",
+        "status": "OUT_OF_SERVICE",
+        "issueStateName": "OUT_OF_SERVICE",
+        "issueStateCode": "CASH",
+        "lastUpdate": "2025-05-28T22:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.546464060953301",
+          "longitude": "125.3333590716241"
+        },
+        "issueTypeName": "POWER_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN77399",
+        "businessId": "BIZ529",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM7625",
+        "externalId": "TL608",
+        "terminalCode": "TL608",
+        "terminalName": "Wincor ProCash Dili 4",
+        "bank": "Mandiri",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 74",
+        "status": "OUT_OF_SERVICE",
+        "issueStateName": "OUT_OF_SERVICE",
+        "issueStateCode": "CASH",
+        "lastUpdate": "2025-05-28T20:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-9.08587649060648",
+          "longitude": "126.1134670883132"
+        },
+        "issueTypeName": "POWER_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN51326",
+        "businessId": "BIZ783",
+        "faultList": []
+      },
+      {
+        "terminalId": "ATM9037",
+        "externalId": "TL367",
+        "terminalCode": "TL367",
+        "terminalName": "Diebold 4900 Dili 5",
+        "bank": "BNCTL",
+        "cityName": "Dili",
+        "city": "Dili",
+        "geoLocation": "Dili",
+        "location": "Dili MAIN ROAD, 61",
+        "status": "OUT_OF_SERVICE",
+        "issueStateName": "OUT_OF_SERVICE",
+        "issueStateCode": "CASH",
+        "lastUpdate": "2025-05-29T07:42:51.390445Z",
+        "geolocation": {
+          "latitude": "-8.964369747040575",
+          "longitude": "124.50000842491758"
+        },
+        "issueTypeName": "POWER_ISSUE",
+        "contactDisplayName": "ATM Service",
+        "serialNumber": "SN21650",
+        "businessId": "BIZ441",
+        "faultList": [
+          {
+            "creationDate": 1748503071390,
+            "faultTypeCode": "RECEIPT",
+            "componenTypeCode": "NETWORK_MODULE",
+            "issueStateName": "CRITICAL",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_7807",
+            "agentErrorDescription": "Deposit module not responding"
+          },
+          {
+            "creationDate": 1748504031390,
+            "faultTypeCode": "SOFTWARE",
+            "componenTypeCode": "SENSOR",
+            "issueStateName": "MAINTENANCE",
+            "year": "2025",
+            "month": "05",
+            "date": "29",
+            "externalFaultId": "ERR_8695",
+            "agentErrorDescription": "Deposit module not responding"
+          }
+        ]
+      }
+    ]
+  },
+  "response_metadata": {
+    "source": "DEMO_MODE",
+    "api_endpoint": "SIMULATED",
+    "authentication_user": "DEMO_USER",
+    "processing_notes": [
+      "Generated 25 demo ATM records"
+    ]
+  }
+}

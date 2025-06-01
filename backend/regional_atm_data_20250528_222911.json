@@ -1,0 +1,38 @@
+{
+  "retrieval_timestamp": "2025-05-28T22:29:11.159331",
+  "total_regions": 2,
+  "regional_data": [
+    {
+      "unique_request_id": "dc406bc4-a3a6-4c53-b656-36aac4df7ac5",
+      "region_code": "TL-DL",
+      "count_available": 11,
+      "count_warning": 1,
+      "count_zombie": 0,
+      "count_wounded": 2,
+      "count_out_of_service": 0,
+      "date_creation": "2025-05-28T22:29:11.158384+09:00",
+      "total_atms_in_region": 14,
+      "percentage_available": 0.78571427,
+      "percentage_warning": 0.07142857,
+      "percentage_zombie": 0.0,
+      "percentage_wounded": 0.14285714,
+      "percentage_out_of_service": 0.0
+    },
+    {
+      "unique_request_id": "796efec6-7f7f-437c-8fed-8ba7dd8cdcbc",
+      "region_code": "TL-AN",
+      "count_available": 12,
+      "count_warning": 0,
+      "count_zombie": 1,
+      "count_wounded": 0,
+      "count_out_of_service": 1,
+      "date_creation": "2025-05-28T22:29:11.158384+09:00",
+      "total_atms_in_region": 14,
+      "percentage_available": 0.85714286,
+      "percentage_warning": 0.0,
+      "percentage_zombie": 0.07142857,
+      "percentage_wounded": 0.0,
+      "percentage_out_of_service": 0.07142857
+    }
+  ]
+}
