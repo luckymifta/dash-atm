@@ -43,6 +43,7 @@ from typing import Dict, List, Any, Optional, Union
 from enum import Enum
 import asyncio
 import asyncpg
+from contextlib import asynccontextmanager
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException, Query, Path, Depends
@@ -141,10 +142,23 @@ class TrendResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "healthy"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now)
     database_connected: bool
     api_version: str = "2.0.0"
     uptime_seconds: float
+
+# Lifespan management
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting ATM FastAPI application...")
+    await create_db_pool()
+    yield
+    # Shutdown
+    global db_pool
+    if db_pool:
+        await db_pool.close()
+        logger.info("Database connection pool closed")
 
 # FastAPI app initialization
 app = FastAPI(
@@ -153,7 +167,8 @@ app = FastAPI(
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/api/v1/openapi.json"
+    openapi_url="/api/v1/openapi.json",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -166,7 +181,7 @@ app.add_middleware(
 )
 
 # Global variables
-app_start_time = datetime.utcnow()
+app_start_time = datetime.now()
 db_pool = None
 
 # Database connection functions
@@ -244,20 +259,6 @@ async def validate_db_connection():
 
 # API Endpoints
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database connection pool on startup"""
-    logger.info("Starting ATM FastAPI application...")
-    await create_db_pool()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database connection pool on shutdown"""
-    global db_pool
-    if db_pool:
-        await db_pool.close()
-        logger.info("Database connection pool closed")
-
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     """
@@ -279,7 +280,7 @@ async def health_check():
             finally:
                 await release_db_connection(conn)
         
-        uptime = (datetime.utcnow() - app_start_time).total_seconds()
+        uptime = (datetime.now() - app_start_time).total_seconds()
         
         return HealthResponse(
             database_connected=db_connected,
@@ -798,7 +799,7 @@ async def get_latest_data(
         
         result["summary"] = {
             "total_tables_queried": len(result["data_sources"]),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "table_type_requested": table_type.value
         }
         
@@ -819,7 +820,7 @@ async def general_exception_handler(request, exc):
     logger.error(f"Unexpected error: {exc}")
     return JSONResponse(
         status_code=500,
-        content={"success": False, "message": "Internal server error", "timestamp": datetime.utcnow().isoformat()}
+        content={"success": False, "message": "Internal server error", "timestamp": datetime.now().isoformat()}
     )
 
 if __name__ == "__main__":
