@@ -1,6 +1,8 @@
 // Authentication API Service
 // Integrates with User Management API on port 8001
 
+import Cookies from 'js-cookie';
+
 export interface LoginRequest {
   username: string;
   password: string;
@@ -19,10 +21,16 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
+  phone?: string;
   role: string;
   is_active: boolean;
+  password_changed_at: string;
+  failed_login_attempts: number;
+  account_locked_until?: string;
+  last_login_at?: string;
   created_at: string;
-  last_login?: string;
+  updated_at: string;
+  created_by?: string;
 }
 
 export interface CreateUserRequest {
@@ -30,30 +38,39 @@ export interface CreateUserRequest {
   email: string;
   first_name: string;
   last_name: string;
+  phone?: string;
   role: string;
   password: string;
   is_active: boolean;
 }
 
-export interface UsersResponse {
-  users: User[];
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
+export interface UpdateUserRequest {
+  username?: string;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  role?: string;
+  is_active?: boolean;
+}
+
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
 }
 
 export interface AuditLogEntry {
-  id: number;
-  user_id: string;
+  id: string;
+  user_id?: string;
   action: string;
-  resource_type: string;
-  resource_id?: number;
+  entity_type: string;
+  entity_id?: string;
   old_values?: Record<string, unknown>;
   new_values?: Record<string, unknown>;
   ip_address?: string;
   user_agent?: string;
-  timestamp: string;
+  performed_by?: string;
+  created_at: string;
 }
 
 export interface AuditLogResponse {
@@ -64,17 +81,20 @@ export interface AuditLogResponse {
   total_pages: number;
 }
 
-export interface ApiError {
-  detail: string;
-  status_code?: number;
-}
-
 class AuthApiService {
-  private baseUrl: string;
+  private baseUrl = 'http://localhost:8001';
 
-  constructor() {
-    // User Management API is on port 8001
-    this.baseUrl = process.env.NEXT_PUBLIC_USER_API_BASE_URL || 'http://localhost:8001';
+  private getToken(): string {
+    // Use js-cookie library to get the token (same as AuthContext)
+    const token = Cookies.get('auth_token');
+    console.log('Token from js-cookie:', token);
+    
+    if (token) {
+      return token;
+    }
+    
+    console.log('No authentication token found - user may not be logged in');
+    throw new Error('Please login to access this feature');
   }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -102,20 +122,17 @@ class AuthApiService {
     }
   }
 
-  async logout(token: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async logout(_token: string): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Logout failed');
-      }
+      // Since the backend doesn't have a logout endpoint and JWTs are stateless,
+      // we'll handle logout client-side only by removing the token from cookies
+      // This is a common pattern for JWT-based authentication
+      console.log('Performing client-side logout...');
+      
+      // The actual token removal will be handled by the AuthContext
+      // This method just provides a consistent interface
+      return Promise.resolve();
     } catch (error) {
       if (error instanceof Error) {
         throw error;
@@ -124,9 +141,61 @@ class AuthApiService {
     }
   }
 
-  async getUsers(token: string, page: number = 1, limit: number = 50): Promise<UsersResponse> {
+  async getCurrentUser(token?: string): Promise<User> {
     try {
-      const response = await fetch(`${this.baseUrl}/users?page=${page}&limit=${limit}`, {
+      const authToken = token || this.getToken();
+      // Decode JWT to get user ID (basic JWT decode without verification)
+      const payload = JSON.parse(atob(authToken.split('.')[1]));
+      const userId = payload.sub;
+      
+      const response = await fetch(`${this.baseUrl}/users/${userId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to fetch current user');
+      }
+
+      const userData = await response.json();
+      return userData;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while fetching current user');
+    }
+  }
+
+  async getUsers(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    role?: string;
+    status?: string;
+  } = {}): Promise<{
+    users: User[];
+    total: number;
+    page: number;
+    limit: number;
+    total_pages: number;
+  }> {
+    try {
+      const token = this.getToken();
+      const urlParams = new URLSearchParams({
+        page: (params.page || 1).toString(),
+        limit: (params.limit || 50).toString(),
+      });
+      
+      if (params.search) urlParams.append('search', params.search);
+      if (params.role) urlParams.append('role', params.role);
+      if (params.status) urlParams.append('is_active', params.status === 'active' ? 'true' : 'false');
+
+      const response = await fetch(`${this.baseUrl}/users?${urlParams}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -139,7 +208,8 @@ class AuthApiService {
         throw new Error(errorData.detail || 'Failed to fetch users');
       }
 
-      return await response.json();
+      const data = await response.json();
+      return data;
     } catch (error) {
       if (error instanceof Error) {
         throw error;
@@ -148,53 +218,9 @@ class AuthApiService {
     }
   }
 
-  async getCurrentUser(token: string): Promise<User> {
+  async createUser(userData: CreateUserRequest): Promise<User> {
     try {
-      // Since the backend doesn't have a direct "me" endpoint, we'll decode the token
-      // and get user info from the JWT payload or make a request to get users and find current user
-      // For now, let's create a simple approach by getting the first user (this is a temporary solution)
-      
-      // Decode JWT to get user ID (basic JWT decode without verification)
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const userId = payload.sub;
-      
-      const response = await fetch(`${this.baseUrl}/users/${userId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to fetch current user');
-      }
-
-      const userData = await response.json();
-      
-      // Convert backend user format to frontend format
-      return {
-        id: userData.id,
-        username: userData.username,
-        email: userData.email,
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        role: userData.role,
-        is_active: userData.is_active,
-        created_at: userData.created_at,
-        last_login: userData.last_login_at,
-      };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error('An unexpected error occurred while fetching current user');
-    }
-  }
-
-  async createUser(token: string, userData: CreateUserRequest): Promise<User> {
-    try {
+      const token = this.getToken();
       const response = await fetch(`${this.baseUrl}/users`, {
         method: 'POST',
         headers: {
@@ -209,7 +235,8 @@ class AuthApiService {
         throw new Error(errorData.detail || 'Failed to create user');
       }
 
-      return await response.json();
+      const user: User = await response.json();
+      return user;
     } catch (error) {
       if (error instanceof Error) {
         throw error;
@@ -218,10 +245,38 @@ class AuthApiService {
     }
   }
 
-  async getAuditLog(token: string, page: number = 1, limit: number = 50): Promise<AuditLogResponse> {
+  async updateUser(userId: string, userData: UpdateUserRequest): Promise<User> {
     try {
-      const response = await fetch(`${this.baseUrl}/audit-log?page=${page}&limit=${limit}`, {
-        method: 'GET',
+      const token = this.getToken();
+      const response = await fetch(`${this.baseUrl}/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to update user');
+      }
+
+      const user: User = await response.json();
+      return user;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while updating user');
+    }
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    try {
+      const token = this.getToken();
+      const response = await fetch(`${this.baseUrl}/users/${userId}`, {
+        method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -230,15 +285,39 @@ class AuthApiService {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to fetch audit log');
+        throw new Error(errorData.detail || 'Failed to delete user');
       }
-
-      return await response.json();
     } catch (error) {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('An unexpected error occurred while fetching audit log');
+      throw new Error('An unexpected error occurred while deleting user');
+    }
+  }
+
+  async changePassword(userId: string, newPassword: string): Promise<void> {
+    try {
+      const token = this.getToken();
+      const response = await fetch(`${this.baseUrl}/users/${userId}/password`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          new_password: newPassword
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to change password');
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while changing password');
     }
   }
 }
