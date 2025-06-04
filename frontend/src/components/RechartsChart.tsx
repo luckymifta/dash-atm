@@ -40,7 +40,7 @@ const RechartsChart = ({ data }: RechartsChartProps) => {
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
           }}
           formatter={(value: number) => [`${value.toFixed(1)}%`, 'Availability']}
-          labelFormatter={(label: string) => `Time: ${label}`}
+          labelFormatter={(label: string) => `Time: ${label} (Dili Time)`}
         />
         <Line
           type="monotone"

@@ -39,13 +39,14 @@ const TIME_PERIODS: TimePeriodOption[] = [
   { value: '30d', label: '30 Days', hours: 24 * 30 }
 ];
 
-// Format time based on the selected period
+// Format time based on the selected period (converts to Dili timezone UTC+9)
 const formatTimeForPeriod = (date: Date, hours: number): string => {
   if (hours <= 24) {
     return date.toLocaleTimeString('en-US', { 
       hour: '2-digit', 
       minute: '2-digit',
-      hour12: false 
+      hour12: false,
+      timeZone: 'Asia/Dili'
     });
   } else if (hours <= 168) {
     return date.toLocaleDateString('en-US', { 
@@ -53,12 +54,14 @@ const formatTimeForPeriod = (date: Date, hours: number): string => {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
+      timeZone: 'Asia/Dili'
     });
   } else {
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'Asia/Dili'
     });
   }
 };
@@ -85,6 +88,8 @@ const generateCSVContent = (data: AvailabilityDataPoint[], selectedPeriod: TimeP
     `# Data Period: ${actualDataPeriod}`,
     `# Total Data Points: ${data.length}`,
     `# Region: TL-DL`,
+    `# Timezone: Asia/Dili (UTC+9)`,
+    `# Note: Formatted Time column shows times in Dili local time`,
     ''
   ];
   
