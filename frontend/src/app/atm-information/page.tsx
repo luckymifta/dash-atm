@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Landmark, Search, RefreshCw, AlertCircle, MapPin, Wrench, Clock, Filter, X } from 'lucide-react';
 import { atmApiService, TerminalDetails } from '@/services/atmApi';
 
-export default function ATMInformationPage() {
+// Component that uses useSearchParams - wrapped in Suspense
+function ATMInformationContent() {
   const [terminalData, setTerminalData] = useState<TerminalDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -815,5 +816,26 @@ export default function ATMInformationPage() {
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+// Loading component for Suspense fallback
+function ATMInformationLoading() {
+  return (
+    <DashboardLayout>
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+        <span className="ml-2 text-lg">Loading terminal information...</span>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function ATMInformationPage() {
+  return (
+    <Suspense fallback={<ATMInformationLoading />}>
+      <ATMInformationContent />
+    </Suspense>
   );
 }
