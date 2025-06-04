@@ -35,6 +35,7 @@ export default function LoginForm() {
       const credentials: LoginRequest = {
         username: data.username,
         password: data.password,
+        remember_me: data.rememberMe,
       };
 
       await login(credentials);

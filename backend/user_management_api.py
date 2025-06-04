@@ -22,6 +22,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 import os
+import pytz
+from typing import Union
 
 # Load environment variables
 load_dotenv()
@@ -35,8 +37,24 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     initialize_default_users()
+    
+    # Start session scheduler
+    try:
+        from session_scheduler import session_scheduler
+        session_scheduler.start()
+        logger.info("Session scheduler started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start session scheduler: {e}")
+    
     yield
+    
     # Shutdown
+    try:
+        from session_scheduler import session_scheduler
+        session_scheduler.stop()
+        logger.info("Session scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping session scheduler: {e}")
     pass
 
 app = FastAPI(title="User Management API", version="1.0.0", lifespan=lifespan)
@@ -59,6 +77,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 MAX_FAILED_ATTEMPTS = 5
 ACCOUNT_LOCKOUT_MINUTES = 15
+
+# Timezone configuration for Dili, East Timor (UTC+9)
+DILI_TIMEZONE = pytz.timezone('Asia/Dili')
+
+# Session management configuration
+SESSION_TIMEOUT_WARNING_MINUTES = 5  # Warn user 5 minutes before token expiration
+AUTO_LOGOUT_DILI_TIME = "00:00"  # Automatic logout at midnight Dili time
+REMEMBER_ME_DAYS = 30  # Extended session for "Remember Me"
 
 # PostgreSQL configuration from .env file
 POSTGRES_CONFIG = {
@@ -115,6 +141,7 @@ class PasswordUpdate(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+    remember_me: bool = False  # Added remember me functionality
 
 class UserResponse(UserBase):
     id: str
@@ -209,6 +236,49 @@ def get_client_ip(request: Request) -> str:
     """Get client IP address"""
     return request.client.host if request.client else "unknown"
 
+def get_dili_time() -> datetime:
+    """Get current time in Dili timezone"""
+    return datetime.now(DILI_TIMEZONE)
+
+def get_next_midnight_dili() -> datetime:
+    """Get next midnight in Dili timezone"""
+    now_dili = get_dili_time()
+    next_midnight = now_dili.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return next_midnight
+
+def should_auto_logout(user_last_activity: datetime) -> bool:
+    """Check if user should be automatically logged out based on Dili midnight rule"""
+    if not user_last_activity:
+        return False
+    
+    # Convert last activity to Dili timezone
+    if user_last_activity.tzinfo is None:
+        user_last_activity = pytz.utc.localize(user_last_activity)
+    
+    last_activity_dili = user_last_activity.astimezone(DILI_TIMEZONE)
+    current_dili = get_dili_time()
+    
+    # If it's past midnight and last activity was before midnight, logout
+    last_activity_date = last_activity_dili.date()
+    current_date = current_dili.date()
+    
+    if current_date > last_activity_date:
+        return True
+    
+    return False
+
+def update_session_activity(user_id: str, session_token: str) -> None:
+    """Update last accessed time for session"""
+    try:
+        query = """
+            UPDATE user_sessions 
+            SET last_accessed_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s AND session_token = %s AND is_active = true
+        """
+        execute_query(query, (user_id, session_token))
+    except Exception as e:
+        logger.error(f"Failed to update session activity: {e}")
+
 def log_audit_action(
     action: AuditAction,
     user_id: Optional[str] = None,
@@ -272,6 +342,21 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Check if session is still active in database
+    session_query = """
+        SELECT id FROM user_sessions 
+        WHERE session_token = %s AND user_id = %s AND is_active = true
+        AND expires_at > CURRENT_TIMESTAMP
+    """
+    active_session = execute_query(session_query, (token, user_id), fetch="one")
+    
+    if active_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalid",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -355,29 +440,43 @@ async def login(user_login: UserLogin, request: Request):
     """
     execute_query(query, (get_client_ip(request), user_id))
     
-    # Create tokens
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    # Create tokens with extended expiration for "Remember Me"
+    if user_login.remember_me:
+        access_token_expires = timedelta(days=REMEMBER_ME_DAYS)
+        refresh_token_expires = timedelta(days=REMEMBER_ME_DAYS * 2)
+    else:
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    
     access_token = create_access_token(
-        data={"sub": user_id, "username": user_dict["username"], "role": user_dict["role"]},
+        data={
+            "sub": user_id, 
+            "username": user_dict["username"], 
+            "role": user_dict["role"],
+            "remember_me": user_login.remember_me
+        },
         expires_delta=access_token_expires
     )
     refresh_token = create_refresh_token()
     
-    # Store session
+    # Store session with enhanced tracking
     session_query = """
         INSERT INTO user_sessions (
             user_id, session_token, refresh_token, expires_at, 
-            ip_address, user_agent, is_active
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ip_address, user_agent, is_active, remember_me, last_accessed_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
+    session_expires_at = datetime.now(timezone.utc) + refresh_token_expires
     session_params = (
         user_id,
         access_token,
         refresh_token,
-        datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        session_expires_at,
         get_client_ip(request),
         request.headers.get("user-agent"),
-        True
+        True,
+        user_login.remember_me,
+        datetime.now(timezone.utc)  # last_accessed_at
     )
     execute_query(session_query, session_params)
     
@@ -394,6 +493,201 @@ async def login(user_login: UserLogin, request: Request):
         refresh_token=refresh_token,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
+
+@app.post("/auth/logout")
+async def logout(request: Request, current_user: dict = Depends(get_current_user)):
+    """Logout user and invalidate session"""
+    try:
+        user_id = current_user["id"]
+        
+        # Get the token from the Authorization header
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            
+            # Deactivate session in database
+            query = """
+                UPDATE user_sessions 
+                SET is_active = false, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s AND session_token = %s AND is_active = true
+            """
+            execute_query(query, (user_id, token))
+            
+            # Log the logout action
+            log_audit_action(
+                AuditAction.LOGOUT,
+                user_id=user_id,
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                new_values={"result": "success"}
+            )
+            
+            logger.info(f"User {current_user['username']} logged out successfully")
+            return {"message": "Logout successful"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid authentication token provided"
+            )
+            
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
+        # Even if there's an error, we should still return success
+        # since the client will clear the token anyway
+        return {"message": "Logout completed"}
+
+@app.get("/users/{user_id}/sessions")
+async def get_user_sessions(
+    user_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get active sessions for a user"""
+    # Only allow users to view their own sessions or admins to view any
+    if current_user["id"] != user_id and current_user["role"] not in ["admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view these sessions"
+        )
+    
+    query = """
+        SELECT session_token, ip_address, user_agent, created_at, 
+               last_accessed_at, expires_at, is_active
+        FROM user_sessions 
+        WHERE user_id = %s AND is_active = true
+        ORDER BY last_accessed_at DESC
+    """
+    sessions = execute_query(query, (user_id,), fetch="all")
+    
+    return {"sessions": [dict(session) for session in sessions] if sessions else []}
+
+@app.delete("/sessions/{session_token}")
+async def revoke_session(
+    session_token: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Revoke a specific session"""
+    user_id = current_user["id"]
+    
+    try:
+        # First check if the session exists and belongs to the user
+        check_query = """
+            SELECT id FROM user_sessions 
+            WHERE session_token = %s AND user_id = %s AND is_active = true
+        """
+        existing_session = execute_query(check_query, (session_token, user_id), fetch="one")
+        
+        if not existing_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found or already inactive"
+            )
+        
+        # Deactivate the session
+        update_query = """
+            UPDATE user_sessions 
+            SET is_active = false, updated_at = %s
+            WHERE session_token = %s AND user_id = %s AND is_active = true
+        """
+        rows_affected = execute_query(update_query, (datetime.utcnow(), session_token, user_id))
+        
+        if rows_affected and rows_affected > 0:
+            log_audit_action(
+                AuditAction.LOGOUT,
+                user_id=user_id,
+                new_values={"action": "session_revoked", "session_token": session_token[:20] + "..."}
+            )
+            return {"message": "Session revoked successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to revoke session"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error revoking session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to revoke session"
+        )
+
+@app.post("/auth/refresh-session")
+async def refresh_session(request: Request, current_user: dict = Depends(get_current_user)):
+    """Refresh user session and update activity"""
+    try:
+        user_id = current_user["id"]
+        
+        # Get the current token
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            
+            # Update session activity
+            update_session_activity(user_id, token)
+            
+            # Check if user should be auto-logged out due to midnight rule
+            query = """
+                SELECT last_accessed_at FROM user_sessions 
+                WHERE user_id = %s AND session_token = %s AND is_active = true
+            """
+            session_data = execute_query(query, (user_id, token), fetch="one")
+            
+            if session_data and should_auto_logout(session_data["last_accessed_at"]):
+                # Force logout due to midnight rule
+                logout_query = """
+                    UPDATE user_sessions 
+                    SET is_active = false, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s AND session_token = %s
+                """
+                execute_query(logout_query, (user_id, token))
+                
+                log_audit_action(
+                    AuditAction.LOGOUT,
+                    user_id=user_id,
+                    new_values={"reason": "auto_logout_midnight_dili"}
+                )
+                
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session expired due to automatic midnight logout"
+                )
+            
+            # Calculate time until next midnight in Dili
+            next_midnight = get_next_midnight_dili()
+            current_time = get_dili_time()
+            time_until_midnight = (next_midnight - current_time).total_seconds()
+            
+            # Calculate time until token expiration
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            token_exp = datetime.fromtimestamp(payload['exp'], tz=timezone.utc)
+            time_until_exp = (token_exp - datetime.now(timezone.utc)).total_seconds()
+            
+            return {
+                "message": "Session refreshed",
+                "time_until_midnight_seconds": int(time_until_midnight),
+                "time_until_token_expiry_seconds": int(max(0, time_until_exp)),
+                "dili_time": current_time.isoformat(),
+                "next_midnight_dili": next_midnight.isoformat(),
+                "should_warn_expiry": time_until_exp <= (SESSION_TIMEOUT_WARNING_MINUTES * 60)
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid authentication token provided"
+            )
+            
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+    except Exception as e:
+        logger.error(f"Session refresh error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh session"
+        )
 
 @app.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(

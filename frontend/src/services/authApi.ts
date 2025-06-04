@@ -6,6 +6,7 @@ import Cookies from 'js-cookie';
 export interface LoginRequest {
   username: string;
   password: string;
+  remember_me?: boolean;
 }
 
 export interface LoginResponse {
@@ -13,6 +14,7 @@ export interface LoginResponse {
   refresh_token: string;
   token_type: string;
   expires_in: number;
+  remember_me?: boolean;
 }
 
 export interface User {
@@ -31,6 +33,27 @@ export interface User {
   created_at: string;
   updated_at: string;
   created_by?: string;
+}
+
+export interface UserSession {
+  session_token: string;
+  user_id: string;
+  is_active: boolean;
+  expires_at: string;
+  created_at: string;
+  last_accessed_at: string;
+  remember_me: boolean;
+  user_agent?: string;
+  ip_address?: string;
+}
+
+export interface RefreshSessionResponse {
+  message: string;
+  time_until_midnight_seconds: number;
+  time_until_token_expiry_seconds: number;
+  dili_time: string;
+  next_midnight_dili: string;
+  should_warn_expiry: boolean;
 }
 
 export interface CreateUserRequest {
@@ -122,22 +145,27 @@ class AuthApiService {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async logout(_token: string): Promise<void> {
+  async logout(token: string): Promise<void> {
     try {
-      // Since the backend doesn't have a logout endpoint and JWTs are stateless,
-      // we'll handle logout client-side only by removing the token from cookies
-      // This is a common pattern for JWT-based authentication
-      console.log('Performing client-side logout...');
-      
-      // The actual token removal will be handled by the AuthContext
-      // This method just provides a consistent interface
-      return Promise.resolve();
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
+      // Call the backend logout endpoint to invalidate the session
+      const response = await fetch(`${this.baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Backend logout failed:', errorData.detail);
+        // Even if backend logout fails, continue with client-side cleanup
       }
-      throw new Error('An unexpected error occurred during logout');
+      
+      console.log('Successfully logged out from backend');
+    } catch (error) {
+      console.error('Logout API call failed:', error);
+      // Even if logout API call fails, we should still clear local state
     }
   }
 
@@ -318,6 +346,81 @@ class AuthApiService {
         throw error;
       }
       throw new Error('An unexpected error occurred while changing password');
+    }
+  }
+
+  // Session Management Methods
+  async getUserSessions(userId: string): Promise<UserSession[]> {
+    try {
+      const token = this.getToken();
+      const response = await fetch(`${this.baseUrl}/users/${userId}/sessions`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to get user sessions');
+      }
+
+      const data = await response.json();
+      return data.sessions;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while fetching user sessions');
+    }
+  }
+
+  async revokeSession(sessionToken: string): Promise<void> {
+    try {
+      const token = this.getToken();
+      const response = await fetch(`${this.baseUrl}/sessions/${sessionToken}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to revoke session');
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while revoking session');
+    }
+  }
+
+  async refreshSession(): Promise<RefreshSessionResponse> {
+    try {
+      const token = this.getToken();
+      const response = await fetch(`${this.baseUrl}/auth/refresh-session`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to refresh session');
+      }
+
+      return await response.json();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while refreshing session');
     }
   }
 }
