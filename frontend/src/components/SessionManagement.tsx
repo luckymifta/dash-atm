@@ -72,7 +72,15 @@ const SessionManagement: React.FC<SessionManagementProps> = ({ userId }) => {
   }, [targetUserId, fetchSessions]);
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    return new Date(dateString).toLocaleString('en-US', { 
+      timeZone: 'Asia/Dili',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }) + ' (Dili Time)';
   };
 
   const formatTimeUntilMidnight = (seconds: number | null) => {

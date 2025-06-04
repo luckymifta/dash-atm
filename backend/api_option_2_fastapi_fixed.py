@@ -44,6 +44,7 @@ from enum import Enum
 import asyncio
 import asyncpg
 from contextlib import asynccontextmanager
+import pytz
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException, Query, Path, Depends
@@ -80,6 +81,36 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER', 'timlesdev'),
     'password': os.getenv('DB_PASSWORD', 'timlesdev')
 }
+
+# Timezone configuration
+DILI_TZ = pytz.timezone('Asia/Dili')  # UTC+9
+UTC_TZ = pytz.UTC
+
+def convert_to_dili_time(utc_timestamp: datetime) -> datetime:
+    """
+    Convert a UTC timestamp to Dili local time (UTC+9).
+    
+    Args:
+        utc_timestamp: A datetime object in UTC (timezone-aware or naive)
+    
+    Returns:
+        datetime: Timestamp converted to Dili local time
+    """
+    try:
+        # If the timestamp is timezone-naive, assume it's UTC
+        if utc_timestamp.tzinfo is None:
+            utc_timestamp = UTC_TZ.localize(utc_timestamp)
+        
+        # Convert to Dili time
+        dili_timestamp = utc_timestamp.astimezone(DILI_TZ)
+        
+        # Return as timezone-naive datetime for JSON serialization
+        return dili_timestamp.replace(tzinfo=None)
+        
+    except Exception as e:
+        logger.warning(f"Error converting timestamp to Dili time: {e}")
+        # Fallback: return original timestamp
+        return utc_timestamp.replace(tzinfo=None) if utc_timestamp.tzinfo else utc_timestamp
 
 # Pydantic Models for Data Validation
 class ATMStatusEnum(str, Enum):
@@ -383,7 +414,7 @@ async def get_atm_summary(
             status_counts=status_counts,
             overall_availability=round(availability_percentage, 2),
             total_regions=row['total_regions'] or 0,
-            last_updated=row['last_updated'] or datetime.utcnow(),
+            last_updated=convert_to_dili_time(row['last_updated']) if row['last_updated'] else convert_to_dili_time(datetime.utcnow()),
             data_source=table_type.value
         )
         
@@ -500,7 +531,7 @@ async def get_regional_data(
                 region_code=row['region_code'],
                 status_counts=status_counts,
                 availability_percentage=round(availability_pct, 2),
-                last_updated=row['date_creation'] or datetime.utcnow(),
+                last_updated=convert_to_dili_time(row['date_creation']) if row['date_creation'] else convert_to_dili_time(datetime.utcnow()),
                 health_status=calculate_health_status(availability_pct)
             ))
         
@@ -517,7 +548,7 @@ async def get_regional_data(
             regional_data=regional_data,
             total_regions=len(rows),
             summary=summary_counts,
-            last_updated=last_updated or datetime.utcnow()
+            last_updated=convert_to_dili_time(last_updated) if last_updated else convert_to_dili_time(datetime.utcnow())
         )
         
     except HTTPException:
@@ -641,7 +672,7 @@ async def get_regional_trends(
             )
             
             trends.append(TrendPoint(
-                timestamp=row['date_creation'],
+                timestamp=convert_to_dili_time(row['date_creation']),
                 status_counts=status_counts,
                 availability_percentage=round(availability_pct, 2)
             ))
@@ -716,7 +747,7 @@ async def get_latest_data(
                         'count_zombie': row['count_zombie'],
                         'count_wounded': row['count_wounded'],
                         'count_out_of_service': row['count_out_of_service'],
-                        'last_updated': row['retrieval_timestamp'].isoformat() if row['retrieval_timestamp'] else None
+                        'last_updated': convert_to_dili_time(row['retrieval_timestamp']).isoformat() if row['retrieval_timestamp'] else None
                     })
                 
                 result["data_sources"].append({
@@ -745,7 +776,7 @@ async def get_latest_data(
                     new_data.append({
                         'region_code': row['region_code'],
                         'raw_regional_data': row['raw_regional_data'],
-                        'last_updated': row['retrieval_timestamp'].isoformat() if row['retrieval_timestamp'] else None
+                        'last_updated': convert_to_dili_time(row['retrieval_timestamp']).isoformat() if row['retrieval_timestamp'] else None
                     })
                 
                 result["data_sources"].append({
@@ -779,7 +810,7 @@ async def get_latest_data(
                         'issue_state_name': row['issue_state_name'],
                         'serial_number': row['serial_number'],
                         'fetched_status': row['fetched_status'],
-                        'retrieved_date': row['retrieved_date'].isoformat() if row['retrieved_date'] else None,
+                        'retrieved_date': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None,
                         'fault_data': row['fault_data'],
                         'metadata': row['metadata']
                     })
@@ -799,7 +830,7 @@ async def get_latest_data(
         
         result["summary"] = {
             "total_tables_queried": len(result["data_sources"]),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
             "table_type_requested": table_type.value
         }
         
@@ -820,7 +851,7 @@ async def general_exception_handler(request, exc):
     logger.error(f"Unexpected error: {exc}")
     return JSONResponse(
         status_code=500,
-        content={"success": False, "message": "Internal server error", "timestamp": datetime.now().isoformat()}
+        content={"success": False, "message": "Internal server error", "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()}
     )
 
 if __name__ == "__main__":

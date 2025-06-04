@@ -18,7 +18,15 @@ const UserProfile: React.FC = () => {
   }
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    return new Date(dateString).toLocaleString('en-US', { 
+      timeZone: 'Asia/Dili',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }) + ' (Dili Time)';
   };
 
   const getTimeUntilExpiry = () => {
@@ -136,7 +144,15 @@ const UserProfile: React.FC = () => {
                   <div>
                     <span className="font-medium text-blue-700">Expires At:</span>
                     <p className="text-blue-600">
-                      {sessionExpiry ? new Date(sessionExpiry).toLocaleString() : 'Unknown'}
+                      {sessionExpiry ? new Date(sessionExpiry).toLocaleString('en-US', { 
+                        timeZone: 'Asia/Dili',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                      }) + ' (Dili Time)' : 'Unknown'}
                     </p>
                   </div>
                   <div>

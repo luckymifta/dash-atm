@@ -133,7 +133,15 @@ export default function DashboardPage() {
           <div className="flex items-center space-x-3">
             {data?.last_updated && (
               <p className="text-sm text-gray-500">
-                Last updated: {new Date(data.last_updated).toLocaleString()}
+                Last updated: {new Date(data.last_updated).toLocaleString('en-US', { 
+                  timeZone: 'Asia/Dili',
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false
+                })} (Dili Time)
               </p>
             )}
             {/* Connection Status */}
