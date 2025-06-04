@@ -3,13 +3,15 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
-import { Eye, EyeOff, Lock, User, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginRequest } from '@/services/authApi';
+import Image from 'next/image';
 
 interface LoginFormData {
   username: string;
   password: string;
+  rememberMe: boolean;
 }
 
 export default function LoginForm() {
@@ -50,55 +52,70 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
-        {/* Logo and Header */}
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-indigo-600 rounded-xl flex items-center justify-center mb-4">
-            <Lock className="h-8 w-8 text-white" />
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 relative overflow-hidden">
+      {/* Floating decorative elements */}
+      <div className="absolute top-32 left-20 w-16 h-16 bg-orange-500 rounded-lg transform rotate-12 opacity-80 animate-pulse"></div>
+      <div className="absolute top-20 right-32 w-24 h-24 bg-orange-400 rounded-lg transform -rotate-12 opacity-70 animate-pulse" style={{ animationDelay: '1s' }}></div>
+      <div className="absolute bottom-40 left-16 w-12 h-12 bg-orange-500 rounded-lg transform rotate-45 opacity-60 animate-pulse" style={{ animationDelay: '2s' }}></div>
+      <div className="absolute bottom-32 right-20 w-20 h-20 bg-orange-400 rounded-lg transform -rotate-45 opacity-50 animate-pulse" style={{ animationDelay: '3s' }}></div>
+      <div className="absolute top-1/2 left-10 w-8 h-8 bg-orange-300 rounded-lg transform rotate-12 opacity-40 animate-pulse" style={{ animationDelay: '4s' }}></div>
+      <div className="absolute top-1/3 right-16 w-14 h-14 bg-orange-500 rounded-lg transform -rotate-30 opacity-60 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+      
+      {/* Main container */}
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative z-10 backdrop-blur-sm">
+          {/* Logo Section */}
+          <div className="text-center mb-8">
+            <div className="mb-6">
+              <Image
+                src="/bri-logo.jpg"
+                alt="BRI Global Financial"
+                width={160}
+                height={64}
+                className="mx-auto"
+                priority
+              />
+            </div>
+            <h1 className="text-2xl font-semibold text-gray-800 mb-2">
+              Let&apos;s get you signed in
+            </h1>
+            <p className="text-sm text-gray-600">
+              Secure ATM Dashboard Portal
+            </p>
           </div>
-          <h2 className="text-3xl font-bold text-gray-900">ATM Dashboard</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Sign in to access the monitoring system
-          </p>
-        </div>
 
-        {/* Login Form */}
-        <div className="bg-white py-8 px-6 shadow-xl rounded-xl">
-          <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
-            {/* Error Alert */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center space-x-3">
-                <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-                <div className="text-sm text-red-700">{error}</div>
-              </div>
-            )}
+          {/* Error Alert */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center space-x-3 mb-6">
+              <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+              <div className="text-sm text-red-700">{error}</div>
+            </div>
+          )}
 
-            {/* Username Field */}
+          {/* Login Form */}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            {/* Email/Username Field */}
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
                 Username
               </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  {...register('username', {
-                    required: 'Username is required',
-                    minLength: {
-                      value: 2,
-                      message: 'Username must be at least 2 characters',
-                    },
-                  })}
-                  type="text"
-                  autoComplete="username"
-                  className={`appearance-none relative block w-full pl-10 pr-3 py-3 border ${
-                    errors.username ? 'border-red-300' : 'border-gray-300'
-                  } placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm transition-colors`}
-                  placeholder="Enter your username"
-                />
-              </div>
+              <input
+                {...register('username', {
+                  required: 'Username is required',
+                  minLength: {
+                    value: 3,
+                    message: 'Please enter a valid username',
+                  },
+                })}
+                type="text"
+                id="username"
+                autoComplete="username"
+                className={`w-full px-4 py-3 bg-gray-50 border ${
+                  errors.username ? 'border-red-300' : 'border-gray-200'
+                } rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-500`}
+                placeholder="Enter your username"
+                defaultValue="admin"
+              />
               {errors.username && (
                 <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
               )}
@@ -106,13 +123,18 @@ export default function LoginForm() {
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
+              <div className="flex justify-between items-center mb-2">
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                >
+                  Forgot Password?
+                </button>
+              </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400" />
-                </div>
                 <input
                   {...register('password', {
                     required: 'Password is required',
@@ -122,21 +144,23 @@ export default function LoginForm() {
                     },
                   })}
                   type={showPassword ? 'text' : 'password'}
+                  id="password"
                   autoComplete="current-password"
-                  className={`appearance-none relative block w-full pl-10 pr-10 py-3 border ${
-                    errors.password ? 'border-red-300' : 'border-gray-300'
-                  } placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm transition-colors`}
+                  className={`w-full px-4 py-3 bg-gray-50 border ${
+                    errors.password ? 'border-red-300' : 'border-gray-200'
+                  } rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-500 pr-12`}
                   placeholder="Enter your password"
+                  defaultValue="admin123"
                 />
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
                   onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   {showPassword ? (
-                    <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                    <EyeOff className="h-5 w-5" />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                    <Eye className="h-5 w-5" />
                   )}
                 </button>
               </div>
@@ -145,46 +169,42 @@ export default function LoginForm() {
               )}
             </div>
 
-            {/* Submit Button */}
-            <div>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white ${
-                  isSubmitting
-                    ? 'bg-indigo-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-                } transition-colors focus:outline-none`}
-              >
-                {isSubmitting ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Signing in...
-                  </div>
-                ) : (
-                  'Sign in'
-                )}
-              </button>
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center">
+              <input
+                {...register('rememberMe')}
+                id="rememberMe"
+                type="checkbox"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-colors"
+              />
+              <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
+                Keep me logged in
+              </label>
             </div>
 
-            {/* Default Credentials Info */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-blue-800 mb-2">Default Admin Credentials:</h4>
-              <div className="text-xs text-blue-700 space-y-1">
-                <div><strong>Username:</strong> admin</div>
-                <div><strong>Password:</strong> admin123</div>
-                <div className="text-blue-600 mt-2">
-                  ⚠️ Please change the default password after first login
+            {/* Login Button */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              {isSubmitting ? (
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>Signing in...</span>
                 </div>
-              </div>
-            </div>
+              ) : (
+                'Login'
+              )}
+            </button>
           </form>
-        </div>
 
-        {/* Footer */}
-        <div className="text-center text-sm text-gray-500">
-          <p>ATM Monitoring System v2.0</p>
-          <p className="mt-1">Secure access to dashboard and analytics</p>
+          {/* Footer */}
+          <div className="mt-8 text-center">
+            <p className="text-xs text-gray-500">
+              BRI ATM Dashboard Login Portal v2.0
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -412,6 +412,83 @@ async def get_user(
     
     return UserResponse(**dict(user))
 
+@app.get("/users")
+async def get_users(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    role: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get paginated list of users with optional filtering"""
+    
+    # Validate pagination parameters
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 10
+    
+    # Build the WHERE clause
+    where_conditions = ["is_deleted = false"]
+    params = []
+    
+    # Add search filter
+    if search and search.strip():
+        search_term = f"%{search.strip()}%"
+        where_conditions.append(
+            "(username ILIKE %s OR email ILIKE %s OR first_name ILIKE %s OR last_name ILIKE %s)"
+        )
+        params.extend([search_term, search_term, search_term, search_term])
+    
+    # Add role filter
+    if role and role.strip():
+        where_conditions.append("role = %s")
+        params.append(role.strip())
+    
+    # Add status filter
+    if status and status.strip():
+        if status.strip().lower() == "active":
+            where_conditions.append("is_active = true")
+        elif status.strip().lower() == "inactive":
+            where_conditions.append("is_active = false")
+    
+    where_clause = " AND ".join(where_conditions)
+    
+    # Count total users
+    count_query = f"SELECT COUNT(*) FROM users WHERE {where_clause}"
+    total_result = execute_query(count_query, tuple(params), fetch="one")
+    total = total_result['count'] if total_result else 0
+    
+    # Calculate pagination
+    offset = (page - 1) * limit
+    total_pages = (total + limit - 1) // limit if total > 0 else 1
+    
+    # Get users with pagination
+    users_query = f"""
+        SELECT * FROM users 
+        WHERE {where_clause}
+        ORDER BY created_at DESC
+        LIMIT %s OFFSET %s
+    """
+    users_params = params + [limit, offset]
+    users_result = execute_query(users_query, tuple(users_params), fetch="all")
+    
+    # Convert to response format
+    users = []
+    if users_result:
+        for user_data in users_result:
+            user_dict = dict(user_data)
+            users.append(UserResponse(**user_dict))
+    
+    return {
+        "users": users,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages
+    }
+
 # Initialize with default admin user
 def initialize_default_users():
     """Create default admin user if it doesn't exist"""
