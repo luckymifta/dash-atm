@@ -105,7 +105,7 @@ export interface AuditLogResponse {
 }
 
 class AuthApiService {
-  private baseUrl = 'http://localhost:8001';
+  private baseUrl = process.env.NEXT_PUBLIC_USER_API_BASE_URL || 'http://localhost:8001';
 
   private getToken(): string {
     // Use js-cookie library to get the token (same as AuthContext)

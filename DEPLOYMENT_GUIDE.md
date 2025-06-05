@@ -233,7 +233,7 @@ MAIN_API_PID=$!
 
 # Wait a moment and test
 sleep 3
-curl http://localhost:8000/health || echo "Main API not responding"
+curl http://localhost:8000/api/v1/health || echo "Main API not responding"
 
 # Stop the test
 kill $MAIN_API_PID
@@ -265,13 +265,23 @@ npm install
 # Generate a secure NEXTAUTH_SECRET
 NEXTAUTH_SECRET=$(openssl rand -base64 32)
 
-# Create Next.js environment file
+# Create Next.js environment file with correct API endpoints
 cat > .env.production << EOF
-NEXT_PUBLIC_API_URL=https://staging.luckymifta.dev/api
-NEXT_PUBLIC_USER_API_URL=https://staging.luckymifta.dev/user-api
+# Production Environment Configuration for Frontend
+# API Configuration - Production HTTPS URLs
+NEXT_PUBLIC_API_BASE_URL=https://staging.luckymifta.dev/api/v1
+NEXT_PUBLIC_USER_API_BASE_URL=https://staging.luckymifta.dev/user-api
+
+# Environment
+NODE_ENV=production
+
+# NextAuth Configuration
 NEXTAUTH_URL=https://staging.luckymifta.dev
 NEXTAUTH_SECRET=$NEXTAUTH_SECRET
-NODE_ENV=production
+
+# Application Configuration
+NEXT_PUBLIC_APP_NAME=ATM Dashboard
+NEXT_PUBLIC_APP_VERSION=1.0.0
 EOF
 
 # Display the generated secret for your records
@@ -511,7 +521,10 @@ chown -R www-data:www-data /var/www/dash-atm
 
 # Set proper permissions
 chmod -R 755 /var/www/dash-atm
-chmod -R 644 /var/www/dash-atm/.env*
+
+# Set permissions for environment files (if they exist)
+sudo chmod 644 /var/www/dash-atm/backend/.env 2>/dev/null || echo "Backend .env not found"
+sudo chmod 644 /var/www/dash-atm/frontend/.env.production 2>/dev/null || echo "Frontend .env.production not found"
 ```
 
 ### 6.2 Verify Services
@@ -532,205 +545,599 @@ pm2 logs dash-atm-frontend --lines 50
 ```
 
 ### 6.3 Test Application
+
+**First, test internal services directly (most important):**
 ```bash
-# Test main API (port 8000)
-curl -k https://staging.luckymifta.dev/api/health
-
-# Test user management API (port 8001)
-curl -k https://staging.luckymifta.dev/user-api/health
-
-# Test frontend
-curl -k https://staging.luckymifta.dev
-
 # Test internal services directly (from VPS)
-curl http://localhost:8000/health  # Main API
-curl http://localhost:8001/health  # User API
-curl http://localhost:3000         # Frontend
+curl http://localhost:8000/api/v1/health  # Main API
+curl http://localhost:8001/health         # User API
+curl http://localhost:3000                # Frontend
+
+# Check which services are actually listening
+sudo netstat -tlnp | grep :8000  # Main API
+sudo netstat -tlnp | grep :8001  # User API
+sudo netstat -tlnp | grep :3000  # Frontend
+sudo netstat -tlnp | grep :80    # Nginx HTTP
 ```
 
----
+**If internal services work, diagnose the HTTP port 80 connection issue:**
 
-## Phase 7: Monitoring and Maintenance
-
-### 7.1 Setup Log Rotation
+**Step 1: Check if Nginx is running and listening on port 80**
 ```bash
-cat > /etc/logrotate.d/dash-atm << 'EOF'
-/var/log/dash-atm/*.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    postrotate
-        pm2 reloadLogs
-    endscript
+# Check Nginx status
+sudo systemctl status nginx
+
+# Check if port 80 is open and listening
+sudo netstat -tlnp | grep :80
+# OR use ss command
+sudo ss -tlnp | grep :80
+
+# Check if Nginx process is running
+ps aux | grep nginx
+```
+
+**Step 2: Check firewall settings**
+```bash
+# Check UFW status and rules
+sudo ufw status verbose
+
+# Check if port 80 is allowed
+sudo ufw status | grep -E "(80|http)"
+
+# If port 80 is not allowed, add it:
+sudo ufw allow 80/tcp
+sudo ufw allow http
+```
+
+**Step 3: Check if Nginx configuration is valid**
+```bash
+# Test Nginx configuration
+sudo nginx -t
+
+# Check which config files are active
+sudo nginx -T | head -20
+
+# Check if staging.luckymifta.dev site is enabled
+ls -la /etc/nginx/sites-enabled/
+```
+
+**Step 4: Check if Nginx can bind to port 80**
+```bash
+# Check if anything else is using port 80
+sudo lsof -i :80
+
+# Try to restart Nginx to see if there are binding issues
+sudo systemctl restart nginx
+sudo systemctl status nginx
+
+# Check Nginx error logs
+sudo tail -f /var/log/nginx/error.log
+```
+
+**Step 5: Manual diagnostic tests**
+```bash
+# Test if you can reach the server at all
+ping staging.luckymifta.dev
+
+# Test if port 80 is reachable from outside (from your local machine)
+# Run this from your LOCAL machine, not the VPS:
+# telnet staging.luckymifta.dev 80
+# nc -zv staging.luckymifta.dev 80
+
+# Check DNS resolution
+nslookup staging.luckymifta.dev
+dig staging.luckymifta.dev
+```
+
+**Step 6: Create HTTP configuration or add SSL to existing config**
+
+**Option A: If SSL certificates exist, create HTTPS configuration:**
+```bash
+# First, verify SSL certificates exist
+sudo ls -la /etc/letsencrypt/live/staging.luckymifta.dev/
+
+# If certificates exist, create HTTPS-enabled config using nano
+sudo nano /etc/nginx/sites-available/staging.luckymifta.dev
+
+# In nano editor, replace the content with this HTTPS configuration:
+```
+
+**HTTPS configuration to paste in nano (if SSL certificates exist):**
+```nginx
+# HTTP server - redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name staging.luckymifta.dev;
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name staging.luckymifta.dev;
+
+    # SSL Configuration
+    ssl_certificate /etc/letsencrypt/live/staging.luckymifta.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/staging.luckymifta.dev/privkey.pem;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+    # Test endpoint
+    location /health {
+        return 200 "Nginx HTTPS is working!\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Main API routes (port 8000)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # User Management API routes (port 8001)
+    location /user-api/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # Frontend routes
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+}
+```
+
+**Option B: If no SSL certificates, create HTTP-only config:**
+```nginx
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name staging.luckymifta.dev _;
+
+    # Test endpoint
+    location /health {
+        return 200 "Nginx HTTP is working!\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Main API routes (port 8000)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # User Management API routes (port 8001)
+    location /user-api/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # Frontend routes
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
 }
 EOF
+
+# Test and reload Nginx
+sudo nginx -t && sudo systemctl reload nginx
+
+# Now test HTTP endpoints
+curl http://staging.luckymifta.dev/api/v1/health
+curl http://staging.luckymifta.dev/user-api/health
+curl http://staging.luckymifta.dev/
 ```
 
-### 7.2 Create Backup Script
+**If you get "Connection refused" error on port 80, follow these diagnostic steps:**
+
 ```bash
-cat > /root/backup-dash-atm.sh << 'EOF'
-#!/bin/bash
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/root/backups"
-mkdir -p $BACKUP_DIR
+# 1. Check if Nginx is actually running and listening on port 80
+sudo systemctl status nginx
+sudo netstat -tlnp | grep :80
+sudo ss -tlnp | grep :80
 
-# Backup database
-sudo -u postgres pg_dump dash > $BACKUP_DIR/dash_db_$DATE.sql
+# 2. Check Nginx configuration and logs
+sudo nginx -t
+sudo tail -50 /var/log/nginx/error.log
+sudo tail -50 /var/log/nginx/access.log
 
-# Backup application files
-tar -czf $BACKUP_DIR/dash_app_$DATE.tar.gz /var/www/dash-atm
+# 3. Check if port 80 is blocked by firewall
+sudo ufw status verbose
+sudo iptables -L -n | grep 80
 
-# Keep only last 7 days of backups
-find $BACKUP_DIR -name "*.sql" -mtime +7 -delete
-find $BACKUP_DIR -name "*.tar.gz" -mtime +7 -delete
+# 4. Test if Nginx responds locally vs externally
+curl -v http://localhost/           # Test from VPS
+curl -v http://127.0.0.1/          # Test from VPS
+curl -v http://$(hostname -I | awk '{print $1}')/  # Test using VPS IP
+
+# 5. Check DNS resolution
+nslookup staging.luckymifta.dev
+dig staging.luckymifta.dev
+
+# 6. Test direct IP connection (replace YOUR_VPS_IP with actual IP)
+# From your local machine:
+# curl -v http://YOUR_VPS_IP/
+
+# 7. Check if any process is blocking port 80
+sudo lsof -i :80
+sudo fuser 80/tcp
+
+# 8. Restart Nginx completely
+sudo systemctl stop nginx
+sleep 2
+sudo systemctl start nginx
+sudo systemctl status nginx
+
+# 9. Check Nginx is enabled and running
+sudo systemctl is-enabled nginx
+sudo systemctl is-active nginx
+
+# 10. Verify the site is enabled
+ls -la /etc/nginx/sites-enabled/
+cat /etc/nginx/sites-enabled/staging.luckymifta.dev
+```
+
+**Common fixes for "Connection refused" on port 80:**
+
+```bash
+# Fix 1: Restart Nginx service
+sudo systemctl restart nginx
+
+# Fix 2: Check if Apache or another web server is running
+sudo systemctl status apache2 2>/dev/null || echo "Apache not installed"
+sudo pkill -f apache2 2>/dev/null || echo "No Apache processes"
+
+# Fix 3: Ensure Nginx owns the sites-enabled symlink
+sudo rm -f /etc/nginx/sites-enabled/staging.luckymifta.dev
+sudo ln -s /etc/nginx/sites-available/staging.luckymifta.dev /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# Fix 4: If firewall is blocking (check UFW status first)
+sudo ufw allow 80/tcp
+sudo ufw reload
+
+# Fix 5: Check if SELinux is blocking (on some systems)
+sudo setenforce 0 2>/dev/null || echo "SELinux not active"
+
+# Fix 6: Use alternative Nginx configuration with explicit IPv4
+sudo cat > /etc/nginx/sites-available/staging.luckymifta.dev << 'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name staging.luckymifta.dev _;
+
+    # Test endpoint
+    location /health {
+        return 200 "Nginx working\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Main API routes (port 8000)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # User Management API routes (port 8001)
+    location /user-api/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Frontend routes
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 EOF
 
-chmod +x /root/backup-dash-atm.sh
+sudo nginx -t && sudo systemctl reload nginx
 
-# Add to crontab for daily backup at 2 AM
-echo "0 2 * * * /root/backup-dash-atm.sh" | crontab -
+# Test the health endpoint
+curl http://staging.luckymifta.dev/nginx-health
 ```
 
----
+**If the debug sequence shows issues, run these targeted fixes:**
 
-## Useful Commands
-
-### Application Management
+**Fix 1: If Nginx is not running**
 ```bash
-# Restart all services
-pm2 restart all
-
-# Stop all services
-pm2 stop all
-
-# View logs
-pm2 logs
-pm2 logs dash-atm-main-api
-pm2 logs dash-atm-user-api
-pm2 logs dash-atm-frontend
-
-# Monitor resources
-pm2 monit
+sudo systemctl start nginx
+sudo systemctl enable nginx
+sudo systemctl status nginx
 ```
 
-### Nginx Management
+**Fix 2: If port 80 is not listening**
 ```bash
-# Test configuration
-nginx -t
-
-# Reload configuration
-systemctl reload nginx
-
-# Check status
-systemctl status nginx
+# Check if another service is using port 80
+sudo lsof -i :80
+sudo fuser -k 80/tcp  # Kill processes using port 80 (use with caution)
+sudo systemctl restart nginx
 ```
 
-### Database Management
+**Fix 3: If firewall is blocking**
 ```bash
-# Connect to database
-sudo -u postgres psql -d dash
-
-# View database logs
-tail -f /var/log/postgresql/postgresql-*.log
+sudo ufw allow 80/tcp
+sudo ufw allow 'Nginx HTTP'
+sudo ufw reload
+sudo ufw status verbose
 ```
 
-### Update Application
+**Fix 4: If Nginx configuration has errors**
 ```bash
-cd /var/www/dash-atm
+# Check configuration syntax
+sudo nginx -t
 
-# Pull latest changes
-git pull origin main
+# If errors found, create a minimal working config
+sudo cp /etc/nginx/sites-available/staging.luckymifta.dev /etc/nginx/sites-available/staging.luckymifta.dev.backup
 
-# Update backend
-cd backend
-source venv/bin/activate
-pip install -r requirements.txt
-cd ..
+sudo cat > /etc/nginx/sites-available/staging.luckymifta.dev << 'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name staging.luckymifta.dev _;
 
-# Update frontend
-cd frontend
-npm install
+    # Test endpoint
+    location /health {
+        return 200 "Nginx working\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Main API routes (port 8000)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # User Management API routes (port 8001)
+    location /user-api/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Frontend routes
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**Fix 5: If DNS is not resolving correctly**
+```bash
+# Check DNS from VPS
+nslookup staging.luckymifta.dev
+dig staging.luckymifta.dev
+
+# Get your VPS IP address
+curl -4 ifconfig.me
+ip addr show | grep inet
+
+# Test using direct IP instead of domain (replace YOUR_VPS_IP)
+curl -H "Host: staging.luckymifta.dev" http://YOUR_VPS_IP/health
+```
+
+**Fix 6: Nuclear option - complete Nginx reinstall**
+```bash
+# Only if nothing else works
+sudo systemctl stop nginx
+sudo apt remove --purge nginx nginx-common
+sudo apt autoremove
+sudo apt install nginx
+sudo systemctl start nginx
+sudo systemctl enable nginx
+
+# Recreate the basic configuration from scratch
+```
+
+**Once HTTP is working, test with these commands:**
+```bash
+# Test basic connectivity
+curl -v http://staging.luckymifta.dev/health
+
+# Test API endpoints
+curl -v http://staging.luckymifta.dev/api/v1/health
+curl -v http://staging.luckymifta.dev/user-api/health
+
+# Test frontend
+curl -v http://staging.luckymifta.dev/
+
+# If all HTTP tests pass, you can proceed to SSL setup
+```
+
+**Complete diagnostic checklist:**
+```bash
+# Run this complete sequence to identify the exact issue:
+
+echo "1. Testing Nginx service status..."
+sudo systemctl is-active nginx && echo "✅ Nginx is running" || echo "❌ Nginx is not running"
+
+echo "2. Testing port 80 binding..."
+sudo netstat -tlnp | grep :80 && echo "✅ Port 80 is listening" || echo "❌ Port 80 is not listening"
+
+echo "3. Testing Nginx configuration..."
+sudo nginx -t && echo "✅ Nginx config is valid" || echo "❌ Nginx config has errors"
+
+echo "4. Testing local connectivity..."
+curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200\|301\|302" && echo "✅ Local connection works" || echo "❌ Local connection failed"
+
+echo "5. Testing firewall..."
+sudo ufw status | grep -q "80/tcp.*ALLOW" && echo "✅ Port 80 is allowed in firewall" || echo "❌ Port 80 may be blocked by firewall"
+
+echo "6. Testing DNS resolution..."
+nslookup staging.luckymifta.dev > /dev/null && echo "✅ DNS resolves" || echo "❌ DNS resolution failed"
+
+echo "7. Testing PM2 services..."
+pm2 status | grep -q "online" && echo "✅ PM2 services are running" || echo "❌ PM2 services not running"
+
+echo "8. Summary of listening ports:"
+sudo netstat -tlnp | grep -E ':(80|8000|8001|3000)' || echo "No services listening on expected ports"
+
+echo "9. Testing external connectivity..."
+timeout 10 curl -s http://staging.luckymifta.dev/ > /dev/null && echo "✅ External HTTP works" || echo "❌ External HTTP connection failed"
+````
+
+## Troubleshooting Quick Reference
+
+### Most Common Issues and Solutions
+
+**1. Connection Refused on Port 80**
+- **Check:** `sudo systemctl status nginx`
+- **Fix:** `sudo systemctl start nginx`
+
+**2. Nginx Not Listening on Port 80**
+- **Check:** `sudo netstat -tlnp | grep :80`
+- **Fix:** `sudo systemctl restart nginx`
+
+**3. Firewall Blocking Connections**
+- **Check:** `sudo ufw status`
+- **Fix:** `sudo ufw allow 80/tcp && sudo ufw reload`
+
+**4. DNS Not Resolving**
+- **Check:** `nslookup staging.luckymifta.dev`
+- **Fix:** Contact your DNS provider or wait for propagation
+
+**5. Backend Services Not Running**
+- **Check:** `pm2 status`
+- **Fix:** `pm2 restart all`
+
+**6. Configuration Errors**
+- **Check:** `sudo nginx -t`
+- **Fix:** Review and correct Nginx configuration
+
+**7. Frontend Still Using Localhost URLs**
+- **Check:** Browser network tab shows requests to `http://localhost:8001/auth/login`
+- **Fix:** Frontend environment variables not properly configured
+```bash
+# On VPS: Check if .env.production exists
+cd /var/www/dash-atm/frontend
+ls -la .env*
+
+# Create/update .env.production with HTTPS URLs
+cat > .env.production << 'EOF'
+NEXT_PUBLIC_API_BASE_URL=https://staging.luckymifta.dev/api/v1
+NEXT_PUBLIC_USER_API_BASE_URL=https://staging.luckymifta.dev/user-api
+NODE_ENV=production
+NEXTAUTH_URL=https://staging.luckymifta.dev
+NEXTAUTH_SECRET=UOofTfjpYk8UjQAmn59UNvtwoEaobLNt1dB8XKlKHW8=
+EOF
+
+# Rebuild and restart frontend
 npm run build
-cd ..
+pm2 restart dash-atm-frontend
 
-# Restart services
-pm2 restart all
+# Verify environment variables are loaded
+pm2 logs dash-atm-frontend --lines 20
 ```
 
----
+### Quick Recovery Commands
+```bash
+# Emergency restart all services
+sudo systemctl restart nginx
+pm2 restart all
 
-## Troubleshooting
+# Check all service status
+sudo systemctl status nginx --no-pager
+pm2 status
+sudo netstat -tlnp | grep -E ':(80|8000|8001|3000)'
 
-### Common Issues
+# Test connectivity
+curl http://localhost:8000/api/v1/health  # Main API
+curl http://localhost:8001/health         # User API
+curl http://localhost:3000                # Frontend
+curl http://staging.luckymifta.dev/health # External
+```
 
-1. **Port Already in Use**
-   ```bash
-   # Check what's using ports 8000, 8001, or 3000
-   sudo lsof -i :8000  # Main API
-   sudo lsof -i :8001  # User API  
-   sudo lsof -i :3000  # Frontend
-   
-   # Kill process if needed
-   sudo kill -9 <PID>
-   ```
+**Next Steps After HTTP is Working:**
+1. Proceed to Phase 5 (SSL Certificate Setup) in this guide
+2. Test HTTPS connectivity
+3. Update frontend environment to use HTTPS URLs
+4. Complete end-to-end testing
 
-2. **Permission Errors**
-   ```bash
-   # Fix ownership
-   chown -R www-data:www-data /var/www/dash-atm
-   ```
-
-3. **Database Connection Issues**
-   ```bash
-   # Check PostgreSQL status (your existing setup)
-   systemctl status postgresql
-   
-   # Test connection to your existing database
-   sudo -u postgres psql -d dash -c "SELECT 1;"
-   ```
-
-4. **SSL Certificate Issues**
-   ```bash
-   # Check certificate expiry
-   certbot certificates
-   
-   # Force renewal
-   certbot renew --force-renewal
-   ```
-
-5. **Application Not Starting**
-   ```bash
-   # Check PM2 logs
-   pm2 logs
-   
-   # Check environment variables
-   cd /var/www/dash-atm/backend
-   source venv/bin/activate
-   python -c "import os; print(os.environ.get('DB_HOST'))"
-   ```
-
----
-
-## Security Considerations
-
-1. **Change Default Passwords**: Update all default passwords in the `.env` file
-2. **Firewall**: Ensure UFW is properly configured
-3. **SSH Security**: Consider disabling password authentication and using SSH keys only
-4. **Regular Updates**: Keep the system and dependencies updated
-5. **Backup Strategy**: Implement regular backups as described above
-
----
-
-## Next Steps
-
-After deployment:
-1. Test all application features
-2. Setup monitoring (consider tools like Uptime Robot)
-3. Configure automated data retrieval schedules
-4. Setup error alerting
-5. Optimize performance based on usage patterns
-
-Your ATM Dashboard should now be accessible at: **https://staging.luckymifta.dev**
+**Contact Information:**
+- If you continue experiencing issues, run the complete diagnostic checklist above
+- Note which specific step fails and the exact error message
+- Check Nginx error logs: `sudo tail -50 /var/log/nginx/error.log`
+- Check PM2 logs: `pm2 logs --lines 50`
