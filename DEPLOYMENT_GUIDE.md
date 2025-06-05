@@ -296,7 +296,7 @@ module.exports = {
     {
       name: 'dash-atm-main-api',
       script: '/var/www/dash-atm/backend/venv/bin/python',
-      args: '/var/www/dash-atm/backend/api_option_2_fastapi_fixed.py',
+      args: '-m uvicorn api_option_2_fastapi_fixed:app --host 0.0.0.0 --port 8000 --workers 4',
       cwd: '/var/www/dash-atm/backend',
       env: {
         NODE_ENV: 'production',
@@ -314,7 +314,7 @@ module.exports = {
     {
       name: 'dash-atm-user-api',
       script: '/var/www/dash-atm/backend/venv/bin/python',
-      args: '/var/www/dash-atm/backend/user_management_api.py',
+      args: '-m uvicorn user_management_api:app --host 0.0.0.0 --port 8001 --workers 2',
       cwd: '/var/www/dash-atm/backend',
       env: {
         NODE_ENV: 'production',
