@@ -85,12 +85,37 @@ cd /var/www/dash-atm
 ```
 
 ### 2.2 Clone Repository
-```bash
-# Clone your repository (replace with your actual repo URL)
-git clone https://github.com/yourusername/dash-atm.git .
 
-# If using SSH (recommended for private repos)
-# git clone git@github.com:yourusername/dash-atm.git .
+#### Option A: HTTPS Clone (Recommended)
+```bash
+# Clone your repository using HTTPS
+git clone https://github.com/luckymifta/dash-atm.git .
+
+# If the repository is private, you'll need to enter your GitHub credentials
+# Or use a Personal Access Token instead of password
+```
+
+#### Option B: SSH Clone (Advanced)
+If you prefer SSH and have a private repository, set up SSH keys first:
+
+```bash
+# Generate SSH key on VPS
+ssh-keygen -t ed25519 -C "your-email@example.com"
+
+# Display the public key
+cat ~/.ssh/id_ed25519.pub
+
+# Copy the output and add it to your GitHub account:
+# 1. Go to GitHub.com → Settings → SSH and GPG keys
+# 2. Click "New SSH key"
+# 3. Paste the public key content
+# 4. Save the key
+
+# Test SSH connection
+ssh -T git@github.com
+
+# Clone using SSH
+git clone git@github.com:luckymifta/dash-atm.git .
 ```
 
 ### 2.3 Setup Backend
@@ -104,17 +129,100 @@ source venv/bin/activate
 
 #### 2.3.2 Install Python Dependencies
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+# First, install system dependencies (required for asyncpg and other packages)
+apt update
+apt install -y libpq-dev python3-dev build-essential gcc
+
+# Ensure you're in the virtual environment
+source venv/bin/activate
+
+# Verify virtual environment is active
+which python
+which pip
+
+# Upgrade pip, setuptools, and wheel
+pip install --upgrade pip setuptools wheel
+
+# Install Python dependencies with verbose output
+pip install -r requirements.txt -v
+
+# If the above fails, try installing key packages individually:
+# pip install fastapi uvicorn asyncpg python-dotenv psycopg2-binary
+
+# Verify installation was successful
+echo "Checking installed packages:"
+pip list
+
+# Verify critical dependencies
+python -c "import asyncpg; print('✅ asyncpg installed successfully:', asyncpg.__version__)"
+python -c "import fastapi; print('✅ fastapi installed successfully:', fastapi.__version__)"
+python -c "import uvicorn; print('✅ uvicorn installed successfully:', uvicorn.__version__)"
+
+# If any imports fail, the virtual environment needs to be recreated
 ```
 
 #### 2.3.3 Setup Environment File
-```bash
-# Copy production environment file
-cp ../.env.production .env
+Since `.env.production` is not in the repository for security reasons, you need to create it manually:
 
-# Edit the environment file if needed
-nano .env
+**Option A: Create the file manually (Recommended)**
+```bash
+# Create the .env file with production configuration
+cat > .env << 'EOF'
+# Production Environment Configuration for ATM Dashboard
+
+# Database Configuration (PostgreSQL on VPS)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=dash
+DB_USER=timlesdev
+DB_PASSWORD=timlesdev
+
+# FastAPI Configuration
+FASTAPI_HOST=0.0.0.0
+FASTAPI_PORT=8000
+FASTAPI_WORKERS=4
+
+# User Management API Configuration
+USER_API_HOST=0.0.0.0
+USER_API_PORT=8001
+USER_API_WORKERS=2
+
+# CORS Configuration for Production
+CORS_ORIGINS=["https://staging.luckymifta.dev", "http://localhost:3000"]
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
+# Security Settings
+SECRET_KEY=2QNQK08xRdLElX4hT6zy61AqKdUFcGMT+r+XCzSEJIUV/WQYNcls8SBD3P8TKlqmG7pcl+VdwDhHU122/pbG7A==
+NEXTAUTH_SECRET=UOofTfjpYk8UjQAmn59UNvtwoEaobLNt1dB8XKlKHW8=
+ENVIRONMENT=production
+
+# Logging Configuration
+LOG_LEVEL=INFO
+LOG_FILE=/var/log/dash-atm/app.log
+
+# Application URLs
+FRONTEND_URL=https://staging.luckymifta.dev
+API_BASE_URL=https://staging.luckymifta.dev/api
+USER_API_BASE_URL=https://staging.luckymifta.dev/user-api
+
+# SSL Configuration (for Let's Encrypt)
+SSL_CERT_PATH=/etc/letsencrypt/live/staging.luckymifta.dev/fullchain.pem
+SSL_KEY_PATH=/etc/letsencrypt/live/staging.luckymifta.dev/privkey.pem
+EOF
+```
+
+**Option B: Transfer from local machine**
+```bash
+# From your local machine, use SCP to transfer the file:
+# scp .env.production root@your-vps-ip:/var/www/dash-atm/backend/.env
+```
+
+**Verify the file was created:**
+```bash
+# Check if the file exists and has content
+ls -la .env
+head -5 .env
 ```
 
 #### 2.3.4 Test Backend Services
