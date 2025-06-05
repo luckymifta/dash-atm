@@ -783,6 +783,404 @@ async def get_users(
         "total_pages": total_pages
     }
 
+# ==================== USER CRUD OPERATIONS ====================
+
+@app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user_data: UserCreate,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new user (admin/super_admin only)"""
+    
+    # Check permissions
+    if current_user.get("role") not in ["admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to create users"
+        )
+    
+    try:
+        # Check if username already exists
+        check_query = "SELECT id FROM users WHERE username = %s AND is_deleted = false"
+        existing_user = execute_query(check_query, (user_data.username,), fetch="one")
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists"
+            )
+        
+        # Check if email already exists
+        check_email_query = "SELECT id FROM users WHERE email = %s AND is_deleted = false"
+        existing_email = execute_query(check_email_query, (user_data.email,), fetch="one")
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already exists"
+            )
+        
+        # Create new user
+        user_id = str(uuid.uuid4())
+        password_hash = hash_password(user_data.password)
+        now = datetime.now(timezone.utc)
+        
+        insert_query = """
+            INSERT INTO users (
+                id, username, email, password_hash, first_name, last_name,
+                phone, role, is_active, is_deleted, password_changed_at,
+                failed_login_attempts, created_at, updated_at, created_by
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        params = (
+            user_id,
+            user_data.username,
+            user_data.email,
+            password_hash,
+            user_data.first_name,
+            user_data.last_name,
+            user_data.phone,
+            user_data.role,
+            user_data.is_active,
+            False,  # is_deleted
+            now,    # password_changed_at
+            0,      # failed_login_attempts
+            now,    # created_at
+            now,    # updated_at
+            current_user.get("id")  # created_by
+        )
+        
+        execute_query(insert_query, params)
+        
+        # Log the action
+        log_audit_action(
+            AuditAction.CREATE_USER,
+            user_id=current_user.get("id"),
+            entity_id=user_id,
+            new_values={
+                "username": user_data.username,
+                "email": user_data.email,
+                "role": user_data.role,
+                "is_active": user_data.is_active
+            },
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            performed_by=current_user.get("username")
+        )
+        
+        # Get the created user
+        get_query = "SELECT * FROM users WHERE id = %s"
+        user = execute_query(get_query, (user_id,), fetch="one")
+        
+        logger.info(f"User created successfully: {user_data.username} by {current_user.get('username')}")
+        return UserResponse(**dict(user))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create user"
+        )
+
+@app.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: str,
+    user_data: UserUpdate,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user information"""
+    
+    # Check if user exists
+    user_query = "SELECT * FROM users WHERE id = %s AND is_deleted = false"
+    user = execute_query(user_query, (user_id,), fetch="one")
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Permission checks
+    current_user_role = current_user.get("role")
+    target_user_role = user["role"]
+    
+    # Users can update their own basic info (except role and is_active)
+    is_self_update = current_user.get("id") == user_id
+    is_admin = current_user_role in ["admin", "super_admin"]
+    
+    if not (is_self_update or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to update this user"
+        )
+    
+    # Restrict what regular users can update about themselves
+    if is_self_update and not is_admin:
+        # Users can only update their basic info, not role or active status
+        if user_data.role is not None or user_data.is_active is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot change role or active status"
+            )
+    
+    # Super admin restrictions
+    if target_user_role == "super_admin" and current_user_role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can modify super admin accounts"
+        )
+    
+    try:
+        # Build update query dynamically
+        update_fields = []
+        params = []
+        old_values = {}
+        new_values = {}
+        
+        # Check each field and add to update if provided
+        for field, value in user_data.dict(exclude_unset=True).items():
+            if value is not None:
+                # Check for username uniqueness
+                if field == "username" and value != user["username"]:
+                    check_query = "SELECT id FROM users WHERE username = %s AND is_deleted = false AND id != %s"
+                    existing = execute_query(check_query, (value, user_id), fetch="one")
+                    if existing:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Username already exists"
+                        )
+                
+                # Check for email uniqueness
+                if field == "email" and value != user["email"]:
+                    check_query = "SELECT id FROM users WHERE email = %s AND is_deleted = false AND id != %s"
+                    existing = execute_query(check_query, (value, user_id), fetch="one")
+                    if existing:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Email already exists"
+                        )
+                
+                update_fields.append(f"{field} = %s")
+                params.append(value)
+                old_values[field] = user[field]
+                new_values[field] = value
+        
+        if not update_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update"
+            )
+        
+        # Add updated_at
+        update_fields.append("updated_at = %s")
+        params.append(datetime.now(timezone.utc))
+        params.append(user_id)
+        
+        update_query = f"""
+            UPDATE users 
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+        """
+        
+        execute_query(update_query, tuple(params))
+        
+        # Log the action
+        log_audit_action(
+            AuditAction.UPDATE_USER,
+            user_id=current_user.get("id"),
+            entity_id=user_id,
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            performed_by=current_user.get("username")
+        )
+        
+        # Get updated user
+        updated_user = execute_query(user_query, (user_id,), fetch="one")
+        
+        logger.info(f"User updated successfully: {user['username']} by {current_user.get('username')}")
+        return UserResponse(**dict(updated_user))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user"
+        )
+
+@app.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Soft delete a user (admin/super_admin only)"""
+    
+    # Check permissions
+    if current_user.get("role") not in ["admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to delete users"
+        )
+    
+    # Check if user exists
+    user_query = "SELECT * FROM users WHERE id = %s AND is_deleted = false"
+    user = execute_query(user_query, (user_id,), fetch="one")
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent self-deletion
+    if current_user.get("id") == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    # Super admin protection
+    if user["role"] == "super_admin" and current_user.get("role") != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can delete super admin accounts"
+        )
+    
+    try:
+        # Soft delete the user
+        now = datetime.now(timezone.utc)
+        delete_query = """
+            UPDATE users 
+            SET is_deleted = true, is_active = false, updated_at = %s
+            WHERE id = %s
+        """
+        execute_query(delete_query, (now, user_id))
+        
+        # Invalidate all sessions for this user
+        invalidate_query = "UPDATE user_sessions SET is_active = false WHERE user_id = %s"
+        execute_query(invalidate_query, (user_id,))
+        
+        # Log the action
+        log_audit_action(
+            AuditAction.DELETE_USER,
+            user_id=current_user.get("id"),
+            entity_id=user_id,
+            old_values={"username": user["username"], "is_deleted": False},
+            new_values={"is_deleted": True},
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            performed_by=current_user.get("username")
+        )
+        
+        logger.info(f"User deleted successfully: {user['username']} by {current_user.get('username')}")
+        return {"message": "User deleted successfully"}
+        
+    except Exception as e:
+        logger.error(f"Failed to delete user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user"
+        )
+
+@app.put("/users/{user_id}/password")
+async def change_password(
+    user_id: str,
+    password_data: PasswordUpdate,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """Change user password"""
+    
+    # Check if user exists
+    user_query = "SELECT * FROM users WHERE id = %s AND is_deleted = false"
+    user = execute_query(user_query, (user_id,), fetch="one")
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Permission checks
+    is_self_update = current_user.get("id") == user_id
+    is_admin = current_user.get("role") in ["admin", "super_admin"]
+    
+    if not (is_self_update or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to change this user's password"
+        )
+    
+    # For self-updates, verify current password
+    if is_self_update:
+        if not verify_password(password_data.current_password, user["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect"
+            )
+    
+    # Super admin protection
+    if user["role"] == "super_admin" and current_user.get("role") != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can change super admin passwords"
+        )
+    
+    try:
+        # Hash new password
+        new_password_hash = hash_password(password_data.new_password)
+        now = datetime.now(timezone.utc)
+        
+        # Update password
+        update_query = """
+            UPDATE users 
+            SET password_hash = %s, password_changed_at = %s, 
+                failed_login_attempts = 0, account_locked_until = NULL,
+                updated_at = %s
+            WHERE id = %s
+        """
+        execute_query(update_query, (new_password_hash, now, now, user_id))
+        
+        # Invalidate all other sessions for this user (except current one if self-update)
+        if is_self_update:
+            # Keep current session active, invalidate others
+            current_session_token = request.headers.get("authorization", "").replace("Bearer ", "")
+            invalidate_query = """
+                UPDATE user_sessions 
+                SET is_active = false 
+                WHERE user_id = %s AND session_token != %s
+            """
+            execute_query(invalidate_query, (user_id, current_session_token))
+        else:
+            # Invalidate all sessions for user
+            invalidate_query = "UPDATE user_sessions SET is_active = false WHERE user_id = %s"
+            execute_query(invalidate_query, (user_id,))
+        
+        # Log the action
+        log_audit_action(
+            AuditAction.PASSWORD_CHANGE,
+            user_id=current_user.get("id"),
+            entity_id=user_id,
+            new_values={"password_changed": True},
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            performed_by=current_user.get("username")
+        )
+        
+        logger.info(f"Password changed successfully for user: {user['username']} by {current_user.get('username')}")
+        return {"message": "Password changed successfully"}
+        
+    except Exception as e:
+        logger.error(f"Failed to change password: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to change password"
+        )
+
 # Initialize with default admin user
 def initialize_default_users():
     """Create default admin user if it doesn't exist"""
