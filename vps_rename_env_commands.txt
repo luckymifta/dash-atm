@@ -1,0 +1,24 @@
+# VPS Commands to Rename Environment File
+# Run these commands on your VPS
+
+# 1. Navigate to the frontend directory
+cd /var/www/dash-atm/frontend
+
+# 2. Check if the source file exists
+ls -la env.production.example
+
+# 3. Use sudo to rename the file
+sudo mv env.production.example .env.production
+
+# 4. Verify the file was renamed successfully
+ls -la .env.production
+
+# 5. Check the contents of the renamed file
+cat .env.production
+
+# 6. Set proper ownership and permissions
+sudo chown www-data:www-data .env.production
+sudo chmod 644 .env.production
+
+# 7. Verify ownership and permissions
+ls -la .env.production

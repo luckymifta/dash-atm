@@ -190,7 +190,7 @@ class ATMApiService {
   }
 
   async getSummary(tableType: 'legacy' | 'new' | 'both' = 'legacy'): Promise<ATMSummaryResponse> {
-    return this.fetchApi<ATMSummaryResponse>(`/api/v1/atm/status/summary?table_type=${tableType}`);
+    return this.fetchApi<ATMSummaryResponse>(`${API_CONFIG.ENDPOINTS.SUMMARY}?table_type=${tableType}`);
   }
 
   async getRegionalData(regionCode?: string, tableType: 'legacy' | 'new' | 'both' = 'legacy'): Promise<RegionalResponse> {
@@ -199,7 +199,7 @@ class ATMApiService {
       if (regionCode) {
         params.append('region_code', regionCode);
       }
-      return await this.fetchApi<RegionalResponse>(`/api/v1/atm/status/regional?${params}`);
+      return await this.fetchApi<RegionalResponse>(`${API_CONFIG.ENDPOINTS.REGIONAL}?${params}`);
     } catch (error) {
       console.warn('Failed to fetch regional data from API, using mock data:', error);
       // Return mock data when API is unavailable
@@ -214,7 +214,7 @@ class ATMApiService {
   ): Promise<TrendResponse> {
     try {
       return await this.fetchApi<TrendResponse>(
-        `/api/v1/atm/status/trends/${regionCode}?hours=${hours}&table_type=${tableType}`
+        `${API_CONFIG.ENDPOINTS.TRENDS}/${regionCode}?hours=${hours}&table_type=${tableType}`
       );
     } catch (error) {
       console.warn(`Failed to fetch trends for region ${regionCode} from API, using mock data:`, error);
@@ -231,11 +231,11 @@ class ATMApiService {
       table_type: tableType,
       include_terminal_details: includeTerminalDetails.toString()
     });
-    return this.fetchApi<LatestDataResponse>(`/api/v1/atm/status/latest?${params}`);
+    return this.fetchApi<LatestDataResponse>(`${API_CONFIG.ENDPOINTS.LATEST}?${params}`);
   }
 
   async getHealth(): Promise<HealthResponse> {
-    return this.fetchApi<HealthResponse>('/api/v1/health');
+    return this.fetchApi<HealthResponse>(API_CONFIG.ENDPOINTS.HEALTH);
   }
 
   async getTerminalDetails(
@@ -246,7 +246,7 @@ class ATMApiService {
       table_type: tableType,
       include_terminal_details: includeTerminalDetails.toString()
     });
-    return this.fetchApi<TerminalDetailsResponse>(`/api/v1/atm/status/latest?${params}`);
+    return this.fetchApi<TerminalDetailsResponse>(`${API_CONFIG.ENDPOINTS.LATEST}?${params}`);
   }
 }
 

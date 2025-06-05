@@ -1,0 +1,53 @@
+# VPS Commands to Fix API URL Issue
+# Run these commands on your VPS to fix the frontend API connectivity
+
+# 1. Navigate to frontend directory
+cd /var/www/dash-atm/frontend
+
+# 2. Update the .env.production file with correct API URL
+cat > .env.production << 'EOF'
+# Production Environment Configuration for Frontend
+# This file should be deployed to the VPS at /var/www/dash-atm/frontend/.env.production
+
+# API Configuration - Production HTTPS URLs
+NEXT_PUBLIC_API_BASE_URL=https://staging.luckymifta.dev/api
+NEXT_PUBLIC_USER_API_BASE_URL=https://staging.luckymifta.dev/user-api
+
+# Environment
+NODE_ENV=production
+
+# NextAuth Configuration (for future authentication enhancement)
+NEXTAUTH_URL=https://staging.luckymifta.dev
+NEXTAUTH_SECRET=UOofTfjpYk8UjQAmn59UNvtwoEaobLNt1dB8XKlKHW8=
+
+# Application Configuration
+NEXT_PUBLIC_APP_NAME=ATM Dashboard
+NEXT_PUBLIC_APP_VERSION=1.0.0
+EOF
+
+# 3. Kill the current frontend process
+sudo pkill -f "next-server"
+
+# 4. Clear the build cache to force rebuild with new environment variables
+rm -rf .next
+rm -rf node_modules/.cache
+
+# 5. Rebuild the frontend with correct environment variables
+NODE_ENV=production npm run build
+
+# 6. Start the frontend with production environment
+NODE_ENV=production npm start &
+
+# 7. Verify the frontend is running
+sleep 5
+netstat -tlnp | grep :3000
+
+# 8. Test the API connectivity
+echo "Testing API endpoints..."
+curl -k https://staging.luckymifta.dev/api/v1/health
+echo ""
+curl -k https://staging.luckymifta.dev/user-api/users
+
+echo ""
+echo "✅ Frontend should now be able to connect to the APIs correctly!"
+echo "🌐 Open https://staging.luckymifta.dev in your browser to test"
