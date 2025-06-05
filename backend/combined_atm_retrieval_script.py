@@ -75,12 +75,13 @@ except ImportError:
 
 # Configuration
 LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"
+LOGOUT_URL = "https://172.31.1.46/sigit/user/logout"
 REPORTS_URL = "https://172.31.1.46/sigit/reports/dashboards?terminal_type=ATM&status_filter=Status"
 DASHBOARD_URL = "https://172.31.1.46/sigit/terminal/searchTerminalDashBoard?number_of_occurrences=30&terminal_type=ATM"
 
 LOGIN_PAYLOAD = {
     "user_name": "Lucky.Saputra",
-    "password": "TimlesMon2024"
+    "password": "TimlesMon2025@"
 }
 
 COMMON_HEADERS = {
@@ -198,6 +199,74 @@ class CombinedATMRetriever:
         """Refresh the authentication token if expired"""
         log.info("Attempting to refresh authentication token...")
         return self.authenticate()
+    
+    def logout(self) -> bool:
+        """
+        Logout from the ATM monitoring system to prevent session lockouts
+        
+        Returns:
+            bool: True if logout successful, False otherwise
+        """
+        if self.demo_mode:
+            log.info("Demo mode: Using mock logout")
+            self.user_token = None
+            return True
+        
+        if not self.user_token:
+            log.warning("No user token available - already logged out or never authenticated")
+            return True
+        
+        log.info("Attempting logout...")
+        
+        logout_payload = {
+            "header": {
+                "logged_user": LOGIN_PAYLOAD["user_name"],
+                "user_token": self.user_token
+            }
+        }
+        
+        try:
+            response = self.session.put(
+                LOGOUT_URL,
+                json=logout_payload,
+                headers=COMMON_HEADERS,
+                verify=False,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            logout_data = response.json()
+            
+            # Check for successful logout
+            if "header" in logout_data:
+                result_code = logout_data["header"].get("result_code", "")
+                result_description = logout_data["header"].get("result_description", "")
+                
+                if result_code == "000":
+                    log.info(f"Logout successful: {result_description}")
+                    self.user_token = None
+                    return True
+                else:
+                    log.warning(f"Logout returned non-success code: {result_code} - {result_description}")
+                    self.user_token = None  # Clear token anyway
+                    return False
+            else:
+                log.warning("Logout response missing header field")
+                self.user_token = None  # Clear token anyway
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            log.error(f"Logout request failed: {str(e)}")
+            self.user_token = None  # Clear token anyway to prevent reuse
+            return False
+        except json.JSONDecodeError as e:
+            log.error(f"Logout response not valid JSON: {str(e)}")
+            self.user_token = None  # Clear token anyway
+            return False
+        except Exception as e:
+            log.error(f"Unexpected error during logout: {str(e)}")
+            self.user_token = None  # Clear token anyway
+            return False
     
     def fetch_regional_data(self) -> Optional[List[Dict[str, Any]]]:
         """
@@ -980,6 +1049,14 @@ class CombinedATMRetriever:
                     log.info("[OK] Regional data successfully saved to database")
                 else:
                     log.warning("WARNING: Database save failed, but processed data is still available")
+        
+        # Step 7: Logout to prevent session lockouts
+        log.info("\n--- PHASE 5: Logout ---")
+        logout_success = self.logout()
+        if logout_success:
+            log.info("[OK] Successfully logged out from ATM monitoring system")
+        else:
+            log.warning("WARNING: Logout failed, but data retrieval completed successfully")
         
         log.info("=" * 80)
         log.info("COMBINED ATM DATA RETRIEVAL COMPLETED SUCCESSFULLY")

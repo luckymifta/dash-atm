@@ -75,7 +75,7 @@ logger = logging.getLogger('ATM_FastAPI')
 
 # Database configuration using the updated credentials
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', '88.222.214.26'),
+    'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', 5432)),
     'database': os.getenv('DB_NAME', 'dash'),
     'user': os.getenv('DB_USER', 'timlesdev'),
@@ -202,12 +202,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# CORS middleware - Production-ready configuration
+cors_origins = os.getenv('CORS_ORIGINS', '["http://localhost:3000"]')
+if isinstance(cors_origins, str):
+    import json
+    try:
+        cors_origins = json.loads(cors_origins)
+    except json.JSONDecodeError:
+        cors_origins = ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_origins=cors_origins,
+    allow_credentials=bool(os.getenv('CORS_ALLOW_CREDENTIALS', 'true').lower() == 'true'),
+    allow_methods=os.getenv('CORS_ALLOW_METHODS', '["GET", "POST", "PUT", "DELETE", "OPTIONS"]').replace('[', '').replace(']', '').replace('"', '').split(', '),
     allow_headers=["*"],
 )
 

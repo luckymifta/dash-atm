@@ -1,15 +1,41 @@
+# ATM Dashboard Backend Requirements - Production Ready
+# Install with: pip install -r requirements.txt
+
+# HTTP requests and utilities
 requests>=2.31.0
 urllib3>=1.26.0
+
+# Database connectivity  
 psycopg2-binary>=2.9.0
+asyncpg>=0.29.0
+
+# Environment and configuration
 python-dotenv>=1.0.0
+
+# Timezone handling
 pytz>=2023.3
+
+# Progress and logging utilities
 tqdm>=4.65.0
-argparse>=1.4.0
-logging>=0.4.9.6
 colorama>=0.4.6
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
+
+# Core FastAPI and ASGI server
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.1
+
+# Authentication and security
 bcrypt>=4.0.0
 PyJWT>=2.8.0
+
+# Task scheduling
 schedule>=1.2.0
-pydantic[email]>=2.4.0
+
+# Data validation and modeling
+pydantic[email]>=2.5.0
+
+# Production server (alternative to uvicorn)
+gunicorn>=21.2.0
+
+# For development/testing (optional - install separately)
+# pytest>=8.0.0
+# httpx>=0.26.0
