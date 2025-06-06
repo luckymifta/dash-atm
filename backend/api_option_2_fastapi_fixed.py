@@ -63,11 +63,23 @@ elif os.path.exists('.env_fastapi.example'):
     load_dotenv('.env_fastapi.example')
 
 # Configure logging
+log_file = os.getenv('LOG_FILE', '/var/log/dash-atm/api.log')
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+
+# Create log directory if it doesn't exist
+log_dir = os.path.dirname(log_file)
+if log_dir and not os.path.exists(log_dir):
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except PermissionError:
+        # Fallback to current directory if we can't create the log directory
+        log_file = 'atm_fastapi.log'
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level, logging.INFO),
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     handlers=[
-        logging.FileHandler('atm_fastapi.log'),
+        logging.FileHandler(log_file),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -75,7 +87,7 @@ logger = logging.getLogger('ATM_FastAPI')
 
 # Database configuration using the updated credentials
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', '88.222.214.26'),
+    'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', 5432)),
     'database': os.getenv('DB_NAME', 'dash'),
     'user': os.getenv('DB_USER', 'timlesdev'),
@@ -202,12 +214,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# CORS middleware - Production-ready configuration
+cors_origins = os.getenv('CORS_ORIGINS', '["http://localhost:3000"]')
+if isinstance(cors_origins, str):
+    import json
+    try:
+        cors_origins = json.loads(cors_origins)
+    except json.JSONDecodeError:
+        cors_origins = ["http://localhost:3000"]
+
+cors_methods = os.getenv('CORS_ALLOW_METHODS', '["GET", "POST", "PUT", "DELETE", "OPTIONS"]')
+if isinstance(cors_methods, str):
+    try:
+        cors_methods = json.loads(cors_methods)
+    except json.JSONDecodeError:
+        cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_origins=cors_origins,
+    allow_credentials=bool(os.getenv('CORS_ALLOW_CREDENTIALS', 'true').lower() == 'true'),
+    allow_methods=cors_methods,
     allow_headers=["*"],
 )
 
@@ -859,6 +886,6 @@ if __name__ == "__main__":
         "api_option_2_fastapi_fixed:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=False,
         log_level="info"
     )
