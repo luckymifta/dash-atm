@@ -323,7 +323,7 @@ class AuthApiService {
     }
   }
 
-  async changePassword(userId: string, newPassword: string): Promise<void> {
+  async changePassword(userId: string, passwordData: PasswordChangeRequest): Promise<void> {
     try {
       const token = this.getToken();
       const response = await fetch(`${this.baseUrl}/users/${userId}/password`, {
@@ -332,9 +332,7 @@ class AuthApiService {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          new_password: newPassword
-        }),
+        body: JSON.stringify(passwordData),
       });
 
       if (!response.ok) {
