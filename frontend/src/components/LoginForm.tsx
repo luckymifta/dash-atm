@@ -113,9 +113,8 @@ export default function LoginForm() {
                 autoComplete="username"
                 className={`w-full px-4 py-3 bg-gray-50 border ${
                   errors.username ? 'border-red-300' : 'border-gray-200'
-                } rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-500`}
+                } rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-400`}
                 placeholder="Enter your username"
-                defaultValue="admin"
               />
               {errors.username && (
                 <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
@@ -149,9 +148,8 @@ export default function LoginForm() {
                   autoComplete="current-password"
                   className={`w-full px-4 py-3 bg-gray-50 border ${
                     errors.password ? 'border-red-300' : 'border-gray-200'
-                  } rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-500 pr-12`}
+                  } rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-400 pr-12`}
                   placeholder="Enter your password"
-                  defaultValue="admin123"
                 />
                 <button
                   type="button"

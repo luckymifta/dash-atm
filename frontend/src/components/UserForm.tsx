@@ -187,7 +187,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
                     }
                   })}
                   type="text"
-                  className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                  className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                     errors.username ? 'border-red-300' : 'border-gray-300'
                   }`}
                   placeholder="Enter username"
@@ -216,7 +216,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
                     }
                   })}
                   type="email"
-                  className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                  className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                     errors.email ? 'border-red-300' : 'border-gray-300'
                   }`}
                   placeholder="Enter email address"
@@ -238,7 +238,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
                   minLength: { value: 1, message: 'First name is required' }
                 })}
                 type="text"
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                   errors.first_name ? 'border-red-300' : 'border-gray-300'
                 }`}
                 placeholder="Enter first name"
@@ -259,7 +259,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
                   minLength: { value: 1, message: 'Last name is required' }
                 })}
                 type="text"
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                   errors.last_name ? 'border-red-300' : 'border-gray-300'
                 }`}
                 placeholder="Enter last name"
@@ -282,7 +282,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
               <input
                 {...register('phone')}
                 type="tel"
-                className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900"
                 placeholder="Enter phone number"
               />
             </div>
@@ -299,7 +299,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
               </div>
               <select
                 {...register('role', { required: 'Role is required' })}
-                className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                   errors.role ? 'border-red-300' : 'border-gray-300'
                 }`}
               >
@@ -334,7 +334,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
                       }
                     })}
                     type={showPassword ? 'text' : 'password'}
-                    className={`w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    className={`w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                       errors.password ? 'border-red-300' : 'border-gray-300'
                     }`}
                     placeholder="Enter password"
@@ -368,7 +368,7 @@ export default function UserForm({ user, isOpen, onClose, onSubmit, loading = fa
                       validate: value => value === password || 'Passwords do not match'
                     })}
                     type={showConfirmPassword ? 'text' : 'password'}
-                    className={`w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    className={`w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 text-gray-900 ${
                       errors.confirmPassword ? 'border-red-300' : 'border-gray-300'
                     }`}
                     placeholder="Confirm password"

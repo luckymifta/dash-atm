@@ -14,6 +14,7 @@ interface PasswordChangeModalProps {
 }
 
 interface PasswordFormData {
+  currentPassword: string;
   newPassword: string;
   confirmPassword: string;
 }
@@ -26,6 +27,7 @@ export default function PasswordChangeModal({
   onSuccess
 }: PasswordChangeModalProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,10 @@ export default function PasswordChangeModal({
     setError(null);
 
     try {
-      await authApi.changePassword(userId, data.newPassword);
+      await authApi.changePassword(userId, {
+        current_password: data.currentPassword,
+        new_password: data.newPassword
+      });
       onSuccess();
       reset();
       onClose();
@@ -96,6 +101,33 @@ export default function PasswordChangeModal({
           )}
 
           <div className="space-y-4">
+            {/* Current Password */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Current Password *
+              </label>
+              <div className="relative">
+                <input
+                  type={showCurrentPassword ? 'text' : 'password'}
+                  {...register('currentPassword', {
+                    required: 'Current password is required'
+                  })}
+                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 text-gray-900"
+                  placeholder="Enter current password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                >
+                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {errors.currentPassword && (
+                <p className="mt-1 text-sm text-red-600">{errors.currentPassword.message}</p>
+              )}
+            </div>
+
             {/* New Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -115,7 +147,7 @@ export default function PasswordChangeModal({
                       message: 'Password must contain uppercase, lowercase, number, and special character'
                     }
                   })}
-                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 text-gray-900"
                   placeholder="Enter new password"
                 />
                 <button
@@ -143,7 +175,7 @@ export default function PasswordChangeModal({
                     required: 'Please confirm your password',
                     validate: (value) => value === newPassword || 'Passwords do not match'
                   })}
-                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 text-gray-900"
                   placeholder="Confirm new password"
                 />
                 <button
