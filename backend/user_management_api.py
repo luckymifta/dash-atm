@@ -86,13 +86,14 @@ SESSION_TIMEOUT_WARNING_MINUTES = 5  # Warn user 5 minutes before token expirati
 AUTO_LOGOUT_DILI_TIME = "00:00"  # Automatic logout at midnight Dili time
 REMEMBER_ME_DAYS = 30  # Extended session for "Remember Me"
 
-# PostgreSQL configuration from .env file
+# PostgreSQL configuration - Hardcoded for your development_db (no .env dependency)
 POSTGRES_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", 5432)),
-    "database": os.getenv("DB_NAME", "dash"),
-    "user": os.getenv("DB_USER", "timlesdev"),
-    "password": os.getenv("DB_PASSWORD", "timlesdev")
+    "host": "88.222.214.26",
+    "port": 5432,
+    "database": "development_db",
+    "user": "timlesdev",
+    "password": "timlesdev",
+    "sslmode": "prefer"  # Added SSL configuration
 }
 
 # Enums

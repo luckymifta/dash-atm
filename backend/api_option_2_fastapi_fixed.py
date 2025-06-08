@@ -85,11 +85,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger('ATM_FastAPI')
 
-# Database configuration using the updated credentials
+# Database configuration using the updated credentials for development_db
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
+    'host': os.getenv('DB_HOST', '88.222.214.26'),
     'port': int(os.getenv('DB_PORT', 5432)),
-    'database': os.getenv('DB_NAME', 'dash'),
+    'database': os.getenv('DB_NAME', 'development_db'),
     'user': os.getenv('DB_USER', 'timlesdev'),
     'password': os.getenv('DB_PASSWORD', 'timlesdev')
 }

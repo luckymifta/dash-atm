@@ -1,9 +1,9 @@
 // API Configuration
 export const API_CONFIG = {
-  // Base URL for the FastAPI backend (without /api/v1 since endpoints include it)
+  // Base URL for the FastAPI backend (includes /api, endpoints include /v1)
   BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api',
   
-  // API endpoints (include /v1 since BASE_URL is just /api)
+  // API endpoints (include /v1 since BASE_URL ends with /api)
   ENDPOINTS: {
     SUMMARY: '/v1/atm/status/summary',
     REGIONAL: '/v1/atm/status/regional',

@@ -20,13 +20,14 @@ load_dotenv()
 DATABASE_TYPE = "postgresql"  # Using PostgreSQL with your credentials
 SQLITE_DB_PATH = "/Users/luckymifta/Documents/2. AREA/dash-atm/backend/user_management.db"
 
-# PostgreSQL configuration from .env file
+# PostgreSQL configuration - Hardcoded for your development_db (no .env dependency)
 POSTGRES_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", 5432)),
-    "database": os.getenv("DB_NAME", "dash"),
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "password")
+    "host": "88.222.214.26",
+    "port": 5432,
+    "database": "development_db",
+    "user": "timlesdev",
+    "password": "timlesdev",
+    "sslmode": "prefer"  # Added SSL configuration
 }
 
 def create_sqlite_tables():

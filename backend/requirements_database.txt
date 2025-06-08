@@ -1,0 +1,33 @@
+# Requirements for ATM Data Retrieval System with Database Support
+# PostgreSQL and database connectivity
+psycopg2-binary>=2.9.7
+psycopg2>=2.9.7
+
+# HTTP requests and web scraping
+requests>=2.31.0
+urllib3>=2.0.4
+
+# Data processing and utilities
+tqdm>=4.66.1
+pytz>=2023.3
+
+# JSON and data handling (usually included with Python)
+# json - built-in
+# uuid - built-in
+# datetime - built-in
+# logging - built-in
+# argparse - built-in
+# threading - built-in
+# collections - built-in
+# signal - built-in
+# sys - built-in
+# os - built-in
+# time - built-in
+# typing - built-in
+
+# Optional: For enhanced database functionality
+sqlalchemy>=2.0.0  # If you want to use ORM features later
+
+# Development and testing
+pytest>=7.4.0  # For testing
+python-dotenv>=1.0.0  # For environment variable management

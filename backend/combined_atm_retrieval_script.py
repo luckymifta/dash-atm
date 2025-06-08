@@ -65,13 +65,18 @@ execution_stats = {
 
 # Try to import database connector if available
 try:
-    import db_connector
+    from db_connector_new import db_connector
     DB_AVAILABLE = True
     log.info("Database connector available")
 except ImportError:
-    db_connector = None
-    DB_AVAILABLE = False
-    log.warning("Database connector not available - database operations will be skipped")
+    try:
+        import db_connector
+        DB_AVAILABLE = True
+        log.info("Legacy database connector available")
+    except ImportError:
+        db_connector = None
+        DB_AVAILABLE = False
+        log.warning("Database connector not available - database operations will be skipped")
 
 # Configuration
 LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"
