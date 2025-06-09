@@ -170,6 +170,8 @@ EOF
 check_status "Backend environment file created"
 
 echo -e "${BLUE}Step 5: Frontend Setup${NC}"
+echo "Deactivating Python virtual environment..."
+deactivate 2>/dev/null || true  # Exit venv gracefully
 cd $APP_DIR/frontend
 
 echo "Installing Node.js dependencies..."
