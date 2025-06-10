@@ -171,6 +171,8 @@ class AuditLogResponse(BaseModel):
     ip_address: Optional[str]
     user_agent: Optional[str]
     performed_by: Optional[str]
+    performed_by_username: Optional[str]
+    target_username: Optional[str]
     created_at: datetime
 
 # Database helper functions
@@ -1182,6 +1184,141 @@ async def change_password(
             detail="Failed to change password"
         )
 
+# ==================== AUDIT LOG OPERATIONS ====================
+
+@app.get("/audit-log")
+async def get_audit_log(
+    page: int = 1,
+    limit: int = 50,
+    action: Optional[str] = None,
+    user_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get paginated audit log entries (admin/super_admin only)"""
+    
+    # Check permissions - only admin and super_admin can view audit logs
+    if current_user.get("role") not in ["admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to view audit logs"
+        )
+    
+    # Validate pagination parameters
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 50
+    
+    # Build the WHERE clause
+    where_conditions = []
+    params = []
+    
+    # Add action filter
+    if action and action.strip():
+        where_conditions.append("action = %s")
+        params.append(action.strip())
+    
+    # Add user filter
+    if user_id and user_id.strip():
+        where_conditions.append("user_id = %s")
+        params.append(user_id.strip())
+    
+    # Add date range filters
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            where_conditions.append("created_at >= %s")
+            params.append(start_dt)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid start_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+            )
+    
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            where_conditions.append("created_at <= %s")
+            params.append(end_dt)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid end_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+            )
+    
+    where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+    
+    # Count total entries
+    count_query = f"SELECT COUNT(*) FROM user_audit_log WHERE {where_clause}"
+    total_result = execute_query(count_query, tuple(params), fetch="one")
+    total = total_result['count'] if total_result else 0
+    
+    # Calculate pagination
+    offset = (page - 1) * limit
+    total_pages = (total + limit - 1) // limit if total > 0 else 1
+    
+    # Get audit log entries with user information
+    audit_query = f"""
+        SELECT 
+            ual.id,
+            ual.user_id,
+            ual.action,
+            ual.entity_type,
+            ual.entity_id,
+            ual.old_values,
+            ual.new_values,
+            ual.ip_address,
+            ual.user_agent,
+            ual.performed_by,
+            ual.created_at,
+            u.username as performed_by_username,
+            target_user.username as target_username
+        FROM user_audit_log ual
+        LEFT JOIN users u ON ual.performed_by = u.id
+        LEFT JOIN users target_user ON ual.user_id = target_user.id
+        WHERE {where_clause}
+        ORDER BY ual.created_at DESC
+        LIMIT %s OFFSET %s
+    """
+    audit_params = params + [limit, offset]
+    audit_result = execute_query(audit_query, tuple(audit_params), fetch="all")
+    
+    # Convert to response format
+    audit_logs = []
+    if audit_result:
+        for log_data in audit_result:
+            log_dict = dict(log_data)
+            # Parse JSON fields
+            if log_dict.get('old_values'):
+                try:
+                    log_dict['old_values'] = json.loads(log_dict['old_values'])
+                except (json.JSONDecodeError, TypeError):
+                    log_dict['old_values'] = None
+            
+            if log_dict.get('new_values'):
+                try:
+                    log_dict['new_values'] = json.loads(log_dict['new_values'])
+                except (json.JSONDecodeError, TypeError):
+                    log_dict['new_values'] = None
+            
+            audit_logs.append(AuditLogResponse(**log_dict))
+    
+    return {
+        "audit_logs": audit_logs,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "filters_applied": {
+            "action": action,
+            "user_id": user_id,
+            "start_date": start_date,
+            "end_date": end_date
+        }
+    }
+
 # Initialize with default admin user
 def initialize_default_users():
     """Create default admin user if it doesn't exist"""
@@ -1203,7 +1340,7 @@ def initialize_default_users():
                 id, username, email, password_hash, first_name, last_name,
                 role, is_active, is_deleted, password_changed_at, 
                 failed_login_attempts, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
         now = datetime.now(timezone.utc)

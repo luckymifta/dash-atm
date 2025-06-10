@@ -11,7 +11,8 @@ import {
   Users,
   LogOut,
   User,
-  Shield
+  Shield,
+  FileText
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +36,12 @@ const menuItems = [
     name: 'User Management',
     href: '/user-management',
     icon: Users,
+  },
+  {
+    name: 'Logs',
+    href: '/logs',
+    icon: FileText,
+    roles: ['admin', 'super_admin'], // Only visible to admins
   },
 ];
 
@@ -130,7 +137,9 @@ export default function Sidebar({ className }: SidebarProps) {
       {/* Navigation */}
       <nav className="mt-8 px-2 flex-1">
         <ul className="space-y-2">
-          {menuItems.map((item) => {
+          {menuItems.filter(item => 
+            !item.roles || (user && item.roles.includes(user.role))
+          ).map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
 

@@ -93,6 +93,8 @@ export interface AuditLogEntry {
   ip_address?: string;
   user_agent?: string;
   performed_by?: string;
+  performed_by_username?: string;
+  target_username?: string;
   created_at: string;
 }
 
@@ -419,6 +421,54 @@ class AuthApiService {
         throw error;
       }
       throw new Error('An unexpected error occurred while refreshing session');
+    }
+  }
+
+  async getAuditLog(params?: {
+    page?: number;
+    limit?: number;
+    action?: string;
+    user_id?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<{
+    audit_logs: AuditLogEntry[];
+    total: number;
+    page: number;
+    limit: number;
+    total_pages: number;
+    filters_applied: Record<string, string | null>;
+  }> {
+    try {
+      const token = this.getToken();
+      const queryParams = new URLSearchParams();
+      
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.action) queryParams.append('action', params.action);
+      if (params?.user_id) queryParams.append('user_id', params.user_id);
+      if (params?.start_date) queryParams.append('start_date', params.start_date);
+      if (params?.end_date) queryParams.append('end_date', params.end_date);
+      
+      const response = await fetch(`${this.baseUrl}/audit-log?${queryParams}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to fetch audit logs');
+      }
+
+      return await response.json();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while fetching audit logs');
     }
   }
 }
