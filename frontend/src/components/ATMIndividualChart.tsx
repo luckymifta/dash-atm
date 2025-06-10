@@ -321,6 +321,18 @@ export default function ATMIndividualChart({ className = '' }: ATMIndividualChar
             )}
           </div>
 
+          {/* Export Button */}
+          {data.length > 0 && (
+            <button
+              onClick={handleExport}
+              className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              title="Export data as CSV"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </button>
+          )}
+
           {/* Time Period Filter */}
           <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
             <Clock className="h-4 w-4 text-gray-500 ml-2" />
@@ -338,17 +350,6 @@ export default function ATMIndividualChart({ className = '' }: ATMIndividualChar
               </button>
             ))}
           </div>
-
-          {/* Export Button */}
-          {data.length > 0 && (
-            <button
-              onClick={handleExport}
-              className="flex items-center space-x-1 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-            >
-              <Download className="h-4 w-4" />
-              <span>Export</span>
-            </button>
-          )}
         </div>
       </div>
 
