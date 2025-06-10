@@ -26,6 +26,9 @@ The comprehensive ATM status change bell notification system has been successful
 
 ## 🚀 Quick Deployment Commands
 
+### ⚠️ **Important: Database Tables Already Exist**
+The notification tables are already in your database, so no table creation is needed.
+
 ### Option 1: Automated Deployment (Recommended)
 ```bash
 # Connect to VPS
@@ -34,14 +37,22 @@ ssh root@167.172.71.55
 # Navigate to project directory
 cd /var/www/dash-atm
 
-# Download and run deployment script
+# Download and run deployment script (handles existing tables)
 wget https://raw.githubusercontent.com/luckymifta/dash-atm/main/deploy_bell_notification.sh
 chmod +x deploy_bell_notification.sh
 ./deploy_bell_notification.sh
 ```
 
-### Option 2: Manual Steps
-Follow the detailed checklist in `BELL_NOTIFICATION_VPS_DEPLOYMENT_CHECKLIST.md`
+### Option 2: Manual Steps (Simplified)
+Follow the **revised** deployment guide: `REVISED_BELL_NOTIFICATION_DEPLOYMENT_GUIDE.md`
+
+**Key simplified steps:**
+1. Update repository code
+2. Install Python dependencies (`asyncpg`, `pytz`)
+3. Verify database table access (tables already exist)
+4. Build frontend
+5. Restart services
+6. Test functionality
 
 ## 🔍 Key Features to Test After Deployment
 
@@ -78,19 +89,30 @@ Follow the detailed checklist in `BELL_NOTIFICATION_VPS_DEPLOYMENT_CHECKLIST.md`
 
 ## 🔧 Database Changes
 
-### New Tables Created
-```sql
--- Stores all ATM status change notifications
-atm_notifications (notification_id, terminal_id, status changes, etc.)
+### ✅ **Database Tables Status: Already Exist**
+The required notification tables already exist in your production database:
+- `atm_notifications` - Stores all ATM status change notifications
+- `atm_status_history` - Tracks ATM status history for change detection
 
--- Tracks ATM status history for change detection  
-atm_status_history (terminal_id, status, timestamps, etc.)
+### 📊 **What the Deployment Does:**
+- **Verifies table accessibility** and database connection
+- **Automatically creates indexes** if they don't exist (using `CREATE INDEX IF NOT EXISTS`)
+- **No manual table creation needed** - Tables are already set up
+- **Initializes notification service** to work with existing tables
+
+### 🔍 **Database Verification:**
+```bash
+# Check existing tables
+psql -h 88.222.214.26 -U timlesdev -d development_db -c "
+SELECT tablename FROM pg_tables WHERE tablename IN ('atm_notifications', 'atm_status_history');
+"
+
+# Check current data
+psql -h 88.222.214.26 -U timlesdev -d development_db -c "
+SELECT COUNT(*) as notification_count FROM atm_notifications;
+SELECT COUNT(*) as history_count FROM atm_status_history;
+"
 ```
-
-### Performance Indexes
-- Optimized for notification queries
-- Efficient unread count calculations
-- Fast status change detection
 
 ## 🌐 Production URLs
 

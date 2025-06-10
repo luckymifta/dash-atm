@@ -70,14 +70,14 @@ pip install asyncio asyncpg pytz
 
 print_status "Python dependencies installed"
 
-print_header "3. Setting up notification database tables"
-print_status "Creating notification tables in database..."
+print_header "3. Verifying notification database tables"
+print_status "Checking if notification tables exist in database..."
 
-# Create a Python script to setup database tables
-cat > setup_notification_tables.py << 'EOF'
+# Create a Python script to verify database tables
+cat > verify_notification_tables.py << 'EOF'
 #!/usr/bin/env python3
 """
-Setup notification database tables
+Verify notification database tables exist
 """
 import asyncio
 import asyncpg
@@ -93,86 +93,66 @@ DB_CONFIG = {
     'password': 'timlesdev'
 }
 
-async def setup_tables():
-    """Setup notification tables"""
+async def verify_tables():
+    """Verify notification tables exist"""
     try:
         conn = await asyncpg.connect(**DB_CONFIG)
         
-        print("Creating atm_notifications table...")
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS atm_notifications (
-                id SERIAL PRIMARY KEY,
-                notification_id UUID NOT NULL DEFAULT gen_random_uuid(),
-                terminal_id VARCHAR(50) NOT NULL,
-                location TEXT,
-                previous_status VARCHAR(20),
-                current_status VARCHAR(20) NOT NULL,
-                severity VARCHAR(20) NOT NULL,
-                title TEXT NOT NULL,
-                message TEXT NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                is_read BOOLEAN DEFAULT FALSE,
-                read_at TIMESTAMP WITH TIME ZONE,
-                metadata JSONB
+        print("Checking for atm_notifications table...")
+        result = await conn.fetchval("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'atm_notifications'
             )
         """)
+        if result:
+            print("✅ atm_notifications table exists")
+        else:
+            print("❌ atm_notifications table missing")
+            return False
         
-        print("Creating atm_status_history table...")
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS atm_status_history (
-                id SERIAL PRIMARY KEY,
-                terminal_id VARCHAR(50) NOT NULL,
-                status VARCHAR(20) NOT NULL,
-                location TEXT,
-                issue_state_name VARCHAR(50),
-                serial_number VARCHAR(50),
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                fetched_status VARCHAR(50),
-                raw_data JSONB
+        print("Checking for atm_status_history table...")
+        result = await conn.fetchval("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'atm_status_history'
             )
         """)
+        if result:
+            print("✅ atm_status_history table exists")
+        else:
+            print("❌ atm_status_history table missing")
+            return False
         
-        print("Creating database indexes...")
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_notifications_terminal_created 
-            ON atm_notifications(terminal_id, created_at DESC)
-        """)
-        
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_notifications_unread 
-            ON atm_notifications(is_read, created_at DESC) WHERE is_read = FALSE
-        """)
-        
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_status_history_terminal 
-            ON atm_status_history(terminal_id, updated_at DESC)
-        """)
+        # Check notification count
+        count = await conn.fetchval("SELECT COUNT(*) FROM atm_notifications")
+        print(f"📊 Current notifications count: {count}")
         
         await conn.close()
-        print("✅ Database tables created successfully!")
+        print("✅ Database verification completed successfully!")
         return True
         
     except Exception as e:
-        print(f"❌ Error setting up database tables: {e}")
+        print(f"❌ Error verifying database tables: {e}")
         return False
 
 if __name__ == "__main__":
-    success = asyncio.run(setup_tables())
+    success = asyncio.run(verify_tables())
     sys.exit(0 if success else 1)
 EOF
 
-# Run the database setup
-python3 setup_notification_tables.py
+# Run the database verification
+python3 verify_notification_tables.py
 
 if [ $? -eq 0 ]; then
-    print_status "Database tables created successfully"
+    print_status "Database tables verified successfully"
 else
-    print_error "Failed to create database tables"
+    print_error "Database verification failed"
     exit 1
 fi
 
-# Clean up the setup script
-rm setup_notification_tables.py
+# Clean up the verification script
+rm verify_notification_tables.py
 
 print_header "4. Installing frontend dependencies"
 cd ${FRONTEND_DIR}

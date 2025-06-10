@@ -58,49 +58,21 @@ source venv/bin/activate
 pip install asyncio asyncpg pytz
 ```
 
-#### 3. Database Setup
+#### 3. Database Verification
 ```bash
-# Connect to PostgreSQL and run:
-psql -h 88.222.214.26 -U timlesdev -d development_db
+# Verify that notification tables already exist
+psql -h 88.222.214.26 -U timlesdev -d development_db -c "
+SELECT tablename FROM pg_tables WHERE tablename IN ('atm_notifications', 'atm_status_history');
+"
 
-# Run these SQL commands:
-CREATE TABLE IF NOT EXISTS atm_notifications (
-    id SERIAL PRIMARY KEY,
-    notification_id UUID NOT NULL DEFAULT gen_random_uuid(),
-    terminal_id VARCHAR(50) NOT NULL,
-    location TEXT,
-    previous_status VARCHAR(20),
-    current_status VARCHAR(20) NOT NULL,
-    severity VARCHAR(20) NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    is_read BOOLEAN DEFAULT FALSE,
-    read_at TIMESTAMP WITH TIME ZONE,
-    metadata JSONB
-);
+# Check table structure (optional)
+psql -h 88.222.214.26 -U timlesdev -d development_db -c "
+\d atm_notifications;
+\d atm_status_history;
+"
 
-CREATE TABLE IF NOT EXISTS atm_status_history (
-    id SERIAL PRIMARY KEY,
-    terminal_id VARCHAR(50) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    location TEXT,
-    issue_state_name VARCHAR(50),
-    serial_number VARCHAR(50),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    fetched_status VARCHAR(50),
-    raw_data JSONB
-);
-
--- Create indexes
-CREATE INDEX IF NOT EXISTS idx_notifications_terminal_created 
-ON atm_notifications(terminal_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_notifications_unread 
-ON atm_notifications(is_read, created_at DESC) WHERE is_read = FALSE;
-
-CREATE INDEX IF NOT EXISTS idx_status_history_terminal 
-ON atm_status_history(terminal_id, updated_at DESC);
+# Note: Tables and indexes will be automatically created/verified by the notification service
+# No manual table creation needed as tables already exist in the database
 ```
 
 #### 4. Frontend Build
