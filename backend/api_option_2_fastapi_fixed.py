@@ -20,6 +20,8 @@ Endpoints:
 - GET /api/v1/atm/status/regional - Regional breakdown with filters
 - GET /api/v1/atm/status/trends/{region_code} - Regional trends
 - GET /api/v1/atm/status/latest - Latest data with optional table selection
+- GET /api/v1/atm/{terminal_id}/history - Individual ATM historical status data
+- GET /api/v1/atm/list - List of ATMs available for historical analysis
 - GET /api/v1/health - API health check
 - GET /docs - Interactive API documentation
 - GET /redoc - Alternative documentation
@@ -142,6 +144,27 @@ class HealthStatusEnum(str, Enum):
     ATTENTION = "ATTENTION"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
+
+# New models for individual ATM historical data
+class ATMStatusPoint(BaseModel):
+    timestamp: datetime = Field(..., description="Timestamp of the status reading")
+    status: ATMStatusEnum = Field(..., description="ATM status at this time")
+    location: Optional[str] = Field(None, description="ATM location")
+    fault_description: Optional[str] = Field(None, description="Fault description if any")
+    serial_number: Optional[str] = Field(None, description="ATM serial number")
+
+class ATMHistoricalData(BaseModel):
+    terminal_id: str = Field(..., description="Terminal identifier")
+    terminal_name: Optional[str] = Field(None, description="Terminal name")
+    location: Optional[str] = Field(None, description="Current location")
+    serial_number: Optional[str] = Field(None, description="Serial number")
+    historical_points: List[ATMStatusPoint] = Field(..., description="Historical status points")
+    time_period: str = Field(..., description="Time period covered")
+    summary_stats: Dict[str, Any] = Field(..., description="Summary statistics")
+
+class ATMHistoricalResponse(BaseModel):
+    atm_data: ATMHistoricalData
+    chart_config: Dict[str, Any] = Field(..., description="Configuration for chart display")
 
 class ATMStatusCounts(BaseModel):
     available: int = Field(..., ge=0, description="Number of available ATMs")
@@ -868,6 +891,327 @@ async def get_latest_data(
     except Exception as e:
         logger.error(f"Error fetching latest data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch latest data")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/{terminal_id}/history", response_model=ATMHistoricalResponse, tags=["ATM Historical"])
+async def get_atm_history(
+    terminal_id: str = Path(..., description="Terminal ID to get history for"),
+    hours: int = Query(168, ge=1, le=2160, description="Number of hours to look back (1-2160, default 168=7 days)"),
+    include_fault_details: bool = Query(True, description="Include fault descriptions in history"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get historical status data for a specific ATM terminal
+    
+    This endpoint provides time-series data for individual ATM status changes,
+    perfect for creating line charts showing ATM availability history.
+    
+    Returns:
+    - Chronological status points with timestamps
+    - Status transitions (AVAILABLE -> WARNING -> WOUNDED, etc.)
+    - Fault descriptions when status changes occur
+    - Chart configuration for frontend display
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Query terminal_details table for historical data of specific terminal
+        query = """
+            SELECT 
+                terminal_id,
+                location,
+                issue_state_name,
+                serial_number,
+                retrieved_date,
+                fetched_status,
+                fault_data,
+                raw_terminal_data
+            FROM terminal_details
+            WHERE terminal_id = $1 
+                AND retrieved_date >= NOW() - INTERVAL '%s hours'
+            ORDER BY retrieved_date ASC
+        """ % hours
+        
+        rows = await conn.fetch(query, terminal_id)
+        
+        # Enhanced fallback logic for individual ATM
+        actual_hours_used = hours
+        fallback_message = None
+        
+        if not rows:
+            # Try progressively shorter periods for this specific ATM
+            fallback_periods = [720, 168, 72, 24, 12, 6, 1]  # 30 days, 7 days, 3 days, etc.
+            fallback_periods = [period for period in fallback_periods if period < hours]
+            
+            logger.info(f"No data found for ATM {terminal_id} in {hours}h period, trying fallback periods: {fallback_periods}")
+            
+            for fallback_hours in fallback_periods:
+                fallback_query = """
+                    SELECT 
+                        terminal_id,
+                        location,
+                        issue_state_name,
+                        serial_number,
+                        retrieved_date,
+                        fetched_status,
+                        fault_data,
+                        raw_terminal_data
+                    FROM terminal_details
+                    WHERE terminal_id = $1 
+                        AND retrieved_date >= NOW() - INTERVAL '%s hours'
+                    ORDER BY retrieved_date ASC
+                """ % fallback_hours
+                
+                rows = await conn.fetch(fallback_query, terminal_id)
+                if rows:
+                    actual_hours_used = fallback_hours
+                    fallback_message = f"Requested {hours}h data unavailable, showing available {fallback_hours}h data instead"
+                    logger.info(f"Found {len(rows)} data points for ATM {terminal_id} in {fallback_hours}h period")
+                    break
+            
+            # If still no data found, raise 404
+            if not rows:
+                raise HTTPException(status_code=404, detail=f"No historical data found for ATM {terminal_id} in any time period")
+        
+        # Process the historical data
+        historical_points = []
+        status_distribution = {}
+        terminal_info = None
+        
+        for row in rows:
+            # Extract fault description if available and requested
+            fault_description = None
+            if include_fault_details and row['fault_data']:
+                try:
+                    fault_data = row['fault_data']
+                    if isinstance(fault_data, dict):
+                        fault_description = fault_data.get('agentErrorDescription')
+                except Exception as e:
+                    logger.warning(f"Could not parse fault data for ATM {terminal_id}: {e}")
+            
+            # Map status to enum
+            status_value = row['fetched_status'] or row['issue_state_name'] or 'UNKNOWN'
+            
+            # Handle status mapping
+            if status_value == 'HARD':
+                status_value = 'WOUNDED'
+            elif status_value == 'CASH':
+                status_value = 'OUT_OF_SERVICE'
+            elif status_value == 'UNAVAILABLE':
+                status_value = 'OUT_OF_SERVICE'
+            
+            # Ensure status is valid
+            try:
+                status_enum = ATMStatusEnum(status_value)
+            except ValueError:
+                logger.warning(f"Unknown status '{status_value}' for ATM {terminal_id}, defaulting to OUT_OF_SERVICE")
+                status_enum = ATMStatusEnum.OUT_OF_SERVICE
+            
+            # Count status distribution
+            status_distribution[status_enum.value] = status_distribution.get(status_enum.value, 0) + 1
+            
+            # Create status point
+            status_point = ATMStatusPoint(
+                timestamp=convert_to_dili_time(row['retrieved_date']),
+                status=status_enum,
+                location=row['location'],
+                fault_description=fault_description,
+                serial_number=row['serial_number']
+            )
+            historical_points.append(status_point)
+            
+            # Store terminal info from latest record
+            if terminal_info is None:
+                terminal_info = {
+                    'location': row['location'],
+                    'serial_number': row['serial_number']
+                }
+        
+        # Calculate summary statistics
+        total_points = len(historical_points)
+        status_percentages = {
+            status: (count / total_points * 100) if total_points > 0 else 0
+            for status, count in status_distribution.items()
+        }
+        
+        # Calculate uptime (AVAILABLE + WARNING as operational)
+        operational_count = status_distribution.get('AVAILABLE', 0) + status_distribution.get('WARNING', 0)
+        uptime_percentage = (operational_count / total_points * 100) if total_points > 0 else 0
+        
+        summary_stats = {
+            'data_points': total_points,
+            'time_range_hours': actual_hours_used,
+            'requested_hours': hours,
+            'status_distribution': status_distribution,
+            'status_percentages': status_percentages,
+            'uptime_percentage': round(uptime_percentage, 2),
+            'first_reading': historical_points[0].timestamp.isoformat() if historical_points else None,
+            'last_reading': historical_points[-1].timestamp.isoformat() if historical_points else None,
+            'status_changes': len(set(point.status.value for point in historical_points)),
+            'has_fault_data': any(point.fault_description for point in historical_points)
+        }
+        
+        # Add fallback message if applicable
+        if fallback_message:
+            summary_stats['fallback_message'] = fallback_message
+        
+        # Create ATM historical data
+        atm_historical_data = ATMHistoricalData(
+            terminal_id=terminal_id,
+            terminal_name=None,  # We don't have terminal name in the database, so set to None
+            location=terminal_info['location'] if terminal_info else None,
+            serial_number=terminal_info['serial_number'] if terminal_info else None,
+            historical_points=historical_points,
+            time_period=f"{actual_hours_used} hours" + (f" (requested {hours}h)" if actual_hours_used != hours else ""),
+            summary_stats=summary_stats
+        )
+        
+        # Chart configuration for frontend
+        chart_config = {
+            'chart_type': 'line_chart',
+            'x_axis': {
+                'field': 'timestamp',
+                'label': 'Date & Time',
+                'format': 'datetime'
+            },
+            'y_axis': {
+                'field': 'status',
+                'label': 'ATM Status',
+                'categories': ['AVAILABLE', 'WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE'],
+                'colors': {
+                    'AVAILABLE': '#28a745',      # Green
+                    'WARNING': '#ffc107',        # Yellow  
+                    'WOUNDED': '#fd7e14',        # Orange
+                    'ZOMBIE': '#6f42c1',         # Purple
+                    'OUT_OF_SERVICE': '#dc3545'  # Red
+                }
+            },
+            'tooltip': {
+                'include_fields': ['timestamp', 'status', 'fault_description'],
+                'timestamp_format': 'MMM DD, YYYY HH:mm'
+            },
+            'legend': {
+                'show': True,
+                'position': 'bottom'
+            }
+        }
+        
+        return ATMHistoricalResponse(
+            atm_data=atm_historical_data,
+            chart_config=chart_config
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching history for ATM {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ATM historical data")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/list", tags=["ATM Historical"])
+async def get_atm_list(
+    region_code: Optional[str] = Query(None, description="Filter by region code"),
+    status_filter: Optional[ATMStatusEnum] = Query(None, description="Filter by current status"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of ATMs to return"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get list of available ATMs for historical analysis
+    
+    Returns a list of ATMs that have historical data available,
+    useful for populating dropdown menus or selection lists.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Build query to get latest status for each ATM
+        base_query = """
+            WITH latest_atm_data AS (
+                SELECT DISTINCT ON (terminal_id)
+                    terminal_id,
+                    location,
+                    issue_state_name,
+                    serial_number,
+                    retrieved_date,
+                    fetched_status
+                FROM terminal_details
+                ORDER BY terminal_id, retrieved_date DESC
+            )
+            SELECT 
+                terminal_id,
+                location,
+                issue_state_name,
+                serial_number,
+                retrieved_date,
+                fetched_status
+            FROM latest_atm_data
+        """
+        
+        # Add filters
+        conditions = []
+        params = []
+        
+        if region_code:
+            # For simplicity, we'll check if location contains region info
+            conditions.append("location ILIKE $" + str(len(params) + 1))
+            params.append(f"%{region_code}%")
+        
+        if status_filter:
+            # Handle status mapping
+            if status_filter == ATMStatusEnum.WOUNDED:
+                conditions.append("(fetched_status = $" + str(len(params) + 1) + " OR issue_state_name = 'HARD')")
+                params.append('WOUNDED')
+            elif status_filter == ATMStatusEnum.OUT_OF_SERVICE:
+                conditions.append("(fetched_status IN ($" + str(len(params) + 1) + ", $" + str(len(params) + 2) + ") OR issue_state_name IN ('CASH', 'UNAVAILABLE'))")
+                params.extend(['OUT_OF_SERVICE', 'UNAVAILABLE'])
+            else:
+                conditions.append("(fetched_status = $" + str(len(params) + 1) + " OR issue_state_name = $" + str(len(params) + 2) + ")")
+                params.extend([status_filter.value, status_filter.value])
+        
+        if conditions:
+            base_query += " WHERE " + " AND ".join(conditions)
+        
+        base_query += f" ORDER BY terminal_id LIMIT {limit}"
+        
+        rows = await conn.fetch(base_query, *params)
+        
+        atm_list = []
+        for row in rows:
+            # Map status
+            status_value = row['fetched_status'] or row['issue_state_name'] or 'UNKNOWN'
+            if status_value == 'HARD':
+                status_value = 'WOUNDED'
+            elif status_value in ['CASH', 'UNAVAILABLE']:
+                status_value = 'OUT_OF_SERVICE'
+                
+            atm_list.append({
+                'terminal_id': row['terminal_id'],
+                'location': row['location'],
+                'current_status': status_value,
+                'serial_number': row['serial_number'],
+                'last_updated': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None
+            })
+        
+        return {
+            'atms': atm_list,
+            'total_count': len(atm_list),
+            'filters_applied': {
+                'region_code': region_code,
+                'status_filter': status_filter.value if status_filter else None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching ATM list: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ATM list")
     finally:
         await release_db_connection(conn)
 
