@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import ATMStatusCard from '@/components/ATMStatusCard';
 import ATMAvailabilityChart from '@/components/ATMAvailabilityChart';
+import ATMIndividualChart from '@/components/ATMIndividualChart';
 import { 
   Building2, 
   CheckCircle, 
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<ATMSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nextRefresh, setNextRefresh] = useState<Date | null>(null);
   const router = useRouter();
 
   const handleCardClick = (status?: string) => {
@@ -28,6 +30,12 @@ export default function DashboardPage() {
     } else {
       router.push('/atm-information');
     }
+  };
+
+  const handleManualRefresh = async () => {
+    await fetchATMData();
+    // Reset the next refresh time when manually refreshed
+    setNextRefresh(new Date(Date.now() + 30 * 60 * 1000));
   };
 
   const fetchATMData = async () => {
@@ -69,8 +77,14 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchATMData();
     
-    // Refresh data every 30 seconds
-    const interval = setInterval(fetchATMData, 30000);
+    // Set initial next refresh time
+    setNextRefresh(new Date(Date.now() + 30 * 60 * 1000));
+    
+    // Refresh data every 30 minutes
+    const interval = setInterval(() => {
+      fetchATMData();
+      setNextRefresh(new Date(Date.now() + 30 * 60 * 1000));
+    }, 30 * 60 * 1000); // 30 minutes = 1,800,000 milliseconds
     
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -132,17 +146,29 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center space-x-3">
             {data?.last_updated && (
-              <p className="text-sm text-gray-500">
-                Last updated: {new Date(data.last_updated).toLocaleString('en-US', { 
-                  timeZone: 'Asia/Dili',
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false
-                })} (Dili Time)
-              </p>
+              <div className="text-right">
+                <p className="text-sm text-gray-500">
+                  Last updated: {new Date(data.last_updated).toLocaleString('en-US', { 
+                    timeZone: 'Asia/Dili',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                  })} (Dili Time)
+                </p>
+                {nextRefresh && (
+                  <p className="text-xs text-gray-400">
+                    Next refresh: {nextRefresh.toLocaleString('en-US', { 
+                      timeZone: 'Asia/Dili',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false
+                    })} (every 30 min)
+                  </p>
+                )}
+              </div>
             )}
             {/* Connection Status */}
             <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium ${
@@ -156,7 +182,7 @@ export default function DashboardPage() {
               <span>{error ? 'API Disconnected' : 'API Connected'}</span>
             </div>
             <button
-              onClick={fetchATMData}
+              onClick={handleManualRefresh}
               disabled={loading}
               className="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -177,7 +203,7 @@ export default function DashboardPage() {
                   {error}. Showing {data?.data_source === 'mock' ? 'mock' : 'cached'} data.
                 </p>
                 <button
-                  onClick={fetchATMData}
+                  onClick={handleManualRefresh}
                   className="mt-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1 rounded text-sm transition-colors"
                 >
                   Retry Connection
@@ -258,6 +284,9 @@ export default function DashboardPage() {
 
         {/* ATM Availability History Chart */}
         <ATMAvailabilityChart />
+
+        {/* Individual ATM Historical Chart */}
+        <ATMIndividualChart />
       </div>
     </DashboardLayout>
   );

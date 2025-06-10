@@ -162,6 +162,80 @@ interface TerminalDetailsResponse {
   count?: number;
 }
 
+// Individual ATM Historical Data Interfaces
+interface ATMStatusPoint {
+  timestamp: string;
+  status: 'AVAILABLE' | 'WARNING' | 'WOUNDED' | 'ZOMBIE' | 'OUT_OF_SERVICE';
+  location?: string;
+  fault_description?: string;
+  serial_number?: string;
+}
+
+interface ATMHistoricalData {
+  terminal_id: string;
+  terminal_name?: string;
+  location?: string;
+  serial_number?: string;
+  historical_points: ATMStatusPoint[];
+  time_period: string;
+  summary_stats: {
+    data_points: number;
+    time_range_hours: number;
+    requested_hours: number;
+    status_distribution: Record<string, number>;
+    status_percentages: Record<string, number>;
+    uptime_percentage: number;
+    first_reading: string;
+    last_reading: string;
+    status_changes: number;
+    has_fault_data: boolean;
+    fallback_message?: string;
+  };
+}
+
+interface ATMHistoricalResponse {
+  atm_data: ATMHistoricalData;
+  chart_config: {
+    chart_type: string;
+    x_axis: {
+      field: string;
+      label: string;
+      format: string;
+    };
+    y_axis: {
+      field: string;
+      label: string;
+      categories: string[];
+      colors: Record<string, string>;
+    };
+    tooltip: {
+      include_fields: string[];
+      timestamp_format: string;
+    };
+    legend: {
+      show: boolean;
+      position: string;
+    };
+  };
+}
+
+interface ATMListItem {
+  terminal_id: string;
+  location: string;
+  current_status: string;
+  serial_number: string;
+  last_updated: string;
+}
+
+interface ATMListResponse {
+  atms: ATMListItem[];
+  total_count: number;
+  filters_applied: {
+    region_code?: string;
+    status_filter?: string;
+  };
+}
+
 class ATMApiService {
   private baseUrl: string;
 
@@ -248,6 +322,33 @@ class ATMApiService {
     });
     return this.fetchApi<TerminalDetailsResponse>(`${API_CONFIG.ENDPOINTS.LATEST}?${params}`);
   }
+
+  // Individual ATM Historical Data Methods
+  async getATMHistory(
+    terminalId: string,
+    hours: number = 168,
+    includeFaultDetails: boolean = true
+  ): Promise<ATMHistoricalResponse> {
+    const params = new URLSearchParams({
+      hours: hours.toString(),
+      include_fault_details: includeFaultDetails.toString()
+    });
+    return this.fetchApi<ATMHistoricalResponse>(`/v1/atm/${terminalId}/history?${params}`);
+  }
+
+  async getATMList(
+    regionCode?: string,
+    statusFilter?: string,
+    limit: number = 100
+  ): Promise<ATMListResponse> {
+    const params = new URLSearchParams({
+      limit: limit.toString()
+    });
+    if (regionCode) params.append('region_code', regionCode);
+    if (statusFilter) params.append('status_filter', statusFilter);
+    
+    return this.fetchApi<ATMListResponse>(`/v1/atm/list?${params}`);
+  }
 }
 
 // Create a singleton instance
@@ -266,4 +367,9 @@ export type {
   TerminalFaultData,
   TerminalDetails,
   TerminalDetailsResponse,
+  ATMStatusPoint,
+  ATMHistoricalData,
+  ATMHistoricalResponse,
+  ATMListItem,
+  ATMListResponse,
 };

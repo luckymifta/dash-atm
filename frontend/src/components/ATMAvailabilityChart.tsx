@@ -177,8 +177,8 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
 
     fetchAvailabilityData();
     
-    // Refresh data every 5 minutes
-    const interval = setInterval(fetchAvailabilityData, 5 * 60 * 1000);
+    // Refresh data every 30 minutes
+    const interval = setInterval(fetchAvailabilityData, 30 * 60 * 1000); // 30 minutes = 1,800,000 milliseconds
     
     return () => clearInterval(interval);
   }, [selectedPeriod]);
