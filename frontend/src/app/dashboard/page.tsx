@@ -6,6 +6,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import ATMStatusCard from '@/components/ATMStatusCard';
 import ATMAvailabilityChart from '@/components/ATMAvailabilityChart';
 import ATMIndividualChart from '@/components/ATMIndividualChart';
+import BellNotification from '@/components/BellNotification';
 import { 
   Building2, 
   CheckCircle, 
@@ -189,6 +190,9 @@ export default function DashboardPage() {
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
+            
+            {/* Bell Notification */}
+            <BellNotification className="ml-2" />
           </div>
         </div>
 

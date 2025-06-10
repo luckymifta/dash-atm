@@ -87,6 +87,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger('ATM_FastAPI')
 
+# Notification service import
+try:
+    from notification_service import NotificationService
+except ImportError as e:
+    logger.warning(f"Could not import notification service: {e}")
+    NotificationService = None
+
 # Database configuration using the updated credentials for development_db
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', '88.222.214.26'),
@@ -219,8 +226,37 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting ATM FastAPI application...")
     await create_db_pool()
+    
+    # Start background notification checker
+    background_task = None
+    if NotificationService is not None:
+        async def notification_checker():
+            """Background task to check for ATM status changes"""
+            while True:
+                try:
+                    service = await get_notification_service()
+                    changes = await service.check_status_changes()
+                    if changes:
+                        logger.info(f"Background check found {len(changes)} status changes")
+                except Exception as e:
+                    logger.error(f"Error in background notification checker: {e}")
+                
+                # Wait 5 minutes before next check
+                await asyncio.sleep(300)
+        
+        background_task = asyncio.create_task(notification_checker())
+        logger.info("Background notification checker started (5-minute interval)")
+    
     yield
+    
     # Shutdown
+    if background_task:
+        background_task.cancel()
+        try:
+            await background_task
+        except asyncio.CancelledError:
+            logger.info("Background notification checker stopped")
+    
     global db_pool
     if db_pool:
         await db_pool.close()
@@ -943,7 +979,7 @@ async def get_atm_history(
         
         if not rows:
             # Try progressively shorter periods for this specific ATM
-            fallback_periods = [720, 168, 72, 24, 12, 6, 1]  # 30 days, 7 days, 3 days, etc.
+            fallback_periods = [720, 168, 72, 24, 12, 6, 1]  # 30 days, 7 days, 3 days, 1 day, 12h, 6h, 1h
             fallback_periods = [period for period in fallback_periods if period < hours]
             
             logger.info(f"No data found for ATM {terminal_id} in {hours}h period, trying fallback periods: {fallback_periods}")
@@ -1214,6 +1250,246 @@ async def get_atm_list(
         raise HTTPException(status_code=500, detail="Failed to fetch ATM list")
     finally:
         await release_db_connection(conn)
+
+# ========================
+# NOTIFICATION ENDPOINTS
+# ========================
+
+# Pydantic models for notifications
+class NotificationResponse(BaseModel):
+    notification_id: str = Field(..., description="Unique notification identifier")
+    terminal_id: str = Field(..., description="ATM terminal ID")
+    previous_status: Optional[str] = Field(None, description="Previous ATM status")
+    current_status: str = Field(..., description="Current ATM status")
+    severity: str = Field(..., description="Notification severity level")
+    title: str = Field(..., description="Notification title")
+    message: str = Field(..., description="Notification message")
+    created_at: datetime = Field(..., description="When notification was created")
+    is_read: bool = Field(..., description="Whether notification has been read")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+class NotificationListResponse(BaseModel):
+    notifications: List[NotificationResponse]
+    total_count: int = Field(..., ge=0, description="Total number of notifications")
+    unread_count: int = Field(..., ge=0, description="Number of unread notifications")
+    page: int = Field(..., ge=1, description="Current page number")
+    per_page: int = Field(..., ge=1, description="Items per page")
+    has_more: bool = Field(..., description="Whether there are more notifications")
+
+# Initialize notification service
+notification_service = None
+
+async def get_notification_service():
+    """Get or create notification service instance"""
+    global notification_service
+    if NotificationService is None:
+        raise HTTPException(status_code=503, detail="Notification service not available")
+    if notification_service is None:
+        notification_service = NotificationService()
+        await notification_service.init_db_pool()
+    return notification_service
+
+@app.get("/api/v1/notifications", response_model=NotificationListResponse, tags=["Notifications"])
+async def get_notifications(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    unread_only: bool = Query(False, description="Get only unread notifications"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get paginated list of notifications for ATM status changes
+    
+    Returns notifications sorted by creation time (newest first).
+    Supports filtering by read status.
+    """
+    try:
+        if NotificationService is None:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+            
+        service = await get_notification_service()
+        
+        # Calculate offset for pagination
+        offset = (page - 1) * per_page
+        
+        # Get notifications with pagination
+        notifications, total_count = await service.get_notifications(
+            unread_only=unread_only,
+            limit=per_page,
+            offset=offset
+        )
+        
+        # Convert to response format
+        notification_responses = []
+        for notif in notifications:
+            # Parse metadata if it's a string
+            metadata = notif.get('metadata', {})
+            if isinstance(metadata, str):
+                import json
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+            
+            notification_responses.append(NotificationResponse(
+                notification_id=notif['id'],
+                terminal_id=notif['terminal_id'],
+                previous_status=notif.get('previous_status'),
+                current_status=notif['current_status'],
+                severity=notif['severity'],
+                title=notif['title'],
+                message=notif['message'],
+                created_at=datetime.fromisoformat(notif['created_at'].replace('Z', '+00:00')),
+                is_read=notif['is_read'],
+                metadata=metadata
+            ))
+        
+        # Calculate unread count
+        unread_count = 0
+        if not unread_only:
+            _, unread_count = await service.get_notifications(unread_only=True, limit=1)
+        else:
+            unread_count = total_count
+        
+        has_more = offset + per_page < total_count
+        
+        return NotificationListResponse(
+            notifications=notification_responses,
+            total_count=total_count,
+            unread_count=unread_count,
+            page=page,
+            per_page=per_page,
+            has_more=has_more
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching notifications: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch notifications")
+
+@app.post("/api/v1/notifications/{notification_id}/mark-read", tags=["Notifications"])
+async def mark_notification_as_read(
+    notification_id: str = Path(..., description="Notification ID to mark as read"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Mark a specific notification as read
+    
+    Marks the notification with the given ID as read.
+    """
+    try:
+        if NotificationService is None:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+            
+        service = await get_notification_service()
+        
+        success = await service.mark_notification_read(notification_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        return {
+            "success": True,
+            "message": "Notification marked as read",
+            "notification_id": notification_id,
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking notification as read: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark notification as read")
+
+@app.post("/api/v1/notifications/mark-all-read", tags=["Notifications"])
+async def mark_all_notifications_as_read(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Mark all notifications as read
+    
+    Marks all unread notifications as read.
+    """
+    try:
+        if NotificationService is None:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+            
+        service = await get_notification_service()
+        
+        updated_count = await service.mark_all_notifications_read()
+        
+        return {
+            "success": True,
+            "message": f"Marked {updated_count} notifications as read",
+            "updated_count": updated_count,
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error marking all notifications as read: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark notifications as read")
+
+@app.post("/api/v1/notifications/check-changes", tags=["Notifications"])
+async def check_status_changes(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Manually trigger a check for ATM status changes
+    
+    This endpoint can be called to immediately check for status changes
+    and create notifications. Useful for testing or manual triggers.
+    """
+    try:
+        if NotificationService is None:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+            
+        service = await get_notification_service()
+        
+        new_notifications = await service.check_status_changes()
+        
+        return {
+            "success": True,
+            "message": f"Status check completed. Created {len(new_notifications)} new notifications",
+            "new_notifications_count": len(new_notifications),
+            "new_notifications": [
+                {
+                    "terminal_id": notif["terminal_id"],
+                    "status_change": f"{notif.get('previous_status', 'Unknown')} → {notif['current_status']}",
+                    "severity": notif["severity"]
+                }
+                for notif in new_notifications
+            ],
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking status changes: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check status changes")
+
+@app.get("/api/v1/notifications/unread-count", tags=["Notifications"])
+async def get_unread_count(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get count of unread notifications
+    
+    Lightweight endpoint for checking notification badge count.
+    """
+    try:
+        if NotificationService is None:
+            return {"unread_count": 0, "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()}
+            
+        service = await get_notification_service()
+        
+        # Get unread notifications count
+        _, unread_count = await service.get_notifications(unread_only=True, limit=1)
+        
+        return {
+            "unread_count": unread_count,
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting unread count: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get unread count")
 
 # Custom exception handlers
 @app.exception_handler(Exception)
