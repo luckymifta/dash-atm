@@ -1,0 +1,36 @@
+[Unit]
+Description=ATM Dashboard User Management API
+After=network.target
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/dash-atm/backend
+Environment=PATH=/var/www/dash-atm/backend/venv/bin
+Environment=PYTHONPATH=/var/www/dash-atm/backend
+EnvironmentFile=/var/www/dash-atm/backend/.env
+ExecStart=/var/www/dash-atm/backend/venv/bin/python -m uvicorn user_management_api:app --host 0.0.0.0 --port 8001 --workers 1
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=on-failure
+RestartSec=5
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/dash-atm/backend
+ReadWritePaths=/var/log/atm-dashboard
+PrivateDevices=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
