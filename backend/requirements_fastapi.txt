@@ -1,4 +1,4 @@
-# FastAPI ATM Monitoring API Dependencies
+# FastAPI ATM Monitoring API Dependencies with User Management & Audit Logs
 # Install with: pip install -r requirements_fastapi.txt
 
 # Core FastAPI framework
@@ -10,21 +10,37 @@ uvicorn[standard]==0.24.0
 # Async PostgreSQL driver
 asyncpg==0.29.0
 
+# Sync PostgreSQL driver for user management API
+psycopg2-binary==2.9.9
+
 # Environment variable management
 python-dotenv==1.0.0
 
 # Data validation and serialization
 pydantic==2.5.0
+pydantic[email]==2.5.0
 
 # HTTP client for external requests (if needed)
 httpx==0.25.2
 
-# Additional production dependencies
-python-multipart==0.0.6  # For form data handling
-python-jose[cryptography]==3.3.0  # For JWT token handling (if authentication needed)
-passlib[bcrypt]==1.7.4  # For password hashing (if authentication needed)
+# JWT token handling for authentication
+python-jose[cryptography]==3.3.0
 
-# Development dependencies (optional)
+# Password hashing
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# Form data handling
+python-multipart==0.0.6
+
+# Timezone support for Dili time
+pytz==2023.3
+
+# Additional production dependencies
+gunicorn==21.2.0  # Alternative ASGI server
+python-json-logger==2.0.7  # Structured logging
+
+# Development dependencies (optional in production)
 pytest==7.4.3
 pytest-asyncio==0.21.1
 black==23.11.0
