@@ -511,7 +511,7 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
             # Deactivate session in database
             query = """
                 UPDATE user_sessions 
-                SET is_active = false, updated_at = CURRENT_TIMESTAMP
+                SET is_active = false
                 WHERE user_id = %s AND session_token = %s AND is_active = true
             """
             execute_query(query, (user_id, token))

@@ -70,9 +70,53 @@ export default function LogsPage() {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleString();
+      if (isNaN(date.getTime())) {
+        return dateString;
+      }
+      
+      // Format as Dili local time (consistent with other components)
+      return date.toLocaleString('en-US', {
+        timeZone: 'Asia/Dili',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }) + ' (Dili Time)';
     } catch {
       return dateString;
+    }
+  };
+
+  const formatRelativeTime = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return formatDate(dateString);
+      }
+      
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+      
+      if (diffInSeconds < 60) {
+        return 'Just now';
+      } else if (diffInSeconds < 3600) {
+        const minutes = Math.floor(diffInSeconds / 60);
+        return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+      } else if (diffInSeconds < 86400) {
+        const hours = Math.floor(diffInSeconds / 3600);
+        return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+      } else if (diffInSeconds < 604800) { // 7 days
+        const days = Math.floor(diffInSeconds / 86400);
+        return `${days} day${days > 1 ? 's' : ''} ago`;
+      } else {
+        // For older entries, show the full date
+        return formatDate(dateString);
+      }
+    } catch {
+      return formatDate(dateString);
     }
   };
 
@@ -121,14 +165,14 @@ export default function LogsPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">All Actions</option>
-                <option value="LOGIN">Login</option>
-                <option value="LOGOUT">Logout</option>
-                <option value="CREATE_USER">Create User</option>
-                <option value="UPDATE_USER">Update User</option>
-                <option value="DELETE_USER">Delete User</option>
-                <option value="PASSWORD_CHANGE">Password Change</option>
-                <option value="ACCOUNT_LOCK">Account Lock</option>
-                <option value="ACCOUNT_UNLOCK">Account Unlock</option>
+                <option value="login">Login</option>
+                <option value="logout">Logout</option>
+                <option value="create_user">Create User</option>
+                <option value="update_user">Update User</option>
+                <option value="delete_user">Delete User</option>
+                <option value="password_change">Password Change</option>
+                <option value="account_lock">Account Lock</option>
+                <option value="account_unlock">Account Unlock</option>
               </select>
             </div>
             
@@ -231,7 +275,12 @@ export default function LogsPage() {
                   {logs.map((log) => (
                     <tr key={log.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(log.created_at)}
+                        <div className="flex flex-col">
+                          <span className="font-medium text-gray-900">{formatRelativeTime(log.created_at)}</span>
+                          <span className="text-xs text-gray-500" title={`Full timestamp: ${formatDate(log.created_at)}`}>
+                            {formatDate(log.created_at)}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getActionBadgeColor(log.action)}`}>
