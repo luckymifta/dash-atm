@@ -138,6 +138,96 @@ class CombinedATMRetriever:
     
     # Removed check_connectivity - authentication will catch connectivity issues
     
+    def check_connectivity(self) -> bool:
+        """
+        Check connectivity to the target server 172.31.1.46
+        
+        Returns:
+            bool: True if server is reachable, False otherwise
+        """
+        if self.demo_mode:
+            log.info("Demo mode: Skipping connectivity check")
+            return True
+        
+        try:
+            log.info("Testing connectivity to 172.31.1.46...")
+            response = requests.head(
+                "https://172.31.1.46/",
+                timeout=10,
+                verify=False
+            )
+            log.info(f"Connectivity test successful: HTTP {response.status_code}")
+            return True
+        except requests.exceptions.RequestException as e:
+            log.error(f"Connectivity test failed: {str(e)}")
+            return False
+    
+    def generate_out_of_service_data(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Generate OUT_OF_SERVICE data for all ATMs when connection fails
+        
+        Returns:
+            Tuple of (regional_data, terminal_details_data) with OUT_OF_SERVICE status
+        """
+        log.warning("Generating OUT_OF_SERVICE data due to connection failure")
+        current_time = datetime.now(self.dili_tz)
+        
+        # Generate regional data with OUT_OF_SERVICE status for all regions
+        regional_data = []
+        regions = ["TL-DL", "TL-AN", "TL-LQ", "TL-OE", "TL-VI"]  # Standard Timor-Leste regions
+        
+        for region_code in regions:
+            record = {
+                'unique_request_id': str(uuid.uuid4()),
+                'region_code': region_code,
+                'count_available': 0,
+                'count_warning': 0,
+                'count_zombie': 0,
+                'count_wounded': 0,
+                'count_out_of_service': self.total_atms,  # All ATMs marked as OUT_OF_SERVICE
+                'date_creation': current_time,
+                'total_atms_in_region': self.total_atms,
+                'percentage_available': 0.0,
+                'percentage_warning': 0.0,
+                'percentage_zombie': 0.0,
+                'percentage_wounded': 0.0,
+                'percentage_out_of_service': 1.0  # 100% OUT_OF_SERVICE
+            }
+            regional_data.append(record)
+            log.info(f"Generated OUT_OF_SERVICE regional data for {region_code}: all {self.total_atms} ATMs marked as OUT_OF_SERVICE")
+        
+        # Generate terminal details data with OUT_OF_SERVICE status
+        terminal_details_data = []
+        for i in range(self.total_atms * len(regions)):  # Generate for all ATMs across all regions
+            terminal_id = str(80 + i)  # Start from 80 as seen in sample data
+            region_index = i // self.total_atms
+            region_code = regions[region_index] if region_index < len(regions) else regions[0]
+            
+            terminal_detail = {
+                'unique_request_id': str(uuid.uuid4()),
+                'terminalId': terminal_id,
+                'location': f"Connection Lost - {region_code}",
+                'issueStateName': 'OUT_OF_SERVICE',
+                'issueStateCode': 'OUT_OF_SERVICE',
+                'brand': 'Connection Failed',
+                'model': 'N/A',
+                'serialNumber': f"CONN_FAIL_{terminal_id}",
+                'agentErrorDescription': 'Connection to monitoring system failed',
+                'externalFaultId': 'CONN_FAILURE',
+                'year': str(current_time.year),
+                'month': str(current_time.month).zfill(2),
+                'day': str(current_time.day).zfill(2),
+                'fetched_status': 'OUT_OF_SERVICE',
+                'details_status': 'CONNECTION_FAILED',
+                'retrievedDate': current_time.isoformat(),
+                'dateRequest': current_time.strftime("%d-%m-%Y %H:%M:%S"),
+                'region_code': region_code
+            }
+            terminal_details_data.append(terminal_detail)
+        
+        log.info(f"Generated {len(terminal_details_data)} terminal details with OUT_OF_SERVICE status")
+        return regional_data, terminal_details_data
+
     def authenticate(self) -> bool:
         """
         Authenticate with the ATM monitoring system
@@ -790,6 +880,7 @@ class CombinedATMRetriever:
     def retrieve_and_process_all_data(self, save_to_db: bool = False, use_new_tables: bool = False) -> Tuple[bool, Dict[str, Any]]:
         """
         Complete flow: authenticate, retrieve regional data, terminal status data, and terminal details
+        With failover capability for connection failures
         
         Args:
             save_to_db: Whether to save processed data to database (original tables)
@@ -799,7 +890,7 @@ class CombinedATMRetriever:
             Tuple of (success: bool, all_data: Dict containing all retrieved data)
         """
         log.info("=" * 80)
-        log.info("STARTING COMBINED ATM DATA RETRIEVAL")
+        log.info("STARTING COMBINED ATM DATA RETRIEVAL WITH FAILOVER CAPABILITY")
         log.info("=" * 80)
         
         all_data = {
@@ -807,15 +898,77 @@ class CombinedATMRetriever:
             "demo_mode": self.demo_mode,
             "regional_data": [],
             "terminal_details_data": [],  # Only terminal details, no terminal status data
-            "summary": {}
+            "summary": {},
+            "failover_mode": False
         }
         
-        # Step 1: Skip connectivity check - authentication will catch any network issues
+        # Step 1: Check connectivity to 172.31.1.46 (skip for demo mode)
+        if not self.demo_mode:
+            connectivity_ok = self.check_connectivity()
+            if not connectivity_ok:
+                log.error("Failed to connect to 172.31.1.46 - Activating failover mode")
+                log.info("Generating OUT_OF_SERVICE status for all ATMs due to connection failure")
+                
+                # Generate OUT_OF_SERVICE data for all ATMs
+                regional_data, terminal_details_data = self.generate_out_of_service_data()
+                
+                all_data["regional_data"] = regional_data
+                all_data["terminal_details_data"] = terminal_details_data
+                all_data["failover_mode"] = True
+                
+                # Calculate summary for failover mode
+                total_regions = len(regional_data)
+                total_terminals = len(terminal_details_data)
+                all_data["summary"] = {
+                    "total_regions": total_regions,
+                    "total_terminals": total_terminals,
+                    "total_terminal_details": total_terminals,
+                    "failover_activated": True,
+                    "connection_status": "FAILED"
+                }
+                
+                # Save to database if requested
+                if save_to_db and DB_AVAILABLE:
+                    success = self.save_data_to_database(all_data, use_new_tables)
+                    if success:
+                        log.info("OUT_OF_SERVICE failover data saved to database successfully")
+                    else:
+                        log.error("Failed to save OUT_OF_SERVICE failover data to database")
+                
+                log.warning("Failover mode completed - all ATMs marked as OUT_OF_SERVICE")
+                return True, all_data  # Return success=True as failover worked as intended
         
-        # Step 2: Authenticate
+        # Step 2: Normal operation - Authenticate
         if not self.authenticate():
-            log.error("Authentication failed - aborting")
-            return False, all_data
+            log.error("Authentication failed after connectivity was confirmed - Activating failover mode")
+            
+            # Generate OUT_OF_SERVICE data for authentication failure
+            regional_data, terminal_details_data = self.generate_out_of_service_data()
+            
+            all_data["regional_data"] = regional_data
+            all_data["terminal_details_data"] = terminal_details_data
+            all_data["failover_mode"] = True
+            
+            # Calculate summary for authentication failure
+            total_regions = len(regional_data)
+            total_terminals = len(terminal_details_data)
+            all_data["summary"] = {
+                "total_regions": total_regions,
+                "total_terminals": total_terminals,
+                "total_terminal_details": total_terminals,
+                "failover_activated": True,
+                "connection_status": "AUTH_FAILED"
+            }
+            
+            # Save to database if requested
+            if save_to_db and DB_AVAILABLE:
+                success = self.save_data_to_database(all_data, use_new_tables)
+                if success:
+                    log.info("OUT_OF_SERVICE failover data saved to database successfully")
+                else:
+                    log.error("Failed to save OUT_OF_SERVICE failover data to database")
+            
+            return True, all_data  # Return success=True as failover worked as intended
         
         # Step 3: Fetch regional data
         log.info("\n--- PHASE 1: Retrieving Regional ATM Data ---")
@@ -1069,6 +1222,61 @@ class CombinedATMRetriever:
         
         return True, all_data
     
+    def save_data_to_database(self, all_data: Dict[str, Any], use_new_tables: bool = False) -> bool:
+        """
+        Save all data to database (both regional and terminal details)
+        
+        Args:
+            all_data: Dictionary containing all retrieved data
+            use_new_tables: Whether to use new database tables
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not DB_AVAILABLE or db_connector is None:
+            log.warning("Database not available - skipping database save")
+            return False
+        
+        success = True
+        
+        # Save regional data
+        if all_data.get("regional_data"):
+            log.info("Saving regional data to database...")
+            if use_new_tables:
+                regional_success = self.save_regional_to_new_table(
+                    all_data["regional_data"], 
+                    []  # No raw data for failover mode
+                )
+            else:
+                regional_success = self.save_regional_to_database(all_data["regional_data"])
+            
+            if regional_success:
+                log.info("Regional data saved successfully")
+            else:
+                log.error("Failed to save regional data")
+                success = False
+        
+        # Save terminal details data
+        if all_data.get("terminal_details_data"):
+            log.info("Saving terminal details data to database...")
+            if use_new_tables:
+                terminal_success = self.save_terminal_details_to_new_table(
+                    all_data["terminal_details_data"]
+                )
+            else:
+                # For old tables, we would need to save using the old format
+                # For now, just log that terminal details aren't saved to old tables
+                log.info("Terminal details saving to old database tables not implemented")
+                terminal_success = True
+            
+            if terminal_success:
+                log.info("Terminal details data saved successfully")
+            else:
+                log.error("Failed to save terminal details data")
+                success = False
+        
+        return success
+
     def save_regional_to_database(self, processed_data: List[Dict[str, Any]]) -> bool:
         """
         Save processed regional data to the regional_atm_counts database table
