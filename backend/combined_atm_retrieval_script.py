@@ -1564,7 +1564,7 @@ def run_continuous_operation(args):
     log.info("[START] Starting continuous ATM data retrieval operation")
     log.info(f"[TIME] Start time: {execution_stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
     log.info(f"[CONFIG] Configuration: Demo={args.demo}, Save-to-DB={args.save_to_db}, Use-New-Tables={args.use_new_tables}")
-    log.info("[INFO] Running every 30 minutes. Press Ctrl+C for graceful shutdown.")
+    log.info("[INFO] Running every 15 minutes. Press Ctrl+C for graceful shutdown.")
     
     # Create retriever instance
     retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
@@ -1641,9 +1641,9 @@ def run_continuous_operation(args):
         if stop_flag.is_set():
             break
         
-        # Wait for next cycle (30 minutes)
-        log.info(f"[CYCLE] Cycle {cycle_number} completed. Next cycle in 30 minutes...")
-        if not wait_with_progress(30, "Next cycle"):
+        # Wait for next cycle (15 minutes)
+        log.info(f"[CYCLE] Cycle {cycle_number} completed. Next cycle in 15 minutes...")
+        if not wait_with_progress(15, "Next cycle"):
             break
     
     # Final statistics and cleanup
@@ -1760,7 +1760,7 @@ Examples:
   python combined_atm_retrieval_script.py --demo                    # Demo mode for testing
   python combined_atm_retrieval_script.py --save-to-db              # Live mode with database save
   python combined_atm_retrieval_script.py --save-json               # Live mode with JSON save
-  python combined_atm_retrieval_script.py --continuous              # Continuous mode (30-min intervals)
+  python combined_atm_retrieval_script.py --continuous              # Continuous mode (15-min intervals)
   python combined_atm_retrieval_script.py --continuous --save-to-db --use-new-tables
   python combined_atm_retrieval_script.py --demo --save-json --total-atms 20
         """
@@ -1775,7 +1775,7 @@ Examples:
     parser.add_argument('--save-json', action='store_true',
                        help='Save all retrieved data to JSON file')
     parser.add_argument('--continuous', action='store_true',
-                       help='Run continuously with 30-minute intervals (enhanced error handling)')
+                       help='Run continuously with 15-minute intervals (enhanced error handling)')
     parser.add_argument('--total-atms', type=int, default=14,
                        help='Total number of ATMs for percentage to count conversion (default: 14)')
     parser.add_argument('--quiet', action='store_true',
@@ -1789,7 +1789,7 @@ Examples:
     
     # Check for continuous mode
     if args.continuous:
-        log.info("[CONTINUOUS] Continuous mode enabled - script will run every 30 minutes")
+        log.info("[CONTINUOUS] Continuous mode enabled - script will run every 15 minutes")
         run_continuous_operation(args)
         return 0
     
