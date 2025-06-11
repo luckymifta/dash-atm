@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nextRefresh, setNextRefresh] = useState<Date | null>(null);
+  const [timeUntilRefresh, setTimeUntilRefresh] = useState<string>('');
   const router = useRouter();
 
   const handleCardClick = (status?: string) => {
@@ -36,7 +37,7 @@ export default function DashboardPage() {
   const handleManualRefresh = async () => {
     await fetchATMData();
     // Reset the next refresh time when manually refreshed
-    setNextRefresh(new Date(Date.now() + 30 * 60 * 1000));
+    setNextRefresh(new Date(Date.now() + 15 * 60 * 1000));
   };
 
   const fetchATMData = async () => {
@@ -79,16 +80,39 @@ export default function DashboardPage() {
     fetchATMData();
     
     // Set initial next refresh time
-    setNextRefresh(new Date(Date.now() + 30 * 60 * 1000));
+    setNextRefresh(new Date(Date.now() + 15 * 60 * 1000));
     
-    // Refresh data every 30 minutes
+    // Refresh data every 15 minutes
     const interval = setInterval(() => {
       fetchATMData();
-      setNextRefresh(new Date(Date.now() + 30 * 60 * 1000));
-    }, 30 * 60 * 1000); // 30 minutes = 1,800,000 milliseconds
+      setNextRefresh(new Date(Date.now() + 15 * 60 * 1000));
+    }, 15 * 60 * 1000); // 15 minutes = 900,000 milliseconds
     
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Countdown timer for next refresh
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (nextRefresh) {
+        const now = new Date();
+        const timeLeft = nextRefresh.getTime() - now.getTime();
+        
+        if (timeLeft > 0) {
+          const minutes = Math.floor(timeLeft / (1000 * 60));
+          const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+          setTimeUntilRefresh(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        } else {
+          setTimeUntilRefresh('Refreshing...');
+        }
+      }
+    };
+
+    updateCountdown();
+    const countdownInterval = setInterval(updateCountdown, 1000);
+    
+    return () => clearInterval(countdownInterval);
+  }, [nextRefresh]);
 
   if (loading && !data) {
     return (
@@ -142,7 +166,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">ATM Dashboard</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Real-time monitoring of ATM status across all regions
+              Real-time monitoring of ATM status across all regions (updates every 15 minutes)
             </p>
           </div>
           <div className="flex items-center space-x-3">
@@ -166,7 +190,7 @@ export default function DashboardPage() {
                       hour: '2-digit',
                       minute: '2-digit',
                       hour12: false
-                    })} (every 30 min)
+                    })} ({timeUntilRefresh})
                   </p>
                 )}
               </div>
