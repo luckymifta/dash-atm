@@ -49,11 +49,25 @@ from contextlib import asynccontextmanager
 import pytz
 
 # FastAPI imports
-from fastapi import FastAPI, HTTPException, Query, Path, Depends
+from fastapi import FastAPI, HTTPException, Query, Path, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 import uvicorn
+
+# Additional imports for background task management
+import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
+import uuid
+from pathlib import Path as PathLib
+
+# Additional imports for predictive analytics
+import numpy as np
+import pandas as pd
+from collections import defaultdict, Counter
+from statistics import mean, median
+import re
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -219,6 +233,31 @@ class HealthResponse(BaseModel):
     database_connected: bool
     api_version: str = "2.0.0"
     uptime_seconds: float
+
+# Refresh job models
+class RefreshJobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class RefreshJobResponse(BaseModel):
+    job_id: str = Field(..., description="Unique job identifier")
+    status: RefreshJobStatus = Field(..., description="Current job status")
+    created_at: datetime = Field(..., description="Job creation timestamp")
+    started_at: Optional[datetime] = Field(None, description="Job start timestamp")
+    completed_at: Optional[datetime] = Field(None, description="Job completion timestamp")
+    progress: float = Field(0.0, ge=0, le=100, description="Job progress percentage")
+    message: str = Field("", description="Current status message")
+    error: Optional[str] = Field(None, description="Error message if job failed")
+
+class RefreshJobRequest(BaseModel):
+    force: bool = Field(False, description="Force refresh even if recent data exists")
+    use_new_tables: bool = Field(True, description="Use new database tables for storage")
+
+# Global job tracking
+refresh_jobs: Dict[str, RefreshJobResponse] = {}
+job_executor = ThreadPoolExecutor(max_workers=2)  # Limit concurrent refresh jobs
 
 # Lifespan management
 @asynccontextmanager
@@ -425,13 +464,14 @@ async def get_atm_summary(
     
     try:
         if table_type == TableTypeEnum.LEGACY or table_type == TableTypeEnum.BOTH:
-            # Query legacy table (using regional_data with legacy approach)
+            # Query legacy table (using regional_data with legacy approach) - TL-DL region only
             query = """
                 WITH latest_data AS (
                     SELECT DISTINCT ON (region_code)
                         region_code, count_available, count_warning, count_zombie,
                         count_wounded, count_out_of_service, retrieval_timestamp
                     FROM regional_data
+                    WHERE region_code = 'TL-DL'
                     ORDER BY region_code, retrieval_timestamp DESC
                 )
                 SELECT 
@@ -448,7 +488,7 @@ async def get_atm_summary(
             row = await conn.fetchrow(query)
             
         elif table_type == TableTypeEnum.NEW:
-            # Query new table (regional_data) - use actual columns, not JSONB parsing
+            # Query new table (regional_data) - use actual columns, not JSONB parsing - TL-DL region only
             query = """
                 WITH latest_data AS (
                     SELECT DISTINCT ON (region_code)
@@ -456,6 +496,7 @@ async def get_atm_summary(
                         count_wounded, count_out_of_service, total_atms_in_region,
                         retrieval_timestamp
                     FROM regional_data
+                    WHERE region_code = 'TL-DL'
                     ORDER BY region_code, retrieval_timestamp DESC
                 )
                 SELECT 
@@ -529,7 +570,7 @@ async def get_regional_data(
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     
     try:
-        # Build query based on table type
+        # Build query based on table type - TL-DL region only
         if table_type == TableTypeEnum.LEGACY:
             base_query = """
                 WITH latest_regional AS (
@@ -537,6 +578,7 @@ async def get_regional_data(
                         region_code, count_available, count_warning, count_zombie,
                         count_wounded, count_out_of_service, total_atms_in_region, retrieval_timestamp
                     FROM regional_data
+                    WHERE region_code = 'TL-DL'
                     ORDER BY region_code, retrieval_timestamp DESC
                 )
                 SELECT 
@@ -546,7 +588,7 @@ async def get_regional_data(
                 FROM latest_regional
             """
         else:
-            # Query new table (regional_data)
+            # Query new table (regional_data) - TL-DL region only
             base_query = """
                 WITH latest_regional AS (
                     SELECT DISTINCT ON (region_code)
@@ -554,6 +596,7 @@ async def get_regional_data(
                         count_wounded, count_out_of_service, total_atms_in_region, 
                         retrieval_timestamp
                     FROM regional_data
+                    WHERE region_code = 'TL-DL'
                     ORDER BY region_code, retrieval_timestamp DESC
                 )
                 SELECT 
@@ -563,12 +606,15 @@ async def get_regional_data(
                 FROM latest_regional
             """
         
-        # Add region filter if specified
-        if region_code:
+        # Add region filter if specified (but force TL-DL if none specified)
+        if region_code and region_code == 'TL-DL':
             base_query += f" WHERE region_code = $1"
             rows = await conn.fetch(base_query, region_code)
+        elif region_code and region_code != 'TL-DL':
+            # If someone requests a different region, return empty data
+            rows = []
         else:
-            base_query += " ORDER BY region_code"
+            # Default to TL-DL only
             rows = await conn.fetch(base_query)
         
         if not rows:
@@ -656,7 +702,12 @@ async def get_regional_trends(
     Get historical trends for a specific region
     
     Returns time-series data showing ATM status changes over time.
+    Only supports TL-DL region to avoid connection failures.
     """
+    # Force TL-DL region only
+    if region_code != 'TL-DL':
+        raise HTTPException(status_code=400, detail="Only TL-DL region is supported")
+        
     conn = await get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
@@ -812,7 +863,7 @@ async def get_latest_data(
     try:
         result: Dict[str, Any] = {"data_sources": []}
         
-        # Legacy table data
+        # Legacy table data - TL-DL region only
         if table_type in [TableTypeEnum.LEGACY, TableTypeEnum.BOTH]:
             try:
                 legacy_query = """
@@ -820,6 +871,7 @@ async def get_latest_data(
                         region_code, count_available, count_warning, count_zombie,
                         count_wounded, count_out_of_service, retrieval_timestamp
                     FROM regional_data
+                    WHERE region_code = 'TL-DL'
                     ORDER BY region_code, retrieval_timestamp DESC
                 """
                 legacy_rows = await conn.fetch(legacy_query)
@@ -846,13 +898,14 @@ async def get_latest_data(
             except Exception as e:
                 logger.warning(f"Failed to fetch legacy table data: {e}")
         
-        # New table data
+        # New table data - TL-DL region only
         if table_type in [TableTypeEnum.NEW, TableTypeEnum.BOTH]:
             try:
                 new_query = """
                     SELECT DISTINCT ON (region_code)
                         region_code, raw_regional_data, retrieval_timestamp
                     FROM regional_data
+                    WHERE region_code = 'TL-DL'
                     ORDER BY region_code, retrieval_timestamp DESC
                 """
                 new_rows = await conn.fetch(new_query)
@@ -1286,7 +1339,10 @@ async def get_notification_service():
         raise HTTPException(status_code=503, detail="Notification service not available")
     if notification_service is None:
         notification_service = NotificationService()
-        await notification_service.init_db_pool()
+        # Share the main application's connection pool instead of creating a new one
+        if db_pool is not None:
+            notification_service.set_shared_pool(db_pool)
+        await notification_service.ensure_notification_tables()
     return notification_service
 
 @app.get("/api/v1/notifications", response_model=NotificationListResponse, tags=["Notifications"])
@@ -1491,6 +1547,183 @@ async def get_unread_count(
         logger.error(f"Error getting unread count: {e}")
         raise HTTPException(status_code=500, detail="Failed to get unread count")
 
+# Background task function for running the combined ATM retrieval script
+def run_atm_refresh_script(job_id: str, use_new_tables: bool = True):
+    """
+    Background task function to run the combined ATM retrieval script
+    """
+    try:
+        # Update job status to running
+        if job_id in refresh_jobs:
+            refresh_jobs[job_id].status = RefreshJobStatus.RUNNING
+            refresh_jobs[job_id].started_at = datetime.utcnow()
+            refresh_jobs[job_id].message = "Starting ATM data retrieval..."
+            refresh_jobs[job_id].progress = 10.0
+
+        # Get the script path (should be in the same directory as this API file)
+        script_path = PathLib(__file__).parent / "combined_atm_retrieval_script.py"
+        
+        if not script_path.exists():
+            raise FileNotFoundError(f"Combined ATM retrieval script not found at {script_path}")
+
+        # Prepare command arguments
+        cmd = [sys.executable, str(script_path), "--save-to-db"]
+        if use_new_tables:
+            cmd.append("--use-new-tables")
+
+        logger.info(f"Starting ATM refresh job {job_id} with command: {' '.join(cmd)}")
+
+        # Update progress
+        if job_id in refresh_jobs:
+            refresh_jobs[job_id].message = "Executing data retrieval script..."
+            refresh_jobs[job_id].progress = 30.0
+
+        # Run the script
+        result = subprocess.run(
+            cmd,
+            cwd=str(script_path.parent),
+            capture_output=True,
+            text=True,
+            timeout=900  # 15 minutes timeout
+        )
+
+        # Update progress
+        if job_id in refresh_jobs:
+            refresh_jobs[job_id].progress = 80.0
+            refresh_jobs[job_id].message = "Processing results..."
+
+        if result.returncode == 0:
+            # Success
+            if job_id in refresh_jobs:
+                refresh_jobs[job_id].status = RefreshJobStatus.COMPLETED
+                refresh_jobs[job_id].completed_at = datetime.utcnow()
+                refresh_jobs[job_id].progress = 100.0
+                refresh_jobs[job_id].message = "ATM data refresh completed successfully"
+                
+            logger.info(f"ATM refresh job {job_id} completed successfully")
+            logger.debug(f"Script output: {result.stdout}")
+        else:
+            # Script failed
+            error_msg = f"Script failed with return code {result.returncode}"
+            if result.stderr:
+                error_msg += f": {result.stderr}"
+                
+            if job_id in refresh_jobs:
+                refresh_jobs[job_id].status = RefreshJobStatus.FAILED
+                refresh_jobs[job_id].completed_at = datetime.utcnow()
+                refresh_jobs[job_id].error = error_msg
+                refresh_jobs[job_id].message = "ATM data refresh failed"
+                
+            logger.error(f"ATM refresh job {job_id} failed: {error_msg}")
+            logger.debug(f"Script stderr: {result.stderr}")
+            logger.debug(f"Script stdout: {result.stdout}")
+
+    except subprocess.TimeoutExpired:
+        error_msg = "Script execution timed out after 15 minutes"
+        if job_id in refresh_jobs:
+            refresh_jobs[job_id].status = RefreshJobStatus.FAILED
+            refresh_jobs[job_id].completed_at = datetime.utcnow()
+            refresh_jobs[job_id].error = error_msg
+            refresh_jobs[job_id].message = "ATM data refresh timed out"
+        logger.error(f"ATM refresh job {job_id} timed out")
+        
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        if job_id in refresh_jobs:
+            refresh_jobs[job_id].status = RefreshJobStatus.FAILED
+            refresh_jobs[job_id].completed_at = datetime.utcnow()
+            refresh_jobs[job_id].error = error_msg
+            refresh_jobs[job_id].message = "ATM data refresh failed"
+        logger.error(f"ATM refresh job {job_id} failed with error: {e}")
+
+# Refresh endpoints
+@app.post("/api/v1/atm/refresh", response_model=RefreshJobResponse, tags=["ATM Refresh"])
+async def trigger_atm_refresh(
+    background_tasks: BackgroundTasks,
+    refresh_request: RefreshJobRequest = RefreshJobRequest(force=False, use_new_tables=True)
+):
+    """
+    Trigger an immediate refresh of ATM data
+    
+    This endpoint starts a background job to run the combined ATM retrieval script,
+    which will fetch fresh data from the ATM monitoring system and update the database.
+    The job runs asynchronously, so you can check its status using the job ID returned.
+    """
+    try:
+        # Check if there's already a running job
+        running_jobs = [job for job in refresh_jobs.values() if job.status == RefreshJobStatus.RUNNING]
+        if running_jobs and not refresh_request.force:
+            raise HTTPException(
+                status_code=409, 
+                detail="A refresh job is already running. Use force=true to queue another job."
+            )
+
+        # Create new job
+        job_id = str(uuid.uuid4())
+        job = RefreshJobResponse(
+            job_id=job_id,
+            status=RefreshJobStatus.QUEUED,
+            created_at=datetime.utcnow(),
+            started_at=None,
+            completed_at=None,
+            progress=0.0,
+            message="Refresh job queued",
+            error=None
+        )
+        
+        refresh_jobs[job_id] = job
+        
+        # Add background task
+        background_tasks.add_task(
+            run_atm_refresh_script, 
+            job_id, 
+            refresh_request.use_new_tables
+        )
+        
+        logger.info(f"ATM refresh job {job_id} queued")
+        
+        return job
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering ATM refresh: {e}")
+        raise HTTPException(status_code=500, detail="Failed to trigger refresh")
+
+@app.get("/api/v1/atm/refresh/{job_id}", response_model=RefreshJobResponse, tags=["ATM Refresh"])
+async def get_refresh_job_status(job_id: str = Path(..., description="Job ID to check")):
+    """
+    Get the status of a refresh job
+    
+    Check the current status, progress, and any error messages for a specific refresh job.
+    """
+    if job_id not in refresh_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return refresh_jobs[job_id]
+
+@app.get("/api/v1/atm/refresh", response_model=List[RefreshJobResponse], tags=["ATM Refresh"])
+async def list_refresh_jobs(
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of jobs to return"),
+    status: Optional[RefreshJobStatus] = Query(None, description="Filter by job status")
+):
+    """
+    List refresh jobs
+    
+    Get a list of recent refresh jobs, optionally filtered by status.
+    """
+    jobs = list(refresh_jobs.values())
+    
+    # Filter by status if specified
+    if status:
+        jobs = [job for job in jobs if job.status == status]
+    
+    # Sort by creation time (newest first)
+    jobs.sort(key=lambda x: x.created_at, reverse=True)
+    
+    # Apply limit
+    return jobs[:limit]
+
 # Custom exception handlers
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
@@ -1500,6 +1733,569 @@ async def general_exception_handler(request, exc):
         status_code=500,
         content={"success": False, "message": "Internal server error", "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()}
     )
+
+# ========================
+# PREDICTIVE ANALYTICS ENDPOINTS (Using Existing Data)
+# ========================
+
+# Pydantic models for predictive analytics
+class ComponentHealthScore(BaseModel):
+    component_type: str = Field(..., description="Component type (DISPENSER, READER, etc.)")
+    health_score: float = Field(..., ge=0, le=100, description="Health score percentage")
+    failure_risk: str = Field(..., description="Risk level (LOW, MEDIUM, HIGH, CRITICAL)")
+    last_fault_date: Optional[datetime] = Field(None, description="Last fault timestamp")
+    fault_frequency: int = Field(..., ge=0, description="Number of faults in last 30 days")
+
+class FailurePrediction(BaseModel):
+    risk_score: float = Field(..., ge=0, le=100, description="Failure risk score percentage")
+    risk_level: str = Field(..., description="Risk level (LOW, MEDIUM, HIGH, CRITICAL)")
+    prediction_horizon: str = Field(..., description="Prediction time horizon")
+    confidence: float = Field(..., ge=0, le=100, description="Prediction confidence percentage")
+    contributing_factors: List[str] = Field(..., description="Main factors contributing to prediction")
+
+class MaintenanceRecommendation(BaseModel):
+    action: str = Field(..., description="Recommended maintenance action")
+    priority: str = Field(..., description="Priority level (LOW, MEDIUM, HIGH, URGENT)")
+    estimated_time: str = Field(..., description="Estimated time to complete")
+    components: List[str] = Field(..., description="Components requiring attention")
+    description: str = Field(..., description="Detailed description of recommendation")
+
+class ATMPredictiveAnalytics(BaseModel):
+    terminal_id: str = Field(..., description="Terminal identifier")
+    location: Optional[str] = Field(None, description="ATM location")
+    overall_health_score: float = Field(..., ge=0, le=100, description="Overall ATM health score")
+    failure_prediction: FailurePrediction
+    component_health: List[ComponentHealthScore]
+    maintenance_recommendations: List[MaintenanceRecommendation]
+    data_quality_score: float = Field(..., ge=0, le=100, description="Quality of data used for prediction")
+    last_analysis: datetime = Field(..., description="When analysis was performed")
+    analysis_period: str = Field(..., description="Data period used for analysis")
+
+class PredictiveAnalyticsResponse(BaseModel):
+    atm_analytics: ATMPredictiveAnalytics
+    analysis_metadata: Dict[str, Any] = Field(..., description="Metadata about the analysis")
+
+# Utility functions for predictive analytics using existing JSONB data
+def calculate_component_health_score(fault_history: List[Dict[str, Any]], component_type: str) -> ComponentHealthScore:
+    """Calculate health score for a specific component based on fault history from JSONB data"""
+    now = datetime.now()
+    thirty_days_ago = now - timedelta(days=30)
+    
+    component_faults = []
+    last_fault_date = None
+    
+    # Component mapping - map component types to keywords in fault descriptions
+    component_keywords = {
+        'DISPENSER': ['CDM', 'dispenser', 'notes', 'cash', 'bills', 'currency'],
+        'READER': ['reader', 'card', 'magnetic', 'chip'],
+        'PRINTER': ['printer', 'receipt', 'paper', 'print'],
+        'NETWORK_MODULE': ['network', 'communications', 'connection', 'comms'],
+        'DEPOSIT_MODULE': ['deposit', 'check', 'envelope'],
+        'SENSOR': ['sensor', 'detect', 'proximity', 'motion']
+    }
+    
+    for fault in fault_history:
+        # Try to parse the creation date from the actual fault data structure
+        creation_date = fault.get('creationDate')
+        fault_date = None
+        
+        if creation_date:
+            try:
+                if isinstance(creation_date, str):
+                    # Handle different date formats found in the data
+                    # Format: "11:06:2025 11:40:18" (day:month:year hour:minute:second)
+                    if ':' in creation_date and len(creation_date.split(' ')) == 2:
+                        date_part, time_part = creation_date.split(' ')
+                        day, month_num, year = date_part.split(':')
+                        hour, minute, second = time_part.split(':')
+                        
+                        # Convert month number to actual month
+                        month_map = {
+                            '01': 1, '02': 2, '03': 3, '04': 4, '05': 5, '06': 6,
+                            '07': 7, '08': 8, '09': 9, '10': 10, '11': 11, '12': 12,
+                            'JANUARY': 1, 'FEBRUARY': 2, 'MARCH': 3, 'APRIL': 4,
+                            'MAY': 5, 'JUNE': 6, 'JULY': 7, 'AUGUST': 8,
+                            'SEPTEMBER': 9, 'OCTOBER': 10, 'NOVEMBER': 11, 'DECEMBER': 12
+                        }
+                        
+                        month_int = month_map.get(month_num, int(month_num) if month_num.isdigit() else 1)
+                        fault_date = datetime(int(year), month_int, int(day), int(hour), int(minute), int(second))
+                    else:
+                        # Try ISO format
+                        fault_date = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
+                elif isinstance(creation_date, (int, float)):
+                    # Unix timestamp
+                    fault_date = datetime.fromtimestamp(creation_date / 1000)
+            except Exception as e:
+                # If date parsing fails, include the fault anyway but without date filtering
+                fault_date = now  # Treat as recent
+        
+        # Check if this fault is related to the specified component
+        fault_description = fault.get('agentErrorDescription', '').lower()
+        external_fault_id = fault.get('externalFaultId', '').lower()
+        
+        # Check if fault relates to this component type
+        is_component_fault = False
+        if component_type in component_keywords:
+            keywords = component_keywords[component_type]
+            for keyword in keywords:
+                if keyword.lower() in fault_description or keyword.lower() in external_fault_id:
+                    is_component_fault = True
+                    break
+        
+        if is_component_fault:
+            if fault_date and fault_date >= thirty_days_ago:
+                component_faults.append(fault)
+                if not last_fault_date or fault_date > last_fault_date:
+                    last_fault_date = fault_date
+            elif not fault_date:
+                # Include faults without parseable dates
+                component_faults.append(fault)
+    
+    fault_count = len(component_faults)
+    base_score = 100
+    
+    # Reduce score based on fault frequency and severity
+    for fault in component_faults:
+        # Determine severity based on fault description keywords
+        fault_description = fault.get('agentErrorDescription', '').lower()
+        
+        # Critical keywords that indicate severe issues
+        critical_keywords = ['timeout', 'failure', 'error', 'jam', 'stuck', 'blocked']
+        warning_keywords = ['out of', 'empty', 'low', 'warning', 'check']
+        
+        if any(keyword in fault_description for keyword in critical_keywords):
+            severity_impact = 12  # Critical impact
+        elif any(keyword in fault_description for keyword in warning_keywords):
+            severity_impact = 6   # Warning impact
+        else:
+            severity_impact = 8   # Default moderate impact
+        
+        base_score -= severity_impact
+    
+    health_score = max(0, min(100, base_score))
+    
+    # Determine risk level
+    if health_score >= 85:
+        risk_level = "LOW"
+    elif health_score >= 70:
+        risk_level = "MEDIUM" 
+    elif health_score >= 50:
+        risk_level = "HIGH"
+    else:
+        risk_level = "CRITICAL"
+    
+    return ComponentHealthScore(
+        component_type=component_type,
+        health_score=round(health_score, 1),
+        failure_risk=risk_level,
+        last_fault_date=last_fault_date,
+        fault_frequency=fault_count
+    )
+
+def predict_atm_failure(fault_history: List[Dict[str, Any]], component_health: List[ComponentHealthScore]) -> FailurePrediction:
+    """Predict ATM failure based on existing fault data"""
+    # Calculate risk based on component health and fault patterns
+    avg_component_health = mean([comp.health_score for comp in component_health]) if component_health else 100
+    
+    # Count recent faults (last 7 days)
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+    recent_faults = []
+    
+    for fault in fault_history:
+        creation_date = fault.get('creationDate')
+        fault_date = None
+        
+        if creation_date:
+            try:
+                if isinstance(creation_date, str):
+                    # Handle the specific date format found in the data
+                    # Format: "11:06:2025 11:40:18" (day:month:year hour:minute:second)
+                    if ':' in creation_date and len(creation_date.split(' ')) == 2:
+                        date_part, time_part = creation_date.split(' ')
+                        day, month_num, year = date_part.split(':')
+                        hour, minute, second = time_part.split(':')
+                        
+                        # Convert month number to actual month
+                        month_map = {
+                            '01': 1, '02': 2, '03': 3, '04': 4, '05': 5, '06': 6,
+                            '07': 7, '08': 8, '09': 9, '10': 10, '11': 11, '12': 12,
+                            'JANUARY': 1, 'FEBRUARY': 2, 'MARCH': 3, 'APRIL': 4,
+                            'MAY': 5, 'JUNE': 6, 'JULY': 7, 'AUGUST': 8,
+                            'SEPTEMBER': 9, 'OCTOBER': 10, 'NOVEMBER': 11, 'DECEMBER': 12
+                        }
+                        
+                        month_int = month_map.get(month_num, int(month_num) if month_num.isdigit() else 1)
+                        fault_date = datetime(int(year), month_int, int(day), int(hour), int(minute), int(second))
+                    else:
+                        # Try ISO format
+                        fault_date = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
+                elif isinstance(creation_date, (int, float)):
+                    fault_date = datetime.fromtimestamp(creation_date / 1000)
+                    
+                if fault_date and fault_date >= seven_days_ago:
+                    recent_faults.append(fault)
+            except Exception as e:
+                # If date parsing fails, include the fault anyway as potentially recent
+                recent_faults.append(fault)
+    
+    # Calculate risk score
+    risk_score = (100 - avg_component_health) * 0.6 + min(len(recent_faults) * 15, 40)
+    risk_score = max(0, min(100, risk_score))
+    
+    # Determine risk level and prediction horizon
+    if risk_score < 25:
+        risk_level = "LOW"
+        horizon = "30+ days"
+        confidence = 75
+    elif risk_score < 50:
+        risk_level = "MEDIUM"
+        horizon = "14-30 days"
+        confidence = 80
+    elif risk_score < 75:
+        risk_level = "HIGH"
+        horizon = "7-14 days"
+        confidence = 85
+    else:
+        risk_level = "CRITICAL"
+        horizon = "1-7 days"
+        confidence = 90
+    
+    # Contributing factors
+    factors = []
+    if avg_component_health < 70:
+        factors.append("Component degradation detected")
+    if len(recent_faults) > 3:
+        factors.append("High recent fault frequency")
+    if not factors:
+        factors = ["Normal operational patterns"]
+    
+    return FailurePrediction(
+        risk_score=round(risk_score, 1),
+        risk_level=risk_level,
+        prediction_horizon=horizon,
+        confidence=confidence,
+        contributing_factors=factors
+    )
+
+def generate_maintenance_recommendations(component_health: List[ComponentHealthScore], 
+                                       failure_prediction: FailurePrediction) -> List[MaintenanceRecommendation]:
+    """Generate maintenance recommendations based on analysis"""
+    recommendations = []
+    
+    # Component-specific recommendations
+    for comp in component_health:
+        if comp.health_score < 70:
+            if comp.component_type in ["DISPENSER", "READER", "PRINTER"]:
+                priority = "HIGH" if comp.health_score < 50 else "MEDIUM"
+                recommendations.append(MaintenanceRecommendation(
+                    action=f"Inspect and service {comp.component_type.lower()}",
+                    priority=priority,
+                    estimated_time="2-3 hours",
+                    components=[comp.component_type],
+                    description=f"{comp.component_type} health score is {comp.health_score}%. Requires attention."
+                ))
+    
+    # Risk-based recommendations
+    if failure_prediction.risk_level in ["HIGH", "CRITICAL"]:
+        recommendations.append(MaintenanceRecommendation(
+            action="Comprehensive ATM inspection",
+            priority="URGENT" if failure_prediction.risk_level == "CRITICAL" else "HIGH",
+            estimated_time="4-6 hours",
+            components=["ALL"],
+            description=f"High failure risk detected ({failure_prediction.risk_score}%). Perform complete diagnostic check."
+        ))
+    
+    # Default recommendation if no issues found
+    if not recommendations:
+        recommendations.append(MaintenanceRecommendation(
+            action="Routine preventive maintenance",
+            priority="LOW",
+            estimated_time="2 hours",
+            components=["ALL"],
+            description="ATM appears healthy. Perform routine checks to maintain optimal performance."
+        ))
+    
+    return recommendations
+
+@app.get("/api/v1/atm/{terminal_id}/predictive-analytics", response_model=PredictiveAnalyticsResponse, tags=["Predictive Analytics"])
+async def get_atm_predictive_analytics(
+    terminal_id: str = Path(..., description="Terminal ID to analyze"),
+    analysis_days: int = Query(30, ge=7, le=90, description="Days of data to analyze"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get predictive analytics for a specific ATM using existing JSONB fault data
+    
+    Analyzes fault history from terminal_details table and provides:
+    - Component health scores  
+    - Failure risk predictions
+    - Maintenance recommendations
+    - Data quality assessment
+    
+    No database schema changes required - uses existing JSONB fault data.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Get latest terminal info and fault data
+        query = """
+            SELECT 
+                terminal_id, location, fault_data, retrieved_date
+            FROM terminal_details
+            WHERE terminal_id = $1 
+                AND retrieved_date >= NOW() - INTERVAL '%s days'
+                AND fault_data IS NOT NULL
+            ORDER BY retrieved_date DESC
+        """ % analysis_days
+        
+        rows = await conn.fetch(query, terminal_id)
+        
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No fault data found for terminal {terminal_id} in the last {analysis_days} days")
+        
+        # Extract fault history from JSONB data
+        fault_history = []
+        location = None
+        
+        for row in rows:
+            if not location:
+                location = row['location']
+                
+            if row['fault_data']:
+                try:
+                    fault_data = row['fault_data']
+                    
+                    # Parse JSON string if needed
+                    if isinstance(fault_data, str):
+                        try:
+                            fault_data = json.loads(fault_data)
+                        except json.JSONDecodeError:
+                            logger.warning(f"Could not parse fault_data as JSON for terminal {terminal_id}")
+                            continue
+                    
+                    if isinstance(fault_data, dict):
+                        fault_history.append(fault_data)
+                    elif isinstance(fault_data, list):
+                        # If fault_data is a list, extend fault_history with each item
+                        fault_history.extend([item for item in fault_data if isinstance(item, dict)])
+                except Exception as e:
+                    logger.warning(f"Could not parse fault data for terminal {terminal_id}: {e}")
+        
+        if not fault_history:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No valid fault data found for terminal {terminal_id} in the last {analysis_days} days"
+            )
+        
+        # Analyze component health
+        component_types = ["DISPENSER", "READER", "PRINTER", "NETWORK_MODULE", "DEPOSIT_MODULE", "SENSOR"]
+        component_health = []
+        
+        for comp_type in component_types:
+            health_score = calculate_component_health_score(fault_history, comp_type)
+            component_health.append(health_score)
+        
+        # Calculate overall health
+        overall_health = mean([comp.health_score for comp in component_health])
+        
+        # Predict failure
+        failure_prediction = predict_atm_failure(fault_history, component_health)
+        
+        # Generate recommendations
+        maintenance_recommendations = generate_maintenance_recommendations(component_health, failure_prediction)
+        
+        # Calculate data quality score
+        data_points = len(fault_history)
+        expected_data_points = analysis_days * 1  # Assume 1 check per day minimum
+        data_quality = min(100, (data_points / expected_data_points) * 100) if expected_data_points > 0 else 0
+        
+        # Create response
+        atm_analytics = ATMPredictiveAnalytics(
+            terminal_id=terminal_id,
+            location=location,
+            overall_health_score=round(overall_health, 1),
+            failure_prediction=failure_prediction,
+            component_health=component_health,
+            maintenance_recommendations=maintenance_recommendations,
+            data_quality_score=round(data_quality, 1),
+            last_analysis=convert_to_dili_time(datetime.utcnow()),
+            analysis_period=f"{analysis_days} days"
+        )
+        
+        analysis_metadata = {
+            "data_points_analyzed": data_points,
+            "analysis_period_days": analysis_days,
+            "components_analyzed": len(component_types),
+            "algorithm_version": "1.0-jsonb",
+            "analysis_timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
+            "data_source": "terminal_details.fault_data (JSONB)"
+        }
+        
+        return PredictiveAnalyticsResponse(
+            atm_analytics=atm_analytics,
+            analysis_metadata=analysis_metadata
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating predictive analytics for ATM {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate predictive analytics")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/predictive-analytics/summary", tags=["Predictive Analytics"])
+async def get_predictive_analytics_summary(
+    risk_level_filter: Optional[str] = Query(None, description="Filter by risk level (LOW, MEDIUM, HIGH, CRITICAL)"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of ATMs to analyze"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get predictive analytics summary for multiple ATMs using existing data
+    
+    Provides a quick overview of failure risks across the ATM fleet.
+    Uses existing JSONB fault data without requiring database changes.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Get terminals with recent fault data
+        terminals_query = """
+            SELECT DISTINCT terminal_id, location
+            FROM terminal_details
+            WHERE retrieved_date >= NOW() - INTERVAL '7 days'
+                AND fault_data IS NOT NULL
+            ORDER BY terminal_id
+            LIMIT $1
+        """
+        
+        terminal_rows = await conn.fetch(terminals_query, limit)
+        
+        if not terminal_rows:
+            return {
+                "summary": [],
+                "fleet_statistics": {
+                    "total_atms_analyzed": 0,
+                    "average_health_score": 0,
+                    "average_risk_score": 0,
+                    "risk_distribution": {},
+                    "analysis_timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+                },
+                "message": "No terminals with recent fault data found"
+            }
+        
+        summary_results = []
+        
+        for terminal_row in terminal_rows:
+            terminal_id = terminal_row['terminal_id']
+            
+            try:
+                # Get fault data for this terminal
+                fault_query = """
+                    SELECT fault_data
+                    FROM terminal_details
+                    WHERE terminal_id = $1 
+                        AND retrieved_date >= NOW() - INTERVAL '14 days'
+                        AND fault_data IS NOT NULL
+                    ORDER BY retrieved_date DESC
+                """
+                
+                fault_rows = await conn.fetch(fault_query, terminal_id)
+                
+                fault_history = []
+                for fault_row in fault_rows:
+                    if fault_row['fault_data']:
+                        try:
+                            fault_data = fault_row['fault_data']
+                            
+                            # Parse JSON string if needed
+                            if isinstance(fault_data, str):
+                                try:
+                                    fault_data = json.loads(fault_data)
+                                except json.JSONDecodeError:
+                                    continue
+                            
+                            if isinstance(fault_data, dict):
+                                fault_history.append(fault_data)
+                        except:
+                            continue
+                
+                if not fault_history:
+                    continue
+                
+                # Quick analysis
+                component_types = ["DISPENSER", "READER", "PRINTER", "NETWORK_MODULE"]
+                component_health = []
+                
+                for comp_type in component_types:
+                    health_score = calculate_component_health_score(fault_history, comp_type)
+                    component_health.append(health_score)
+                
+                overall_health = mean([comp.health_score for comp in component_health])
+                failure_prediction = predict_atm_failure(fault_history, component_health)
+                
+                # Apply filter if specified
+                if risk_level_filter and failure_prediction.risk_level != risk_level_filter:
+                    continue
+                
+                summary_results.append({
+                    "terminal_id": terminal_id,
+                    "location": terminal_row['location'],
+                    "overall_health_score": round(overall_health, 1),
+                    "risk_level": failure_prediction.risk_level,
+                    "risk_score": failure_prediction.risk_score,
+                    "prediction_horizon": failure_prediction.prediction_horizon,
+                    "confidence": failure_prediction.confidence,
+                    "critical_components": len([comp for comp in component_health if comp.failure_risk == "CRITICAL"]),
+                    "last_analysis": convert_to_dili_time(datetime.utcnow()).isoformat()
+                })
+                
+            except Exception as e:
+                logger.warning(f"Could not analyze terminal {terminal_id}: {e}")
+                continue
+        
+        # Sort by risk score (highest first)
+        summary_results.sort(key=lambda x: x['risk_score'], reverse=True)
+        
+        # Calculate fleet statistics
+        if summary_results:
+            risk_distribution = Counter([result['risk_level'] for result in summary_results])
+            avg_health = mean([result['overall_health_score'] for result in summary_results])
+            avg_risk = mean([result['risk_score'] for result in summary_results])
+        else:
+            risk_distribution = {}
+            avg_health = 0
+            avg_risk = 0
+        
+        return {
+            "summary": summary_results,
+            "fleet_statistics": {
+                "total_atms_analyzed": len(summary_results),
+                "average_health_score": round(avg_health, 1),
+                "average_risk_score": round(avg_risk, 1),
+                "risk_distribution": dict(risk_distribution),
+                "analysis_timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+            },
+            "filters_applied": {
+                "risk_level_filter": risk_level_filter,
+                "limit": limit
+            },
+            "data_source": "terminal_details.fault_data (JSONB)"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating predictive analytics summary: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate predictive analytics summary")
+    finally:
+        await release_db_connection(conn)
 
 if __name__ == "__main__":
     uvicorn.run(
