@@ -457,65 +457,50 @@ async def get_atm_summary(
     
     Returns aggregated counts and percentages for all ATM statuses.
     Availability includes both AVAILABLE and WARNING ATMs as they are operational.
+    
+    NOTE: Now uses terminal_details table to match ATM Information page data source
     """
     conn = await get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     
     try:
-        if table_type == TableTypeEnum.LEGACY or table_type == TableTypeEnum.BOTH:
-            # Query legacy table (using regional_data with legacy approach) - TL-DL region only
-            query = """
-                WITH latest_data AS (
-                    SELECT DISTINCT ON (region_code)
-                        region_code, count_available, count_warning, count_zombie,
-                        count_wounded, count_out_of_service, retrieval_timestamp
-                    FROM regional_data
-                    WHERE region_code = 'TL-DL'
-                    ORDER BY region_code, retrieval_timestamp DESC
-                )
+        # Use terminal_details table as single source of truth (like ATM Information page)
+        # This fixes the data discrepancy between dashboard cards and ATM info page
+        query = """
+            WITH latest_terminals AS (
+                SELECT DISTINCT ON (terminal_id)
+                    terminal_id, fetched_status, retrieved_date
+                FROM terminal_details
+                ORDER BY terminal_id, retrieved_date DESC
+            ),
+            status_counts AS (
                 SELECT 
-                    SUM(COALESCE(count_available, 0)) as total_available,
-                    SUM(COALESCE(count_warning, 0)) as total_warning,
-                    SUM(COALESCE(count_zombie, 0)) as total_zombie,
-                    SUM(COALESCE(count_wounded, 0)) as total_wounded,
-                    SUM(COALESCE(count_out_of_service, 0)) as total_out_of_service,
-                    COUNT(DISTINCT region_code) as total_regions,
-                    MAX(retrieval_timestamp) as last_updated
-                FROM latest_data
-            """
-            
-            row = await conn.fetchrow(query)
-            
-        elif table_type == TableTypeEnum.NEW:
-            # Query new table (regional_data) - use actual columns, not JSONB parsing - TL-DL region only
-            query = """
-                WITH latest_data AS (
-                    SELECT DISTINCT ON (region_code)
-                        region_code, count_available, count_warning, count_zombie,
-                        count_wounded, count_out_of_service, total_atms_in_region,
-                        retrieval_timestamp
-                    FROM regional_data
-                    WHERE region_code = 'TL-DL'
-                    ORDER BY region_code, retrieval_timestamp DESC
-                )
+                    fetched_status,
+                    COUNT(*) as count
+                FROM latest_terminals
+                GROUP BY fetched_status
+            ),
+            status_mapping AS (
                 SELECT 
-                    SUM(COALESCE(count_available, 0)) as total_available,
-                    SUM(COALESCE(count_warning, 0)) as total_warning,
-                    SUM(COALESCE(count_zombie, 0)) as total_zombie,
-                    SUM(COALESCE(count_wounded, 0)) as total_wounded,
-                    SUM(COALESCE(count_out_of_service, 0)) as total_out_of_service,
-                    COUNT(DISTINCT region_code) as total_regions,
-                    MAX(retrieval_timestamp) as last_updated
-                FROM latest_data
-            """
-            
-            row = await conn.fetchrow(query)
+                    COALESCE(SUM(CASE WHEN fetched_status = 'AVAILABLE' THEN count ELSE 0 END), 0) as total_available,
+                    COALESCE(SUM(CASE WHEN fetched_status = 'WARNING' THEN count ELSE 0 END), 0) as total_warning,
+                    COALESCE(SUM(CASE WHEN fetched_status IN ('WOUNDED', 'HARD', 'CASH') THEN count ELSE 0 END), 0) as total_wounded,
+                    COALESCE(SUM(CASE WHEN fetched_status = 'ZOMBIE' THEN count ELSE 0 END), 0) as total_zombie,
+                    COALESCE(SUM(CASE WHEN fetched_status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN count ELSE 0 END), 0) as total_out_of_service,
+                    COUNT(DISTINCT 1) as total_regions,
+                    (SELECT MAX(retrieved_date) FROM latest_terminals) as last_updated
+                FROM status_counts
+            )
+            SELECT * FROM status_mapping
+        """
+        
+        row = await conn.fetchrow(query)
         
         if not row:
             raise HTTPException(status_code=404, detail="No ATM data found")
         
-        # Calculate totals
+        # Calculate totals from terminal_details data
         available = row['total_available'] or 0
         warning = row['total_warning'] or 0
         zombie = row['total_zombie'] or 0
@@ -540,9 +525,9 @@ async def get_atm_summary(
             total_atms=total_atms,
             status_counts=status_counts,
             overall_availability=round(availability_percentage, 2),
-            total_regions=row['total_regions'] or 0,
+            total_regions=1,  # Using terminal details, so we don't have regional breakdown
             last_updated=convert_to_dili_time(row['last_updated']) if row['last_updated'] else convert_to_dili_time(datetime.utcnow()),
-            data_source=table_type.value
+            data_source="terminal_details"  # Updated to reflect actual data source
         )
         
     except HTTPException:
