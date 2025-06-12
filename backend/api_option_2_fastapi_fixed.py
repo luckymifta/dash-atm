@@ -121,31 +121,40 @@ DB_CONFIG = {
 DILI_TZ = pytz.timezone('Asia/Dili')  # UTC+9
 UTC_TZ = pytz.UTC
 
-def convert_to_dili_time(utc_timestamp: datetime) -> datetime:
+def convert_to_dili_time(timestamp: datetime) -> datetime:
     """
-    Convert a UTC timestamp to Dili local time (UTC+9).
+    Convert a timestamp to Dili local time (UTC+9).
+    Handles both UTC timestamps and timestamps already in Dili time.
     
     Args:
-        utc_timestamp: A datetime object in UTC (timezone-aware or naive)
+        timestamp: A datetime object (timezone-aware or naive)
     
     Returns:
-        datetime: Timestamp converted to Dili local time
+        datetime: Timestamp in Dili local time (timezone-naive for JSON serialization)
     """
     try:
-        # If the timestamp is timezone-naive, assume it's UTC
-        if utc_timestamp.tzinfo is None:
-            utc_timestamp = UTC_TZ.localize(utc_timestamp)
-        
-        # Convert to Dili time
-        dili_timestamp = utc_timestamp.astimezone(DILI_TZ)
-        
-        # Return as timezone-naive datetime for JSON serialization
-        return dili_timestamp.replace(tzinfo=None)
+        # If the timestamp has timezone info
+        if timestamp.tzinfo is not None:
+            # Check if it's already in Dili time (UTC+9)
+            if timestamp.utcoffset() == timedelta(hours=9):
+                # Already in Dili time, just remove timezone info
+                return timestamp.replace(tzinfo=None)
+            else:
+                # Convert from other timezone to Dili time
+                dili_timestamp = timestamp.astimezone(DILI_TZ)
+                return dili_timestamp.replace(tzinfo=None)
+        else:
+            # Timezone-naive timestamp
+            # Since data retrieval scripts now store Dili time directly,
+            # we need to check if this might already be Dili time
+            # For now, we'll assume timezone-naive timestamps are already in Dili time
+            # (from our updated data retrieval scripts)
+            return timestamp
         
     except Exception as e:
-        logger.warning(f"Error converting timestamp to Dili time: {e}")
+        logger.warning(f"Error processing timestamp: {e}")
         # Fallback: return original timestamp
-        return utc_timestamp.replace(tzinfo=None) if utc_timestamp.tzinfo else utc_timestamp
+        return timestamp.replace(tzinfo=None) if timestamp.tzinfo else timestamp
 
 # Pydantic Models for Data Validation
 class ATMStatusEnum(str, Enum):

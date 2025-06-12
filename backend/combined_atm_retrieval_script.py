@@ -789,13 +789,13 @@ class CombinedATMRetriever:
             return []
         
         processed_records = []
-        current_time = datetime.now(self.dili_tz)
+        current_time = datetime.now(self.dili_tz)  # Use Dili time for database storage
         
         # Filter to only process TL-DL region
         tl_dl_data = [region for region in raw_data if region.get("hc-key") == "TL-DL"]
         
         log.info(f"Processing regional data for TL-DL region only (filtered from {len(raw_data)} regions)")
-        log.info(f"Using Dili time (UTC+9): {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+        log.info(f"Using Dili time for database storage: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
         
         for region_data in tl_dl_data:
             region_code = region_data.get("hc-key", "UNKNOWN")
@@ -894,7 +894,7 @@ class CombinedATMRetriever:
         log.info("=" * 80)
         
         all_data = {
-            "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),
+            "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),  # Store Dili timestamp
             "demo_mode": self.demo_mode,
             "regional_data": [],
             "terminal_details_data": [],  # Only terminal details, no terminal status data
@@ -1551,13 +1551,13 @@ class CombinedATMRetriever:
                         if isinstance(retrieved_date_str, str):
                             # Try to parse the date string format: "2025-05-30 17:55:04"
                             retrieved_date = datetime.strptime(retrieved_date_str, '%Y-%m-%d %H:%M:%S')
-                            retrieved_date = retrieved_date.replace(tzinfo=pytz.UTC)  # Treat as UTC
+                            retrieved_date = retrieved_date.replace(tzinfo=self.dili_tz)  # Treat as Dili time
                     except (ValueError, TypeError) as e:
                         log.warning(f"Could not parse retrievedDate '{detail.get('retrievedDate')}': {e}")
-                        retrieved_date = datetime.now(pytz.UTC)  # Use UTC for fallback
+                        retrieved_date = datetime.now(self.dili_tz)  # Use Dili time for fallback
                 
                 if not retrieved_date:
-                    retrieved_date = datetime.now(pytz.UTC)  # Use UTC timezone for database storage
+                    retrieved_date = datetime.now(self.dili_tz)  # Use Dili timezone for database storage
                 
                 # Prepare JSONB data
                 raw_terminal_data = {
@@ -1579,7 +1579,7 @@ class CombinedATMRetriever:
                 }
                 
                 metadata = {
-                    "retrieval_timestamp": datetime.now(pytz.UTC).isoformat(),  # Store UTC timestamp
+                    "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),  # Store Dili timestamp
                     "demo_mode": self.demo_mode,
                     "unique_request_id": unique_request_id,
                     "processing_info": {
