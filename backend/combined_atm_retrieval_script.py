@@ -1551,13 +1551,13 @@ class CombinedATMRetriever:
                         if isinstance(retrieved_date_str, str):
                             # Try to parse the date string format: "2025-05-30 17:55:04"
                             retrieved_date = datetime.strptime(retrieved_date_str, '%Y-%m-%d %H:%M:%S')
-                            retrieved_date = retrieved_date.replace(tzinfo=self.dili_tz)
+                            retrieved_date = retrieved_date.replace(tzinfo=pytz.UTC)  # Treat as UTC
                     except (ValueError, TypeError) as e:
                         log.warning(f"Could not parse retrievedDate '{detail.get('retrievedDate')}': {e}")
-                        retrieved_date = datetime.now(self.dili_tz)
+                        retrieved_date = datetime.now(pytz.UTC)  # Use UTC for fallback
                 
                 if not retrieved_date:
-                    retrieved_date = datetime.now(self.dili_tz)
+                    retrieved_date = datetime.now(pytz.UTC)  # Use UTC timezone for database storage
                 
                 # Prepare JSONB data
                 raw_terminal_data = {
@@ -1579,7 +1579,7 @@ class CombinedATMRetriever:
                 }
                 
                 metadata = {
-                    "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),
+                    "retrieval_timestamp": datetime.now(pytz.UTC).isoformat(),  # Store UTC timestamp
                     "demo_mode": self.demo_mode,
                     "unique_request_id": unique_request_id,
                     "processing_info": {

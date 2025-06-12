@@ -312,11 +312,11 @@ class RegionalATMRetriever:
             return []
         
         processed_records = []
-        dili_tz = pytz.timezone('Asia/Dili')  # Asia/Dili is UTC+9 for Timor-Leste
-        current_time = datetime.now(dili_tz)
+        utc_tz = pytz.UTC  # Use UTC for database storage
+        current_time = datetime.now(utc_tz)
         
         log.info(f"Processing regional data for {len(raw_data)} regions")
-        log.info(f"Using Dili time (UTC+9): {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+        log.info(f"Using UTC time for database storage: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
         
         for region_data in raw_data:
             region_code = region_data.get("hc-key", "UNKNOWN")
