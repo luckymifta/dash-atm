@@ -164,7 +164,7 @@ class CombinedATMRetriever:
     
     def generate_out_of_service_data(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
-        Generate OUT_OF_SERVICE data for TL-DL region only when connection fails
+        Generate OUT_OF_SERVICE data for all ATMs when connection fails
         
         Returns:
             Tuple of (regional_data, terminal_details_data) with OUT_OF_SERVICE status
@@ -174,36 +174,34 @@ class CombinedATMRetriever:
         
         # Generate regional data with OUT_OF_SERVICE status for TL-DL region only
         regional_data = []
-        region_code = "TL-DL"  # Only TL-DL region exists
+        regions = ["TL-DL"]  # Only TL-DL region to avoid connection failures
         
-        record = {
-            'unique_request_id': str(uuid.uuid4()),
-            'region_code': region_code,
-            'count_available': 0,
-            'count_warning': 0,
-            'count_zombie': 0,
-            'count_wounded': 0,
-            'count_out_of_service': self.total_atms,  # All 14 ATMs marked as OUT_OF_SERVICE
-            'date_creation': current_time,
-            'total_atms_in_region': self.total_atms,
-            'percentage_available': 0.0,
-            'percentage_warning': 0.0,
-            'percentage_zombie': 0.0,
-            'percentage_wounded': 0.0,
-            'percentage_out_of_service': 1.0  # 100% OUT_OF_SERVICE
-        }
-        regional_data.append(record)
-        log.info(f"Generated OUT_OF_SERVICE regional data for {region_code}: all {self.total_atms} ATMs marked as OUT_OF_SERVICE")
+        for region_code in regions:
+            record = {
+                'unique_request_id': str(uuid.uuid4()),
+                'region_code': region_code,
+                'count_available': 0,
+                'count_warning': 0,
+                'count_zombie': 0,
+                'count_wounded': 0,
+                'count_out_of_service': self.total_atms,  # All ATMs marked as OUT_OF_SERVICE
+                'date_creation': current_time,
+                'total_atms_in_region': self.total_atms,
+                'percentage_available': 0.0,
+                'percentage_warning': 0.0,
+                'percentage_zombie': 0.0,
+                'percentage_wounded': 0.0,
+                'percentage_out_of_service': 1.0  # 100% OUT_OF_SERVICE
+            }
+            regional_data.append(record)
+            log.info(f"Generated OUT_OF_SERVICE regional data for {region_code}: all {self.total_atms} ATMs marked as OUT_OF_SERVICE")
         
-        # Generate terminal details data with OUT_OF_SERVICE status for TL-DL region only
+        # Generate terminal details data with OUT_OF_SERVICE status
         terminal_details_data = []
-        for i in range(self.total_atms):  # Generate for 14 ATMs in TL-DL region only
+        for i in range(self.total_atms * len(regions)):  # Generate for all ATMs across all regions
             terminal_id = str(80 + i)  # Start from 80 as seen in sample data
-            
-        # Generate terminal details data with OUT_OF_SERVICE status for TL-DL region only
-        terminal_details_data = []
-        for i in range(self.total_atms):  # Generate for 14 ATMs in TL-DL region only
-            terminal_id = str(80 + i)  # Start from 80 as seen in sample data
+            region_index = i // self.total_atms
+            region_code = regions[region_index] if region_index < len(regions) else regions[0]
             
             terminal_detail = {
                 'unique_request_id': str(uuid.uuid4()),
@@ -227,7 +225,7 @@ class CombinedATMRetriever:
             }
             terminal_details_data.append(terminal_detail)
         
-        log.info(f"Generated {len(terminal_details_data)} terminal details with OUT_OF_SERVICE status for TL-DL region")
+        log.info(f"Generated {len(terminal_details_data)} terminal details with OUT_OF_SERVICE status")
         return regional_data, terminal_details_data
 
     def authenticate(self) -> bool:
@@ -373,7 +371,7 @@ class CombinedATMRetriever:
             List containing fifth_graphic data or None if failed
         """
         if self.demo_mode:
-            log.info("Demo mode: Generating sample regional data")
+            log.info("Demo mode: Generating sample regional data for TL-DL only")
             return [
                 {
                     "hc-key": "TL-DL",
@@ -381,14 +379,6 @@ class CombinedATMRetriever:
                         "AVAILABLE": "0.78571427",
                         "WOUNDED": "0.14285714",
                         "WARNING": "0.07142857"
-                    }
-                },
-                {
-                    "hc-key": "TL-AN",
-                    "state_count": {
-                        "AVAILABLE": "0.85714286",
-                        "OUT_OF_SERVICE": "0.07142857",
-                        "ZOMBIE": "0.07142857"
                     }
                 }
             ]
@@ -786,6 +776,7 @@ class CombinedATMRetriever:
     def process_regional_data(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Process raw fifth_graphic data and convert to regional_atm_counts table structure
+        Only processes TL-DL region to avoid connection failures.
         
         Args:
             raw_data: Raw fifth_graphic data from API response
@@ -800,13 +791,20 @@ class CombinedATMRetriever:
         processed_records = []
         current_time = datetime.now(self.dili_tz)
         
-        log.info(f"Processing regional data for {len(raw_data)} regions")
+        # Filter to only process TL-DL region
+        tl_dl_data = [region for region in raw_data if region.get("hc-key") == "TL-DL"]
+        
+        log.info(f"Processing regional data for TL-DL region only (filtered from {len(raw_data)} regions)")
         log.info(f"Using Dili time (UTC+9): {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
         
-        for region_data in raw_data:
+        for region_data in tl_dl_data:
             region_code = region_data.get("hc-key", "UNKNOWN")
             state_count = region_data.get("state_count", {})
             
+            if region_code != "TL-DL":
+                log.info(f"Skipping region {region_code} - only processing TL-DL")
+                continue
+                
             if not state_count:
                 log.warning(f"No state_count data found for region {region_code}")
                 continue
@@ -909,7 +907,7 @@ class CombinedATMRetriever:
             connectivity_ok = self.check_connectivity()
             if not connectivity_ok:
                 log.error("Failed to connect to 172.31.1.46 - Activating failover mode")
-                log.info("Generating OUT_OF_SERVICE status for all ATMs in TL-DL region due to connection failure")
+                log.info("Generating OUT_OF_SERVICE status for all ATMs due to connection failure")
                 
                 # Generate OUT_OF_SERVICE data for all ATMs
                 regional_data, terminal_details_data = self.generate_out_of_service_data()
@@ -919,15 +917,14 @@ class CombinedATMRetriever:
                 all_data["failover_mode"] = True
                 
                 # Calculate summary for failover mode
-                total_regions = len(regional_data)  # Will be 1 (TL-DL only)
-                total_terminals = len(terminal_details_data)  # Will be 14 (TL-DL ATMs only)
+                total_regions = len(regional_data)
+                total_terminals = len(terminal_details_data)
                 all_data["summary"] = {
                     "total_regions": total_regions,
                     "total_terminals": total_terminals,
                     "total_terminal_details": total_terminals,
                     "failover_activated": True,
-                    "connection_status": "FAILED",
-                    "region_scope": "TL-DL only"
+                    "connection_status": "FAILED"
                 }
                 
                 # Save to database if requested
@@ -938,7 +935,7 @@ class CombinedATMRetriever:
                     else:
                         log.error("Failed to save OUT_OF_SERVICE failover data to database")
                 
-                log.warning("Failover mode completed - all ATMs in TL-DL region marked as OUT_OF_SERVICE")
+                log.warning("Failover mode completed - all ATMs marked as OUT_OF_SERVICE")
                 return True, all_data  # Return success=True as failover worked as intended
         
         # Step 2: Normal operation - Authenticate
@@ -953,15 +950,14 @@ class CombinedATMRetriever:
             all_data["failover_mode"] = True
             
             # Calculate summary for authentication failure
-            total_regions = len(regional_data)  # Will be 1 (TL-DL only)
-            total_terminals = len(terminal_details_data)  # Will be 14 (TL-DL ATMs only)
+            total_regions = len(regional_data)
+            total_terminals = len(terminal_details_data)
             all_data["summary"] = {
                 "total_regions": total_regions,
                 "total_terminals": total_terminals,
                 "total_terminal_details": total_terminals,
                 "failover_activated": True,
-                "connection_status": "AUTH_FAILED",
-                "region_scope": "TL-DL only"
+                "connection_status": "AUTH_FAILED"
             }
             
             # Save to database if requested

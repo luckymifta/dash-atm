@@ -236,6 +236,30 @@ interface ATMListResponse {
   };
 }
 
+// Refresh Job Interfaces
+interface RefreshJobStatus {
+  QUEUED: 'queued';
+  RUNNING: 'running';
+  COMPLETED: 'completed';
+  FAILED: 'failed';
+}
+
+interface RefreshJobResponse {
+  job_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  progress: number;
+  message: string;
+  error?: string;
+}
+
+interface RefreshJobRequest {
+  force?: boolean;
+  use_new_tables?: boolean;
+}
+
 class ATMApiService {
   private baseUrl: string;
 
@@ -349,6 +373,45 @@ class ATMApiService {
     
     return this.fetchApi<ATMListResponse>(`/v1/atm/list?${params}`);
   }
+
+  // Refresh Methods
+  async triggerRefresh(
+    force: boolean = false,
+    useNewTables: boolean = true
+  ): Promise<RefreshJobResponse> {
+    const response = await fetch(`${this.baseUrl}/v1/atm/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        force,
+        use_new_tables: useNewTables
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async getRefreshJobStatus(jobId: string): Promise<RefreshJobResponse> {
+    return this.fetchApi<RefreshJobResponse>(`/v1/atm/refresh/${jobId}`);
+  }
+
+  async listRefreshJobs(
+    limit: number = 10,
+    status?: 'queued' | 'running' | 'completed' | 'failed'
+  ): Promise<RefreshJobResponse[]> {
+    const params = new URLSearchParams({
+      limit: limit.toString()
+    });
+    if (status) params.append('status', status);
+    
+    return this.fetchApi<RefreshJobResponse[]>(`/v1/atm/refresh?${params}`);
+  }
 }
 
 // Create a singleton instance
@@ -372,4 +435,7 @@ export type {
   ATMHistoricalResponse,
   ATMListItem,
   ATMListResponse,
+  RefreshJobStatus,
+  RefreshJobResponse,
+  RefreshJobRequest,
 };

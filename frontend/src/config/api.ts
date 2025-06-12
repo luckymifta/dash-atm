@@ -10,6 +10,7 @@ export const API_CONFIG = {
     TRENDS: '/v1/atm/status/trends',
     LATEST: '/v1/atm/status/latest',
     HEALTH: '/v1/health',
+    REFRESH: '/v1/atm/refresh',
   },
   
   // Request timeouts (in milliseconds)

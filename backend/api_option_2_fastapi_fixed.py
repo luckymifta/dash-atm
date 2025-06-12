@@ -526,7 +526,7 @@ async def get_atm_summary(
             status_counts=status_counts,
             overall_availability=round(availability_percentage, 2),
             total_regions=1,  # Using terminal details, so we don't have regional breakdown
-            last_updated=convert_to_dili_time(row['last_updated']) if row['last_updated'] else convert_to_dili_time(datetime.utcnow()),
+            last_updated=row['last_updated'] if row['last_updated'] else datetime.utcnow(),
             data_source="terminal_details"  # Updated to reflect actual data source
         )
         
