@@ -789,13 +789,13 @@ class CombinedATMRetriever:
             return []
         
         processed_records = []
-        current_time = datetime.now(pytz.UTC)  # Use UTC time for database storage
+        current_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency
         
         # Filter to only process TL-DL region
         tl_dl_data = [region for region in raw_data if region.get("hc-key") == "TL-DL"]
         
         log.info(f"Processing regional data for TL-DL region only (filtered from {len(raw_data)} regions)")
-        log.info(f"Using UTC time for database storage: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+        log.info(f"Using Dili time for database storage: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
         
         for region_data in tl_dl_data:
             region_code = region_data.get("hc-key", "UNKNOWN")
@@ -894,7 +894,7 @@ class CombinedATMRetriever:
         log.info("=" * 80)
         
         all_data = {
-            "retrieval_timestamp": datetime.now(pytz.UTC).isoformat(),  # Store UTC timestamp
+            "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),  # Store Dili timestamp for consistency
             "demo_mode": self.demo_mode,
             "regional_data": [],
             "terminal_details_data": [],  # Only terminal details, no terminal status data
@@ -1043,7 +1043,7 @@ class CombinedATMRetriever:
         log.info(f"Found {len(all_terminals)} terminals to process for details")
         
         all_terminal_details = []
-        current_retrieval_time = datetime.now(pytz.UTC)  # Use UTC time to match API data format
+        current_retrieval_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency
         
         for terminal in tqdm(all_terminals, desc="Fetching terminal details", unit="terminal"):
             terminal_id = terminal.get('terminalId')
@@ -1449,7 +1449,7 @@ class CombinedATMRetriever:
                     record['count_wounded'],
                     record['count_out_of_service'],
                     record['total_atms_in_region'],
-                    datetime.now(pytz.UTC),
+                    datetime.now(self.dili_tz),  # Use Dili time for consistency
                     json.dumps(raw_json_data)
                 ))
             
@@ -1550,15 +1550,15 @@ class CombinedATMRetriever:
                         retrieved_date_str = detail['retrievedDate']
                         if isinstance(retrieved_date_str, str):
                             # Try to parse the date string format: "2025-05-30 17:55:04"
-                            # The retrievedDate from the API is likely in Dili time, convert to UTC for storage
+                            # The retrievedDate from the API is already in Dili time format, keep it as Dili time
                             retrieved_date = datetime.strptime(retrieved_date_str, '%Y-%m-%d %H:%M:%S')
-                            retrieved_date = self.dili_tz.localize(retrieved_date).astimezone(pytz.UTC)
+                            retrieved_date = self.dili_tz.localize(retrieved_date)  # Keep as Dili timezone
                     except (ValueError, TypeError) as e:
                         log.warning(f"Could not parse retrievedDate '{detail.get('retrievedDate')}': {e}")
-                        retrieved_date = datetime.now(pytz.UTC)  # Use UTC time for fallback
+                        retrieved_date = datetime.now(self.dili_tz)  # Use Dili time for fallback
                 
                 if not retrieved_date:
-                    retrieved_date = datetime.now(pytz.UTC)  # Use UTC timezone for database storage
+                    retrieved_date = datetime.now(self.dili_tz)  # Use Dili timezone for database consistency
                 
                 # Prepare JSONB data
                 raw_terminal_data = {
@@ -1580,7 +1580,7 @@ class CombinedATMRetriever:
                 }
                 
                 metadata = {
-                    "retrieval_timestamp": datetime.now(pytz.UTC).isoformat(),  # Store UTC timestamp
+                    "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),  # Store Dili timestamp for consistency
                     "demo_mode": self.demo_mode,
                     "unique_request_id": unique_request_id,
                     "processing_info": {
