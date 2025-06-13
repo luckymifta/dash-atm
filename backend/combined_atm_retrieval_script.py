@@ -473,16 +473,34 @@ class CombinedATMRetriever:
         """
         if self.demo_mode:
             log.info(f"DEMO MODE: Generating sample terminals for status {param_value}")
-            # Return sample data for demo mode
-            sample_terminals = [{
-                'terminalId': f"{i+80}",
-                'location': f"Sample Location {i}",
-                'issueStateName': param_value,
-                'fetched_status': param_value,
-                'issueStateCode': 'HARD' if param_value == 'WOUNDED' else param_value,
-                'brand': 'Nautilus Hyosun',
-                'model': 'Monimax 5600'
-            } for i in range(3)]  # Generate 3 sample terminals
+            
+            # Define realistic terminal distribution based on real data
+            status_terminal_map = {
+                'AVAILABLE': ['147', '169', '2603', '2604', '2605', '49', '83', '87', '88', '93'],  # 10 terminals
+                'WARNING': ['85', '90'],  # 2 terminals  
+                'WOUNDED': ['89'],  # 1 terminal
+                'HARD': [],  # No terminals (mapped to WOUNDED)
+                'CASH': [],  # No terminals (mapped to WOUNDED)
+                'ZOMBIE': [],  # No terminals
+                'UNAVAILABLE': []  # No terminals (mapped to OUT_OF_SERVICE)
+            }
+            
+            # Get terminal IDs for this status
+            terminal_ids = status_terminal_map.get(param_value, [])
+            
+            # Generate sample terminals based on realistic data
+            sample_terminals = []
+            for terminal_id in terminal_ids:
+                sample_terminals.append({
+                    'terminalId': terminal_id,
+                    'location': f"Sample Location for {terminal_id}",
+                    'issueStateName': param_value,
+                    'fetched_status': param_value,
+                    'issueStateCode': 'HARD' if param_value == 'WOUNDED' else param_value,
+                    'brand': 'Nautilus Hyosun',
+                    'model': 'Monimax 5600'
+                })
+            
             return sample_terminals
         
         dashboard_payload = {
@@ -1037,6 +1055,36 @@ class CombinedATMRetriever:
             else:
                 log.warning(f"No terminals found with status {param_value}")
                 status_counts[param_value] = 0
+        
+        # CRITICAL FIX: Deduplicate terminals by terminalId before processing
+        log.info(f"Total terminals collected before deduplication: {len(all_terminals)}")
+        
+        # Create a dictionary to track unique terminals by terminalId
+        unique_terminals = {}
+        duplicate_count = 0
+        
+        for terminal in all_terminals:
+            terminal_id = terminal.get('terminalId')
+            if terminal_id:
+                if terminal_id in unique_terminals:
+                    # Keep the first occurrence, log the duplicate
+                    duplicate_count += 1
+                    log.debug(f"Duplicate terminal found: {terminal_id} (status: {terminal.get('fetched_status')} vs existing: {unique_terminals[terminal_id].get('fetched_status')})")
+                else:
+                    unique_terminals[terminal_id] = terminal
+            else:
+                log.warning("Terminal found without terminalId, skipping")
+        
+        # Replace all_terminals with deduplicated list
+        all_terminals = list(unique_terminals.values())
+        
+        log.info(f"Terminals after deduplication: {len(all_terminals)}")
+        if duplicate_count > 0:
+            log.info(f"Removed {duplicate_count} duplicate terminals")
+        
+        # Log terminal IDs for verification
+        terminal_ids = [t.get('terminalId') for t in all_terminals if t.get('terminalId')]
+        log.info(f"Unique terminal IDs to process: {sorted(terminal_ids)}")
         
         # Step 5: Fetch detailed information for ALL terminals
         log.info("\n--- PHASE 3: Retrieving Terminal Details ---")

@@ -474,48 +474,44 @@ async def get_atm_summary(
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     
     try:
-        # Use terminal_details table as single source of truth (like ATM Information page)
+        # Use terminal_details table as single source of truth (EXACTLY like ATM Information page)
         # This fixes the data discrepancy between dashboard cards and ATM info page
+        # Use identical query logic to ATM information endpoint for perfect consistency
         query = """
-            WITH latest_terminals AS (
-                SELECT DISTINCT ON (terminal_id)
-                    terminal_id, fetched_status, retrieved_date
-                FROM terminal_details
-                ORDER BY terminal_id, retrieved_date DESC
-            ),
-            status_counts AS (
-                SELECT 
-                    fetched_status,
-                    COUNT(*) as count
-                FROM latest_terminals
-                GROUP BY fetched_status
-            ),
-            status_mapping AS (
-                SELECT 
-                    COALESCE(SUM(CASE WHEN fetched_status = 'AVAILABLE' THEN count ELSE 0 END), 0) as total_available,
-                    COALESCE(SUM(CASE WHEN fetched_status = 'WARNING' THEN count ELSE 0 END), 0) as total_warning,
-                    COALESCE(SUM(CASE WHEN fetched_status IN ('WOUNDED', 'HARD', 'CASH') THEN count ELSE 0 END), 0) as total_wounded,
-                    COALESCE(SUM(CASE WHEN fetched_status = 'ZOMBIE' THEN count ELSE 0 END), 0) as total_zombie,
-                    COALESCE(SUM(CASE WHEN fetched_status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN count ELSE 0 END), 0) as total_out_of_service,
-                    COUNT(DISTINCT 1) as total_regions,
-                    (SELECT MAX(retrieved_date) FROM latest_terminals) as last_updated
-                FROM status_counts
-            )
-            SELECT * FROM status_mapping
+            SELECT DISTINCT ON (terminal_id)
+                terminal_id, fetched_status, retrieved_date
+            FROM terminal_details
+            WHERE retrieved_date >= NOW() - INTERVAL '24 hours'
+            ORDER BY terminal_id, retrieved_date DESC
         """
         
-        row = await conn.fetchrow(query)
+        rows = await conn.fetch(query)
         
-        if not row:
+        if not rows:
             raise HTTPException(status_code=404, detail="No ATM data found")
         
-        # Calculate totals from terminal_details data
-        available = row['total_available'] or 0
-        warning = row['total_warning'] or 0
-        zombie = row['total_zombie'] or 0
-        wounded = row['total_wounded'] or 0
-        out_of_service = row['total_out_of_service'] or 0
-        total_atms = available + warning + zombie + wounded + out_of_service
+        # Count statuses exactly like ATM information page does
+        status_counts = {}
+        last_updated = None
+        
+        for row in rows:
+            status = row['fetched_status'] or 'UNKNOWN'
+            status_counts[status] = status_counts.get(status, 0) + 1
+            
+            # Track latest update time
+            if not last_updated or (row['retrieved_date'] and row['retrieved_date'] > last_updated):
+                last_updated = row['retrieved_date']
+        
+        # Map status counts with same logic as status mapping, but handle additional statuses
+        available = status_counts.get('AVAILABLE', 0)
+        warning = status_counts.get('WARNING', 0)
+        # Map WOUNDED, HARD, CASH to wounded category
+        wounded = status_counts.get('WOUNDED', 0) + status_counts.get('HARD', 0) + status_counts.get('CASH', 0)
+        zombie = status_counts.get('ZOMBIE', 0)
+        # Map OUT_OF_SERVICE, UNAVAILABLE to out_of_service category  
+        out_of_service = status_counts.get('OUT_OF_SERVICE', 0) + status_counts.get('UNAVAILABLE', 0)
+        
+        total_atms = len(rows)  # Count actual rows, not calculated sum
         
         # Calculate availability including both AVAILABLE and WARNING ATMs
         operational_atms = available + warning
@@ -535,7 +531,7 @@ async def get_atm_summary(
             status_counts=status_counts,
             overall_availability=round(availability_percentage, 2),
             total_regions=1,  # Using terminal details, so we don't have regional breakdown
-            last_updated=row['last_updated'] if row['last_updated'] else datetime.utcnow(),
+            last_updated=last_updated if last_updated else datetime.utcnow(),
             data_source="terminal_details"  # Updated to reflect actual data source
         )
         
