@@ -61,13 +61,26 @@ export default function UserTable({
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return dateString;
+      }
+      
+      // Format as Dili local time (consistent with logs page)
+      return date.toLocaleString('en-US', {
+        timeZone: 'Asia/Dili',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }) + ' (Dili Time)';
+    } catch {
+      return dateString;
+    }
   };
 
   if (loading) {
