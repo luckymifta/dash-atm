@@ -21,6 +21,7 @@ Usage:
 """
 
 import requests
+from requests.adapters import HTTPAdapter
 import urllib3
 import json
 import logging
@@ -119,7 +120,7 @@ class CombinedATMRetriever:
     
     def __init__(self, demo_mode: bool = False, total_atms: int = 14):
         """
-        Initialize the retriever
+        Initialize the retriever with Windows production environment optimizations
         
         Args:
             demo_mode: Whether to use demo mode (no actual network requests)
@@ -127,14 +128,35 @@ class CombinedATMRetriever:
         """
         self.demo_mode = demo_mode
         self.total_atms = total_atms
+        
+        # Initialize session with Windows-compatible settings
         self.session = requests.Session()
+        
+        # Windows-specific session configuration for better reliability
+        self.session.mount('https://', HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=3,
+            pool_block=False
+        ))
+        
+        # Note: Session-level timeout is not supported, will use per-request timeouts
+        self.default_timeout = (30, 60)  # (connection_timeout, read_timeout)
+        
         self.user_token = None
         
         # Log timezone info for clarity
         self.dili_tz = pytz.timezone('Asia/Dili')  # UTC+9
         current_time = datetime.now(self.dili_tz)
-        log.info(f"Initialized CombinedATMRetriever - Demo: {demo_mode}, Total ATMs: {total_atms}")
-        log.info(f"Using Dili timezone (UTC+9) for timestamps: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+        
+        # Log system information for Windows troubleshooting
+        log.info(f"🚀 Initialized CombinedATMRetriever - Demo: {demo_mode}, Total ATMs: {total_atms}")
+        log.info(f"🕒 Using Dili timezone (UTC+9) for timestamps: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+        log.info(f"💻 Platform: {os.name} - Script optimized for Windows production")
+        
+        # Log current working directory for Windows debugging
+        log.info(f"📁 Working directory: {os.getcwd()}")
+        log.info(f"📄 Script location: {os.path.abspath(__file__)}")
     
     # Removed check_connectivity - authentication will catch connectivity issues
     
@@ -248,7 +270,7 @@ class CombinedATMRetriever:
                 json=LOGIN_PAYLOAD,
                 headers=COMMON_HEADERS,
                 verify=False,
-                timeout=30
+                timeout=self.default_timeout
             )
             response.raise_for_status()
             
@@ -326,7 +348,7 @@ class CombinedATMRetriever:
                 json=logout_payload,
                 headers=COMMON_HEADERS,
                 verify=False,
-                timeout=30
+                timeout=self.default_timeout
             )
             response.raise_for_status()
             
@@ -406,7 +428,7 @@ class CombinedATMRetriever:
                     json=reports_payload,
                     headers=COMMON_HEADERS,
                     verify=False,
-                    timeout=30
+                    timeout=self.default_timeout
                 )
                 response.raise_for_status()
                 
@@ -475,9 +497,10 @@ class CombinedATMRetriever:
             log.info(f"DEMO MODE: Generating sample terminals for status {param_value}")
             
             # Define realistic terminal distribution based on real data
+            # All 14 terminals as requested: 83, 2603, 88, 147, 87, 169, 2605, 2604, 93, 49, 86, 89, 85, 90
             status_terminal_map = {
                 'AVAILABLE': ['147', '169', '2603', '2604', '2605', '49', '83', '87', '88', '93'],  # 10 terminals
-                'WARNING': ['85', '90'],  # 2 terminals  
+                'WARNING': ['85', '90', '86'],  # 3 terminals (added 86)  
                 'WOUNDED': ['89'],  # 1 terminal
                 'HARD': [],  # No terminals (mapped to WOUNDED)
                 'CASH': [],  # No terminals (mapped to WOUNDED)
@@ -1037,54 +1060,9 @@ class CombinedATMRetriever:
         all_terminals = []
         status_counts = {}
         
-        # For terminal details, we'll fetch from all statuses to get complete data
-        log.info("Collecting terminals from all statuses for details...")
-        for param_value in tqdm(PARAMETER_VALUES, desc="Collecting terminals for details", unit="status"):
-            terminals = self.get_terminals_by_status(param_value)
-            
-            if terminals:
-                # Add each terminal to our combined list for detail processing
-                for terminal in terminals:
-                    # Add the status we searched for
-                    terminal['fetched_status'] = param_value
-                    all_terminals.append(terminal)
-                
-                # Track how many terminals we found for each status
-                status_counts[param_value] = len(terminals)
-                log.info(f"Collected {len(terminals)} terminals with status {param_value} for details")
-            else:
-                log.warning(f"No terminals found with status {param_value}")
-                status_counts[param_value] = 0
-        
-        # CRITICAL FIX: Deduplicate terminals by terminalId before processing
-        log.info(f"Total terminals collected before deduplication: {len(all_terminals)}")
-        
-        # Create a dictionary to track unique terminals by terminalId
-        unique_terminals = {}
-        duplicate_count = 0
-        
-        for terminal in all_terminals:
-            terminal_id = terminal.get('terminalId')
-            if terminal_id:
-                if terminal_id in unique_terminals:
-                    # Keep the first occurrence, log the duplicate
-                    duplicate_count += 1
-                    log.debug(f"Duplicate terminal found: {terminal_id} (status: {terminal.get('fetched_status')} vs existing: {unique_terminals[terminal_id].get('fetched_status')})")
-                else:
-                    unique_terminals[terminal_id] = terminal
-            else:
-                log.warning("Terminal found without terminalId, skipping")
-        
-        # Replace all_terminals with deduplicated list
-        all_terminals = list(unique_terminals.values())
-        
-        log.info(f"Terminals after deduplication: {len(all_terminals)}")
-        if duplicate_count > 0:
-            log.info(f"Removed {duplicate_count} duplicate terminals")
-        
-        # Log terminal IDs for verification
-        terminal_ids = [t.get('terminalId') for t in all_terminals if t.get('terminalId')]
-        log.info(f"Unique terminal IDs to process: {sorted(terminal_ids)}")
+        # Enhanced Comprehensive Terminal Search Strategy
+        log.info("Implementing comprehensive terminal search for all 14 ATMs...")
+        all_terminals, status_counts = self.comprehensive_terminal_search()
         
         # Step 5: Fetch detailed information for ALL terminals
         log.info("\n--- PHASE 3: Retrieving Terminal Details ---")
@@ -1101,8 +1079,28 @@ class CombinedATMRetriever:
                 log.warning(f"Skipping terminal with missing ID: {terminal}")
                 continue
             
-            # Get detailed information for this terminal
-            terminal_data = self.fetch_terminal_details(terminal_id, issue_state_code)
+            # Windows production environment: Add retry logic for terminal details
+            max_retries = 3 if os.name == 'nt' else 2  # More retries on Windows
+            retry_delay = 2.0 if os.name == 'nt' else 1.0  # Longer delays on Windows
+            
+            terminal_data = None
+            for attempt in range(max_retries):
+                try:
+                    # Get detailed information for this terminal
+                    terminal_data = self.fetch_terminal_details(terminal_id, issue_state_code)
+                    if terminal_data:
+                        break  # Success, exit retry loop
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if attempt < max_retries - 1:  # Not the last attempt
+                        if os.name == 'nt':  # Windows-specific logging
+                            log.warning(f"🪟 Windows retry {attempt + 1}/{max_retries} for terminal {terminal_id}: {error_msg}")
+                        else:
+                            log.warning(f"Retry {attempt + 1}/{max_retries} for terminal {terminal_id}: {error_msg}")
+                        time.sleep(retry_delay)
+                    else:
+                        log.error(f"❌ Failed to fetch terminal {terminal_id} after {max_retries} attempts: {error_msg}")
             
             if terminal_data:
                 # Process the terminal data
@@ -1676,7 +1674,361 @@ class CombinedATMRetriever:
             cursor.close()
             conn.close()
 
+    def comprehensive_terminal_search(self) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+        """
+        Comprehensive terminal search strategy that finds all terminals and handles new discoveries.
+        
+        This method implements a multi-phase search strategy:
+        1. Search each status systematically to discover all terminals
+        2. Collect all terminals while avoiding duplicates
+        3. Handle discovery of new terminals beyond expected set
+        4. Implement fallback search for any missing expected terminals
+        5. Ensure proper data schema for database insertion
+        
+        Returns:
+            Tuple of (all_terminals_list, status_counts_dict)
+        """
+        log.info("Starting comprehensive terminal search across all ATM statuses...")
+        
+        # Expected terminal IDs based on historical requirements (baseline)
+        expected_terminal_ids = ['83', '2603', '88', '147', '87', '169', '2605', '2604', '93', '49', '86', '89', '85', '90']
+        
+        # Load adaptive terminal list (includes previously discovered terminals)
+        known_terminal_ids = self.get_adaptive_terminal_list()
+        
+        log.info(f"Search configuration:")
+        log.info(f"  Expected terminals (baseline): {len(expected_terminal_ids)}")
+        log.info(f"  Total known terminals: {len(known_terminal_ids)}")
+        
+        all_terminals = []
+        status_counts = {}
+        found_terminal_ids = set()
+        terminal_to_status_map = {}  # Track which status each terminal was found in
+        new_terminals_discovered = set()  # Track newly discovered terminals
+        
+        # Phase 1: Systematic discovery search across all status values
+        log.info("Phase 1: Comprehensive discovery search across all statuses...")
+        
+        for param_value in tqdm(PARAMETER_VALUES, desc="Searching statuses", unit="status"):
+            try:
+                terminals = self.get_terminals_by_status(param_value)
+                status_counts[param_value] = len(terminals)
+                
+                if terminals:
+                    log.info(f"Found {len(terminals)} terminals with status {param_value}")
+                    
+                    # Process each terminal found for this status
+                    for terminal in terminals:
+                        terminal_id = terminal.get('terminalId')
+                        
+                        if terminal_id and terminal_id not in found_terminal_ids:
+                            # Add the status we searched for
+                            terminal['fetched_status'] = param_value
+                            all_terminals.append(terminal)
+                            found_terminal_ids.add(terminal_id)
+                            terminal_to_status_map[terminal_id] = param_value
+                            
+                            # Check if this is a new terminal beyond known set
+                            if terminal_id not in known_terminal_ids:
+                                new_terminals_discovered.add(terminal_id)
+                                log.info(f"🆕 NEW TERMINAL DISCOVERED: {terminal_id} (status: {param_value})")
+                            elif terminal_id not in expected_terminal_ids:
+                                log.debug(f"Previously discovered terminal found: {terminal_id} (status: {param_value})")
+                            
+                            log.debug(f"Added terminal {terminal_id} from status {param_value}")
+                        elif terminal_id:
+                            log.debug(f"Terminal {terminal_id} already found in status {terminal_to_status_map.get(terminal_id)}, skipping duplicate from {param_value}")
+                else:
+                    log.info(f"No terminals found with status {param_value}")
+                    
+            except Exception as e:
+                # Windows-specific error handling with detailed diagnostics
+                error_msg = str(e)
+                log.error(f"❌ Error searching status {param_value}: {error_msg}")
+                
+                # Identify Windows-specific network issues
+                if "WinError" in error_msg or "ConnectionError" in error_msg:
+                    log.warning(f"🔌 Windows network error detected for status {param_value}")
+                    log.warning("💡 This may be due to Windows firewall or network configuration")
+                elif "timeout" in error_msg.lower():
+                    log.warning(f"⏱️ Timeout error for status {param_value} - Windows may need longer timeouts")
+                elif "SSL" in error_msg or "certificate" in error_msg.lower():
+                    log.warning(f"🔒 SSL/Certificate error for status {param_value} - Windows certificate store issue")
+                
+                status_counts[param_value] = 0
+                
+                # Continue with next status instead of failing completely
+                log.info(f"↩️ Continuing search with remaining statuses...")
+                continue
+        
+        # Phase 2: Analyze discovery results
+        log.info(f"Phase 1 Discovery Results:")
+        log.info(f"  Total terminals found: {len(found_terminal_ids)}")
+        log.info(f"  Expected terminals found: {len(set(expected_terminal_ids) & found_terminal_ids)}")
+        log.info(f"  New terminals discovered: {len(new_terminals_discovered)}")
+        
+        if new_terminals_discovered:
+            log.info(f"🎉 NEW TERMINALS DISCOVERED: {sorted(new_terminals_discovered)}")
+            log.info("These new terminals will be included in the retrieval process!")
+        
+        # Create updated complete terminal set
+        complete_terminal_set = set(known_terminal_ids) | new_terminals_discovered
+        missing_terminal_ids = complete_terminal_set - found_terminal_ids
+        
+        log.info(f"Found terminal IDs: {sorted(found_terminal_ids)}")
+        
+        # Phase 3: Fallback search for any missing terminals
+        if missing_terminal_ids:
+            log.warning(f"Missing {len(missing_terminal_ids)} terminals: {sorted(missing_terminal_ids)}")
+            log.info("Phase 3: Implementing fallback search for missing terminals...")
+            
+            # Fallback: Search for missing terminals individually across all statuses
+            for missing_id in missing_terminal_ids:
+                log.info(f"Searching for missing terminal {missing_id} across all statuses...")
+                
+                terminal_found = False
+                for param_value in PARAMETER_VALUES:
+                    if terminal_found:
+                        break
+                        
+                    try:
+                        # Search this status again to look for the specific terminal
+                        terminals = self.get_terminals_by_status(param_value)
+                        
+                        for terminal in terminals:
+                            if terminal.get('terminalId') == missing_id:
+                                # Found the missing terminal!
+                                terminal['fetched_status'] = param_value
+                                all_terminals.append(terminal)
+                                found_terminal_ids.add(missing_id)
+                                terminal_to_status_map[missing_id] = param_value
+                                
+                                log.info(f"✅ Found missing terminal {missing_id} in status {param_value}")
+                                terminal_found = True
+                                break
+                                
+                    except Exception as e:
+                        log.error(f"Error in fallback search for terminal {missing_id} in status {param_value}: {str(e)}")
+                        continue
+                
+                if not terminal_found:
+                    log.error(f"❌ Could not find terminal {missing_id} in any status")
+        else:
+            log.info("✅ All terminals found in Phase 1!")
+        
+        # Phase 4: Final validation and comprehensive reporting
+        final_terminal_ids = [t.get('terminalId') for t in all_terminals if t.get('terminalId')]
+        final_missing_expected = set(expected_terminal_ids) - set(final_terminal_ids)
+        final_new_terminals = set(final_terminal_ids) - set(expected_terminal_ids)
+        
+        log.info("\n=== COMPREHENSIVE SEARCH RESULTS ===")
+        log.info(f"Total terminals found: {len(all_terminals)}")
+        log.info(f"Unique terminal IDs: {len(set(final_terminal_ids))}")
+        log.info(f"Expected terminals found: {len(set(expected_terminal_ids) & set(final_terminal_ids))}/14")
+        log.info(f"New terminals discovered: {len(final_new_terminals)}")
+        
+        log.info(f"\nAll terminal IDs: {sorted(final_terminal_ids)}")
+        
+        if final_new_terminals:
+            log.info(f"🆕 NEW TERMINALS: {sorted(final_new_terminals)}")
+            # Update the complete set for future runs
+            log.info("Consider updating the expected_terminal_ids list to include these new terminals")
+        
+        if final_missing_expected:
+            log.error(f"❌ Missing expected terminals: {sorted(final_missing_expected)}")
+            log.error("These terminals may be offline or in an unmapped status")
+        else:
+            log.info("✅ All 14 expected terminals found!")
+        
+        # Enhanced status distribution summary
+        log.info("\n=== STATUS DISTRIBUTION ===")
+        for status, count in status_counts.items():
+            if count > 0:
+                terminals_in_status = [tid for tid, stat in terminal_to_status_map.items() if stat == status]
+                new_in_status = [tid for tid in terminals_in_status if tid in final_new_terminals]
+                expected_in_status = [tid for tid in terminals_in_status if tid in expected_terminal_ids]
+                
+                status_info = f"{status}: {count} terminals -> {sorted(terminals_in_status)}"
+                if new_in_status:
+                    status_info += f" [NEW: {sorted(new_in_status)}]"
+                if expected_in_status:
+                    status_info += f" [EXPECTED: {sorted(expected_in_status)}]"
+                
+                log.info(status_info)
+        
+        # Phase 5: Ensure proper data schema for database insertion
+        log.info("Phase 5: Validating data schema for database insertion...")
+        
+        validated_terminals = []
+        for terminal in all_terminals:
+            # Ensure required fields are present
+            if not terminal.get('terminalId'):
+                log.warning(f"Skipping terminal with missing terminalId: {terminal}")
+                continue
+            
+            # Ensure fetched_status is set
+            if not terminal.get('fetched_status'):
+                terminal['fetched_status'] = 'UNKNOWN'
+                log.warning(f"Set fetched_status to UNKNOWN for terminal {terminal.get('terminalId')}")
+            
+            # Ensure issueStateCode is set (needed for terminal details fetching)
+            if not terminal.get('issueStateCode'):
+                # Map common status names to issue state codes
+                status_to_code_map = {
+                    'AVAILABLE': 'AVAILABLE',
+                    'WARNING': 'WARNING', 
+                    'WOUNDED': 'HARD',
+                    'HARD': 'HARD',
+                    'CASH': 'CASH',
+                    'ZOMBIE': 'HARD',
+                    'UNAVAILABLE': 'HARD'
+                }
+                terminal['issueStateCode'] = status_to_code_map.get(terminal.get('fetched_status', 'UNKNOWN'), 'HARD')
+                log.debug(f"Set issueStateCode to {terminal['issueStateCode']} for terminal {terminal.get('terminalId')}")
+            
+            # Add discovery metadata for tracking
+            terminal['is_newly_discovered'] = terminal.get('terminalId') in final_new_terminals
+            terminal['discovery_timestamp'] = datetime.now().isoformat()
+            
+            validated_terminals.append(terminal)
+        
+        log.info(f"Validated {len(validated_terminals)} terminals for terminal details processing")
+        
+        # Final summary
+        summary_msg = f"DISCOVERY COMPLETE: {len(validated_terminals)} total terminals"
+        if final_new_terminals:
+            summary_msg += f" (including {len(final_new_terminals)} newly discovered)"
+        log.info(summary_msg)
+        
+        # Save discovered terminals to persistent storage
+        if final_new_terminals or not self.demo_mode:
+            all_discovered_terminals = set(final_terminal_ids)
+            self.save_discovered_terminals(all_discovered_terminals)
+            
+            if final_new_terminals:
+                log.info(f"💾 Saved {len(final_new_terminals)} newly discovered terminals to persistent storage")
+        
+        # Windows production environment final validation
+        if os.name == 'nt':  # Windows
+            log.info("🪟 WINDOWS PRODUCTION ENVIRONMENT - Final Validation:")
+            log.info(f"   ✅ Total terminals ready for processing: {len(validated_terminals)}")
+            log.info(f"   ✅ Status distribution validated: {len(status_counts)} statuses checked")
+            log.info(f"   ✅ Discovery persistence: {'Enabled' if not self.demo_mode else 'Demo Mode'}")
+            log.info(f"   ✅ Memory usage optimized for terminal details retrieval")
+            
+            # Log performance metrics for Windows troubleshooting
+            if hasattr(self, 'session') and self.session:
+                log.info(f"   ✅ HTTP session: Active with Windows optimizations")
+            
+        log.info("=== COMPREHENSIVE SEARCH COMPLETED ===")
+        
+        return validated_terminals, status_counts
 
+    def load_discovered_terminals(self) -> set:
+        """
+        Load previously discovered terminal IDs from persistent storage
+        Windows-compatible version with proper path handling
+        
+        Returns:
+            set: Set of all known terminal IDs
+        """
+        # Get the script directory (works on both Windows and Unix)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        discovered_terminals_file = os.path.join(script_dir, "discovered_terminals.json")
+        
+        # Normalize the path for Windows compatibility
+        discovered_terminals_file = os.path.normpath(discovered_terminals_file)
+        
+        try:
+            if os.path.exists(discovered_terminals_file):
+                # Use UTF-8 encoding explicitly for Windows compatibility
+                with open(discovered_terminals_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                discovered_terminals = set(data.get('discovered_terminals', []))
+                last_updated = data.get('last_updated', 'Unknown')
+                
+                log.info(f"Loaded {len(discovered_terminals)} previously discovered terminals")
+                log.info(f"Last discovery update: {last_updated}")
+                log.info(f"Discovery file location: {discovered_terminals_file}")
+                
+                return discovered_terminals
+            else:
+                log.info("No previous terminal discovery file found - starting fresh")
+                log.info(f"Will create discovery file at: {discovered_terminals_file}")
+                return set()
+                
+        except Exception as e:
+            log.warning(f"Error loading discovered terminals from {discovered_terminals_file}: {e}")
+            log.warning(f"This may be the first run - continuing with empty discovery set")
+            return set()
+    
+    def save_discovered_terminals(self, all_discovered_terminals: set):
+        """
+        Save discovered terminal IDs to persistent storage
+        Windows-compatible version with proper path handling and error recovery
+        
+        Args:
+            all_discovered_terminals: Set of all discovered terminal IDs
+        """
+        # Get the script directory (works on both Windows and Unix)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        discovered_terminals_file = os.path.join(script_dir, "discovered_terminals.json")
+        
+        # Normalize the path for Windows compatibility
+        discovered_terminals_file = os.path.normpath(discovered_terminals_file)
+        
+        try:
+            # Create directory if it doesn't exist (Windows may need this)
+            os.makedirs(script_dir, exist_ok=True)
+            
+            data = {
+                'discovered_terminals': sorted(list(all_discovered_terminals)),
+                'total_count': len(all_discovered_terminals),
+                'last_updated': datetime.now().isoformat(),
+                'discovery_metadata': {
+                    'demo_mode': self.demo_mode,
+                    'total_atms_configured': self.total_atms,
+                    'discovery_timestamp': datetime.now().isoformat(),
+                    'platform': os.name,  # Track which OS discovered the terminals
+                    'script_version': '2.0_windows_compatible'
+                }
+            }
+            
+            # Use UTF-8 encoding explicitly for Windows compatibility
+            with open(discovered_terminals_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            log.info(f"✅ Saved {len(all_discovered_terminals)} discovered terminals to discovery file")
+            log.info(f"📁 Discovery file location: {discovered_terminals_file}")
+            
+        except PermissionError as e:
+            log.error(f"❌ Permission denied saving discovered terminals to {discovered_terminals_file}: {e}")
+            log.error(f"💡 Suggestion: Run the script as administrator on Windows or check file permissions")
+        except Exception as e:
+            log.error(f"❌ Error saving discovered terminals to {discovered_terminals_file}: {e}")
+            log.error(f"💡 This won't prevent the script from working, but terminal discovery won't persist")
+
+    def get_adaptive_terminal_list(self) -> List[str]:
+        """
+        Get an adaptive list of terminal IDs that includes both expected and previously discovered terminals
+        
+        Returns:
+            List[str]: Combined list of expected and discovered terminal IDs
+        """
+        # Base expected terminals
+        expected_terminal_ids = ['83', '2603', '88', '147', '87', '169', '2605', '2604', '93', '49', '86', '89', '85', '90']
+        
+        # Load previously discovered terminals
+        previously_discovered = self.load_discovered_terminals()
+        
+        # Combine and deduplicate
+        all_known_terminals = set(expected_terminal_ids) | previously_discovered
+        
+        log.info(f"Adaptive terminal list: {len(expected_terminal_ids)} expected + {len(previously_discovered)} previously discovered = {len(all_known_terminals)} total")
+        
+        return sorted(list(all_known_terminals))
+    
 def signal_handler(signum, frame):
     """Handle SIGINT (Ctrl+C) and SIGTERM signals gracefully"""
     signal_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"

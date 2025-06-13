@@ -1,0 +1,17 @@
+{
+  "discovered_terminals": [
+    "147",
+    "169",
+    "83",
+    "88"
+  ],
+  "total_count": 4,
+  "last_updated": "2025-06-13T17:38:39.189909",
+  "discovery_metadata": {
+    "demo_mode": true,
+    "total_atms_configured": 14,
+    "discovery_timestamp": "2025-06-13T17:38:39.189914",
+    "platform": "posix",
+    "script_version": "2.0_windows_compatible"
+  }
+}
