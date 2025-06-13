@@ -112,7 +112,7 @@ SUPPORTED_STATES = {
 }
 
 # Parameter values for terminal status retrieval
-PARAMETER_VALUES = ["WOUNDED", "HARD", "CASH", "UNAVAILABLE", "AVAILABLE", "WARNING", "ZOMBIE"]
+PARAMETER_VALUES = ["WOUNDED", "HARD", "CASH", "UNAVAILABLE", "AVAILABLE", "WARNING", "ZOMBIE", "OUT_OF_SERVICE"]
 
 
 class CombinedATMRetriever:
@@ -505,7 +505,8 @@ class CombinedATMRetriever:
                 'HARD': [],  # No terminals (mapped to WOUNDED)
                 'CASH': [],  # No terminals (mapped to WOUNDED)
                 'ZOMBIE': [],  # No terminals
-                'UNAVAILABLE': []  # No terminals (mapped to OUT_OF_SERVICE)
+                'UNAVAILABLE': [],  # No terminals (mapped to OUT_OF_SERVICE)
+                'OUT_OF_SERVICE': []  # No terminals (for consistency with terminal status summary)
             }
             
             # Get terminal IDs for this status
