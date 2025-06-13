@@ -570,7 +570,7 @@ def save_to_json(processed_data: List[Dict[str, Any]], filename: Optional[str] =
         json_record['date_creation'] = json_record['date_creation'].isoformat()
         json_data.append(json_record)
     
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         json.dump({
             "retrieval_timestamp": current_time.isoformat(),
             "total_regions": len(json_data),

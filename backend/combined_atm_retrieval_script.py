@@ -46,7 +46,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(funcName)s:%(lineno)d]: %(message)s",
     handlers=[
-        logging.FileHandler("combined_atm_retrieval.log"),
+        logging.FileHandler("combined_atm_retrieval.log", encoding='utf-8'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -1280,6 +1280,11 @@ class CombinedATMRetriever:
         Returns:
             bool: True if successful, False otherwise
         """
+        # Prevent demo mode data from being saved to database
+        if self.demo_mode:
+            log.info("Demo mode active - skipping database save (demo data will not be saved)")
+            return True  # Return True to indicate operation completed as expected
+        
         if not DB_AVAILABLE or db_connector is None:
             log.warning("Database not available - skipping database save")
             return False
@@ -2352,7 +2357,7 @@ def save_to_json(all_data: Dict[str, Any], filename: Optional[str] = None) -> st
             if 'date_creation' in record and hasattr(record['date_creation'], 'isoformat'):
                 record['date_creation'] = record['date_creation'].isoformat()
     
-    with open(full_path, 'w') as f:
+    with open(full_path, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, indent=2, ensure_ascii=False)
     
     log.info(f"All data saved to JSON file: {full_path}")

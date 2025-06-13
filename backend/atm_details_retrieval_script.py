@@ -1052,7 +1052,7 @@ def save_to_json(all_atm_data, filename=None):
         "atm_data": json_data
     }
     
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, indent=2, default=str)
     
     logging.info(f"Data saved to JSON file: {filename}")
@@ -1146,7 +1146,7 @@ def save_atm_list_to_json(atm_data, output_path=None):
         timestamp = datetime.now(dili_tz).strftime("%Y%m%d_%H%M%S")
         output_path = f"atm_details_{timestamp}.json"
     try:
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(
                 {"atm_data": serializable_data, 
                  "timestamp": datetime.now(pytz.timezone('Asia/Dili')).isoformat(),
