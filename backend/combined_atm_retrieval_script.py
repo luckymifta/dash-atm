@@ -27,7 +27,7 @@ import logging
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple, Any
 import argparse
 import pytz
@@ -170,7 +170,7 @@ class CombinedATMRetriever:
             Tuple of (regional_data, terminal_details_data) with OUT_OF_SERVICE status
         """
         log.warning("Generating OUT_OF_SERVICE data due to connection failure")
-        current_time = datetime.now(self.dili_tz)
+        current_time = datetime.now(pytz.UTC)  # Use UTC time for database storage
         
         # Generate regional data with OUT_OF_SERVICE status for TL-DL region only
         regional_data = []
@@ -1043,7 +1043,7 @@ class CombinedATMRetriever:
         log.info(f"Found {len(all_terminals)} terminals to process for details")
         
         all_terminal_details = []
-        current_retrieval_time = datetime.now(self.dili_tz)  # Current time for retrievedDate
+        current_retrieval_time = datetime.now(pytz.UTC)  # Use UTC time to match API data format
         
         for terminal in tqdm(all_terminals, desc="Fetching terminal details", unit="terminal"):
             terminal_id = terminal.get('terminalId')
@@ -1550,14 +1550,15 @@ class CombinedATMRetriever:
                         retrieved_date_str = detail['retrievedDate']
                         if isinstance(retrieved_date_str, str):
                             # Try to parse the date string format: "2025-05-30 17:55:04"
+                            # The retrievedDate from the API is in UTC, so treat it as UTC
                             retrieved_date = datetime.strptime(retrieved_date_str, '%Y-%m-%d %H:%M:%S')
-                            retrieved_date = retrieved_date.replace(tzinfo=self.dili_tz)  # Treat as Dili time
+                            retrieved_date = retrieved_date.replace(tzinfo=timezone.utc)  # Treat as UTC time
                     except (ValueError, TypeError) as e:
                         log.warning(f"Could not parse retrievedDate '{detail.get('retrievedDate')}': {e}")
-                        retrieved_date = datetime.now(self.dili_tz)  # Use Dili time for fallback
+                        retrieved_date = datetime.now(timezone.utc)  # Use UTC time for fallback
                 
                 if not retrieved_date:
-                    retrieved_date = datetime.now(self.dili_tz)  # Use Dili timezone for database storage
+                    retrieved_date = datetime.now(timezone.utc)  # Use UTC timezone for database storage
                 
                 # Prepare JSONB data
                 raw_terminal_data = {
