@@ -13,7 +13,8 @@ import {
   User,
   Shield,
   FileText,
-  TrendingUp
+  TrendingUp,
+  ClipboardList
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +33,11 @@ const menuItems = [
     name: 'ATM Information',
     href: '/atm-information',
     icon: Landmark,
+  },
+  {
+    name: 'Fault History Report',
+    href: '/fault-history',
+    icon: ClipboardList,
   },
   {
     name: 'Predictive Analytics',

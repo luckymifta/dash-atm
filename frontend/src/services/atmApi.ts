@@ -260,6 +260,56 @@ interface RefreshJobRequest {
   use_new_tables?: boolean;
 }
 
+// Fault History Report Interfaces
+interface FaultDurationData {
+  fault_state: string;
+  terminal_id: string;
+  start_time: string;
+  end_time?: string;
+  duration_minutes?: number;
+  fault_description?: string;
+  fault_type?: string;
+  component_type?: string;
+  terminal_name?: string;
+  location?: string;
+}
+
+interface FaultDurationSummary {
+  total_faults: number;
+  avg_duration_minutes: number;
+  max_duration_minutes: number;
+  min_duration_minutes: number;
+  faults_resolved: number;
+  faults_ongoing: number;
+}
+
+interface FaultHistoryReportResponse {
+  fault_duration_data: FaultDurationData[];
+  summary_by_state: Record<string, FaultDurationSummary>;
+  overall_summary: FaultDurationSummary;
+  date_range: {
+    start_date: string;
+    end_date: string;
+  };
+  terminal_count: number;
+  chart_data: {
+    duration_by_state: Array<{
+      state: string;
+      avg_duration_hours: number;
+      total_faults: number;
+      resolution_rate: number;
+    }>;
+    timeline_data: Array<{
+      terminal_id: string;
+      fault_state: string;
+      start_time: string;
+      duration_hours?: number;
+      resolved: boolean;
+    }>;
+    colors: Record<string, string>;
+  };
+}
+
 class ATMApiService {
   private baseUrl: string;
 
@@ -412,6 +462,26 @@ class ATMApiService {
     
     return this.fetchApi<RefreshJobResponse[]>(`/v1/atm/refresh?${params}`);
   }
+
+  // Fault History Report Methods
+  async getFaultHistoryReport(
+    startDate: string,
+    endDate: string,
+    terminalIds?: string,
+    includeOngoing: boolean = true
+  ): Promise<FaultHistoryReportResponse> {
+    const params = new URLSearchParams({
+      start_date: startDate,
+      end_date: endDate,
+      include_ongoing: includeOngoing.toString()
+    });
+    
+    if (terminalIds) {
+      params.append('terminal_ids', terminalIds);
+    }
+    
+    return this.fetchApi<FaultHistoryReportResponse>(`/v1/atm/fault-history-report?${params}`);
+  }
 }
 
 // Create a singleton instance
@@ -438,4 +508,7 @@ export type {
   RefreshJobStatus,
   RefreshJobResponse,
   RefreshJobRequest,
+  FaultDurationData,
+  FaultDurationSummary,
+  FaultHistoryReportResponse
 };
