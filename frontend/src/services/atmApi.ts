@@ -272,6 +272,7 @@ interface FaultDurationData {
   component_type?: string;
   terminal_name?: string;
   location?: string;
+  agent_error_description?: string;
 }
 
 interface FaultDurationSummary {

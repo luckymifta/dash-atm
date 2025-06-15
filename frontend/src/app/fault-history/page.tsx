@@ -125,7 +125,7 @@ const FaultHistoryReport = () => {
     if (!reportData) return;
 
     const csvData = [
-      ['Terminal ID', 'Terminal Name', 'Location', 'Fault State', 'Start Time', 'End Time', 'Duration (Hours)', 'Fault Description', 'Fault Type', 'Component Type', 'Resolved'],
+      ['Terminal ID', 'Terminal Name', 'Location', 'Fault State', 'Start Time', 'End Time', 'Duration (Hours)', 'Error Description', 'Fault Type', 'Component Type', 'Resolved'],
       ...reportData.fault_duration_data.map(fault => [
         fault.terminal_id,
         fault.terminal_name || '',
@@ -134,7 +134,7 @@ const FaultHistoryReport = () => {
         fault.start_time,
         fault.end_time || 'Ongoing',
         fault.duration_minutes ? (fault.duration_minutes / 60).toFixed(2) : 'N/A',
-        fault.fault_description || '',
+        fault.agent_error_description || fault.fault_description || 'No description available',
         fault.fault_type || '',
         fault.component_type || '',
         fault.end_time ? 'Yes' : 'No'
@@ -503,7 +503,7 @@ const FaultHistoryReport = () => {
                     <th className="px-4 py-3 text-center font-medium text-gray-700">Start Time</th>
                     <th className="px-4 py-3 text-center font-medium text-gray-700">End Time</th>
                     <th className="px-4 py-3 text-center font-medium text-gray-700">Duration</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-700">Description</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-700">Error Description</th>
                     <th className="px-4 py-3 text-center font-medium text-gray-700">Status</th>
                   </tr>
                 </thead>
@@ -539,10 +539,16 @@ const FaultHistoryReport = () => {
                         }) : 'Ongoing'}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {fault.duration_minutes ? formatDuration(fault.duration_minutes) : 'N/A'}
+                        {fault.duration_minutes ? formatDuration(fault.duration_minutes) : 
+                         fault.end_time ? 'N/A' : 'Ongoing'}
                       </td>
                       <td className="px-4 py-3 text-gray-600">
-                        {fault.fault_description || 'No description'}
+                        <div 
+                          className="max-w-xs truncate cursor-help" 
+                          title={fault.agent_error_description || fault.fault_description || 'No description available'}
+                        >
+                          {fault.agent_error_description || fault.fault_description || 'No description available'}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {fault.end_time ? (

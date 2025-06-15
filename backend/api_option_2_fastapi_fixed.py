@@ -276,6 +276,7 @@ class FaultDurationData(BaseModel):
     component_type: Optional[str] = Field(None, description="Component affected")
     terminal_name: Optional[str] = Field(None, description="ATM terminal name")
     location: Optional[str] = Field(None, description="ATM location")
+    agent_error_description: Optional[str] = Field(None, description="Detailed agent error description")
 
 class FaultDurationSummary(BaseModel):
     total_faults: int = Field(..., description="Total number of fault incidents")
@@ -2382,18 +2383,21 @@ async def get_fault_history_report(
                 retrieved_date as fault_start,
                 next_time as fault_end,
                 CASE 
-                    WHEN next_status = 'AVAILABLE' THEN 
+                    WHEN next_status = 'AVAILABLE' OR next_status = 'ONLINE' THEN 
                         EXTRACT(EPOCH FROM (next_time - retrieved_date))/60
+                    WHEN next_time IS NULL AND $2 > retrieved_date THEN
+                        -- For ongoing faults, calculate duration up to end date
+                        EXTRACT(EPOCH FROM ($2 - retrieved_date))/60
                     ELSE NULL
                 END as duration_minutes,
                 fault_data,
                 CASE 
-                    WHEN next_status = 'AVAILABLE' THEN true
+                    WHEN next_status = 'AVAILABLE' OR next_status = 'ONLINE' THEN true
                     ELSE false
                 END as resolved
             FROM status_changes
             WHERE fetched_status IN ('WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE')
-            AND (prev_status IS NULL OR prev_status = 'AVAILABLE' OR prev_status != fetched_status)
+            AND (prev_status IS NULL OR prev_status = 'AVAILABLE' OR prev_status = 'ONLINE' OR prev_status != fetched_status)
         )
         SELECT 
             fp.terminal_id,
@@ -2403,9 +2407,10 @@ async def get_fault_history_report(
             fp.fault_end,
             fp.duration_minutes,
             fp.resolved,
-            COALESCE(fp.fault_data->>'fault_description', 'No description') as fault_description,
+            COALESCE(fp.fault_data->>'agentErrorDescription', fp.fault_data->>'fault_description', 'No description') as fault_description,
             COALESCE(fp.fault_data->>'fault_type', 'Unknown') as fault_type,
-            COALESCE(fp.fault_data->>'component_type', 'Unknown') as component_type
+            COALESCE(fp.fault_data->>'component_type', 'Unknown') as component_type,
+            fp.fault_data->>'agentErrorDescription' as agent_error_description
         FROM fault_periods fp
         ORDER BY fp.terminal_id, fp.fault_start
         """
@@ -2437,7 +2442,8 @@ async def get_fault_history_report(
                 fault_type=row['fault_type'],
                 component_type=row['component_type'],
                 terminal_name=f"ATM {row['terminal_id']}",
-                location=row['location']
+                location=row['location'],
+                agent_error_description=row.get('agent_error_description')
             )
             fault_duration_data.append(fault_data)
             
