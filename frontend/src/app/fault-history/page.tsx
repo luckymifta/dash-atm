@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Calendar, Download, Filter, Clock, AlertTriangle, Monitor, CheckCircle, XCircle } from 'lucide-react';
-import { atmApiService, FaultHistoryReportResponse, ATMListItem } from '@/services/atmApi';
+import { atmApiService, FaultHistoryReportResponse, ATMListItem, FaultDurationData } from '@/services/atmApi';
+import DashboardLayout from '@/components/DashboardLayout';
 
 // Chart imports
 import {
@@ -120,25 +121,31 @@ const FaultHistoryReport = () => {
     }
   };
 
-  // Export to CSV
+  // Export to CSV with enhanced duration information
   const exportToCSV = () => {
     if (!reportData) return;
 
     const csvData = [
-      ['Terminal ID', 'Terminal Name', 'Location', 'Fault State', 'Start Time', 'End Time', 'Duration (Hours)', 'Error Description', 'Fault Type', 'Component Type', 'Resolved'],
-      ...reportData.fault_duration_data.map(fault => [
-        fault.terminal_id,
-        fault.terminal_name || '',
-        fault.location || '',
-        fault.fault_state,
-        fault.start_time,
-        fault.end_time || 'Ongoing',
-        fault.duration_minutes ? (fault.duration_minutes / 60).toFixed(2) : 'N/A',
-        fault.agent_error_description || fault.fault_description || 'No description available',
-        fault.fault_type || '',
-        fault.component_type || '',
-        fault.end_time ? 'Yes' : 'No'
-      ])
+      ['Terminal ID', 'Terminal Name', 'Location', 'Fault State', 'Start Time', 'End Time', 'Duration (Formatted)', 'Duration (Minutes)', 'Error Description', 'Fault Type', 'Component Type', 'Resolution Status'],
+      ...reportData.fault_duration_data.map(fault => {
+        const durationDisplay = getDurationDisplay(fault);
+        const resolutionStatus = getResolutionStatus(fault);
+        
+        return [
+          fault.terminal_id,
+          fault.terminal_name || '',
+          fault.location || '',
+          fault.fault_state,
+          fault.start_time,
+          fault.end_time || 'Ongoing',
+          durationDisplay.text,
+          fault.duration_minutes ? fault.duration_minutes.toFixed(2) : 'N/A',
+          fault.agent_error_description || fault.fault_description || 'No description available',
+          fault.fault_type || '',
+          fault.component_type || '',
+          resolutionStatus.text
+        ];
+      })
     ];
 
     const csvContent = csvData.map(row => 
@@ -156,23 +163,80 @@ const FaultHistoryReport = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // Format duration for display
-  const formatDuration = (minutes: number): string => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hours > 0) {
-      return `${hours}h ${mins}m`;
+  // Enhanced format duration for display with better precision
+  const formatDuration = (minutes: number | null | undefined): string => {
+    if (minutes === null || minutes === undefined) {
+      return 'N/A';
     }
-    return `${mins}m`;
+    
+    const totalMinutes = Math.round(minutes);
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      if (remainingHours > 0) {
+        return `${days}d ${remainingHours}h ${mins}m`;
+      }
+      return `${days}d ${mins}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    } else {
+      return `${mins}m`;
+    }
+  };
+
+  // Get duration display with enhanced logic
+  const getDurationDisplay = (fault: FaultDurationData): { text: string; className: string } => {
+    // If there's a duration from backend, use it (this is from our enhanced logic)
+    if (fault.duration_minutes !== null && fault.duration_minutes !== undefined) {
+      return {
+        text: formatDuration(fault.duration_minutes),
+        className: fault.end_time ? 'text-green-600 font-medium' : 'text-blue-600 font-medium'
+      };
+    }
+    
+    // If no duration but has end_time, it means the fault was resolved but duration calculation failed
+    if (fault.end_time) {
+      return {
+        text: 'Resolved*',
+        className: 'text-green-600 font-medium'
+      };
+    }
+    
+    // Ongoing fault without duration (still in progress)
+    return {
+      text: 'Ongoing',
+      className: 'text-orange-600 font-medium'
+    };
+  };
+
+  // Get resolution status with enhanced logic
+  const getResolutionStatus = (fault: FaultDurationData): { text: string; icon: string; className: string } => {
+    if (fault.end_time) {
+      return {
+        text: 'Resolved',
+        icon: '✓',
+        className: 'text-green-600 font-medium'
+      };
+    } else {
+      return {
+        text: 'Ongoing',
+        icon: '⚠',
+        className: 'text-red-600 font-medium'
+      };
+    }
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="p-6 max-w-7xl mx-auto">
+    <DashboardLayout>
+      <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Fault History Report</h1>
           <p className="text-gray-600">
-            Analyze ATM fault durations and patterns to understand how long ATMs stay in fault states before returning to AVAILABLE
+            Analyze ATM fault durations and patterns to understand complete fault cycles from when ATMs enter fault states until they return to AVAILABLE.
+            This enhanced analysis tracks actual fault resolution times, not just status change intervals.
           </p>
         </div>
 
@@ -333,7 +397,11 @@ const FaultHistoryReport = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Avg Duration</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-2xl font-bold text-gray-900" title={
+                    reportData.overall_summary.avg_duration_minutes ? 
+                      `Exact: ${reportData.overall_summary.avg_duration_minutes.toFixed(2)} minutes` : 
+                      'No duration data available'
+                  }>
                     {formatDuration(reportData.overall_summary.avg_duration_minutes)}
                   </p>
                 </div>
@@ -468,9 +536,21 @@ const FaultHistoryReport = () => {
                           {state}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center">{summary.total_faults}</td>
-                      <td className="px-4 py-3 text-center">{formatDuration(summary.avg_duration_minutes)}</td>
-                      <td className="px-4 py-3 text-center">{formatDuration(summary.max_duration_minutes)}</td>
+                      <td className="px-4 py-3 text-center text-black font-medium">{summary.total_faults}</td>
+                      <td className="px-4 py-3 text-center text-black font-medium" title={
+                        summary.avg_duration_minutes ? 
+                          `Exact: ${summary.avg_duration_minutes.toFixed(2)} minutes` : 
+                          'No duration data'
+                      }>
+                        {formatDuration(summary.avg_duration_minutes)}
+                      </td>
+                      <td className="px-4 py-3 text-center text-black font-medium" title={
+                        summary.max_duration_minutes ? 
+                          `Exact: ${summary.max_duration_minutes.toFixed(2)} minutes` : 
+                          'No duration data'
+                      }>
+                        {formatDuration(summary.max_duration_minutes)}
+                      </td>
                       <td className="px-4 py-3 text-center text-green-600 font-medium">{summary.faults_resolved}</td>
                       <td className="px-4 py-3 text-center text-red-600 font-medium">{summary.faults_ongoing}</td>
                     </tr>
@@ -493,6 +573,19 @@ const FaultHistoryReport = () => {
               </button>
             </div>
             
+            {/* Enhanced Duration Display Legend */}
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <h4 className="text-sm font-semibold text-blue-900 mb-2">📊 Enhanced Fault Duration Analysis</h4>
+              <div className="text-sm text-blue-800 space-y-1">
+                <p><strong>Fault Cycles:</strong> Tracks complete cycles from when ATM enters fault state (WARNING, WOUNDED, ZOMBIE, OUT_OF_SERVICE) until it returns to AVAILABLE.</p>
+                <p><strong>Duration Calculation:</strong> 
+                  <span className="text-green-600 ml-2">● Resolved faults</span> show total time from fault start to when ATM returned to AVAILABLE. 
+                  <span className="text-blue-600 ml-2">● Ongoing faults</span> show elapsed time since fault started.
+                </p>
+                <p><strong>Precision:</strong> Hover over durations for exact minutes. Durations include days for long-running faults (e.g., &quot;2d 5h 30m&quot;).</p>
+              </div>
+            </div>
+            
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -510,7 +603,7 @@ const FaultHistoryReport = () => {
                 <tbody>
                   {reportData.fault_duration_data.map((fault, index) => (
                     <tr key={index} className="border-t border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{fault.terminal_id}</td>
+                      <td className="px-4 py-3 font-medium text-black">{fault.terminal_id}</td>
                       <td className="px-4 py-3 text-gray-600">{fault.location}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -539,8 +632,18 @@ const FaultHistoryReport = () => {
                         }) : 'Ongoing'}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {fault.duration_minutes ? formatDuration(fault.duration_minutes) : 
-                         fault.end_time ? 'N/A' : 'Ongoing'}
+                        {(() => {
+                          const durationDisplay = getDurationDisplay(fault);
+                          return (
+                            <span className={durationDisplay.className} title={
+                              fault.duration_minutes ? 
+                                `Exact duration: ${fault.duration_minutes.toFixed(2)} minutes` : 
+                                undefined
+                            }>
+                              {durationDisplay.text}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         <div 
@@ -551,11 +654,14 @@ const FaultHistoryReport = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {fault.end_time ? (
-                          <span className="text-green-600 font-medium">✓ Resolved</span>
-                        ) : (
-                          <span className="text-red-600 font-medium">⚠ Ongoing</span>
-                        )}
+                        {(() => {
+                          const resolutionStatus = getResolutionStatus(fault);
+                          return (
+                            <span className={resolutionStatus.className}>
+                              {resolutionStatus.icon} {resolutionStatus.text}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}
@@ -566,7 +672,7 @@ const FaultHistoryReport = () => {
         </>
       )}
       </div>
-    </div>
+    </DashboardLayout>
   );
 };
 

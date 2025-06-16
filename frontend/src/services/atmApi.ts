@@ -266,7 +266,7 @@ interface FaultDurationData {
   terminal_id: string;
   start_time: string;
   end_time?: string;
-  duration_minutes?: number;
+  duration_minutes?: number; // Now supports decimal values
   fault_description?: string;
   fault_type?: string;
   component_type?: string;

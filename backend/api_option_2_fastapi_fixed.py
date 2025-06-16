@@ -270,7 +270,7 @@ class FaultDurationData(BaseModel):
     terminal_id: str = Field(..., description="ATM terminal ID")
     start_time: datetime = Field(..., description="When ATM entered fault state")
     end_time: Optional[datetime] = Field(None, description="When ATM returned to AVAILABLE (if it did)")
-    duration_minutes: Optional[int] = Field(None, description="Duration in fault state in minutes")
+    duration_minutes: Optional[float] = Field(None, description="Duration in fault state in minutes (decimal precision)")
     fault_description: Optional[str] = Field(None, description="Description of the fault")
     fault_type: Optional[str] = Field(None, description="Type of fault (HARDWARE, SOFTWARE, etc.)")
     component_type: Optional[str] = Field(None, description="Component affected")
@@ -2358,9 +2358,9 @@ async def get_fault_history_report(
                 placeholders = ",".join([f"${i+3}" for i in range(len(terminal_list))])
                 terminal_filter = f"AND td.terminal_id IN ({placeholders})"
         
-        # Query to find fault state transitions
+        # Enhanced fault cycle analysis query - tracks complete fault cycles
         fault_analysis_query = f"""
-        WITH status_changes AS (
+        WITH status_transitions AS (
             SELECT 
                 terminal_id,
                 location,
@@ -2369,50 +2369,75 @@ async def get_fault_history_report(
                 LAG(fetched_status) OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as prev_status,
                 LEAD(fetched_status) OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as next_status,
                 LEAD(retrieved_date) OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as next_time,
-                fault_data
+                fault_data,
+                ROW_NUMBER() OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as row_num
             FROM terminal_details td
             WHERE retrieved_date BETWEEN $1 AND $2
             {terminal_filter}
             ORDER BY terminal_id, retrieved_date
         ),
-        fault_periods AS (
+        fault_cycle_starts AS (
+            -- Find all entries where ATM enters fault state from AVAILABLE/ONLINE
             SELECT 
                 terminal_id,
                 location,
                 fetched_status as fault_state,
                 retrieved_date as fault_start,
-                next_time as fault_end,
-                CASE 
-                    WHEN next_status = 'AVAILABLE' OR next_status = 'ONLINE' THEN 
-                        EXTRACT(EPOCH FROM (next_time - retrieved_date))/60
-                    WHEN next_time IS NULL AND $2 > retrieved_date THEN
-                        -- For ongoing faults, calculate duration up to end date
-                        EXTRACT(EPOCH FROM ($2 - retrieved_date))/60
-                    ELSE NULL
-                END as duration_minutes,
-                fault_data,
-                CASE 
-                    WHEN next_status = 'AVAILABLE' OR next_status = 'ONLINE' THEN true
-                    ELSE false
-                END as resolved
-            FROM status_changes
+                fault_data
+            FROM status_transitions
             WHERE fetched_status IN ('WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE')
-            AND (prev_status IS NULL OR prev_status = 'AVAILABLE' OR prev_status = 'ONLINE' OR prev_status != fetched_status)
+            AND (prev_status IS NULL OR prev_status IN ('AVAILABLE', 'ONLINE'))
+        ),
+        fault_cycle_ends AS (
+            -- Find all entries where ATM returns to AVAILABLE/ONLINE from fault state
+            SELECT 
+                terminal_id,
+                prev_status as end_fault_state,
+                retrieved_date as fault_end
+            FROM status_transitions
+            WHERE fetched_status IN ('AVAILABLE', 'ONLINE')
+            AND prev_status IN ('WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE')
+        ),
+        complete_fault_cycles AS (
+            SELECT 
+                fcs.terminal_id,
+                fcs.location,
+                fcs.fault_state,
+                fcs.fault_start,
+                fcs.fault_data,
+                -- Find the next resolution for this fault cycle
+                (SELECT MIN(fce.fault_end) 
+                 FROM fault_cycle_ends fce 
+                 WHERE fce.terminal_id = fcs.terminal_id 
+                 AND fce.fault_end > fcs.fault_start) as fault_end
+            FROM fault_cycle_starts fcs
         )
         SELECT 
-            fp.terminal_id,
-            fp.location,
-            fp.fault_state,
-            fp.fault_start,
-            fp.fault_end,
-            fp.duration_minutes,
-            fp.resolved,
-            COALESCE(fp.fault_data->>'agentErrorDescription', fp.fault_data->>'fault_description', 'No description') as fault_description,
-            COALESCE(fp.fault_data->>'fault_type', 'Unknown') as fault_type,
-            COALESCE(fp.fault_data->>'component_type', 'Unknown') as component_type,
-            fp.fault_data->>'agentErrorDescription' as agent_error_description
-        FROM fault_periods fp
-        ORDER BY fp.terminal_id, fp.fault_start
+            cfc.terminal_id,
+            cfc.location,
+            cfc.fault_state,
+            cfc.fault_start,
+            cfc.fault_end,
+            -- Calculate actual duration from fault start to resolution (or ongoing)
+            CASE 
+                WHEN cfc.fault_end IS NOT NULL THEN 
+                    EXTRACT(EPOCH FROM (cfc.fault_end - cfc.fault_start))/60
+                WHEN cfc.fault_end IS NULL AND $2 > cfc.fault_start THEN
+                    EXTRACT(EPOCH FROM ($2 - cfc.fault_start))/60
+                ELSE NULL
+            END as duration_minutes,
+            -- Mark as resolved only when fault_end exists (returned to AVAILABLE)
+            CASE 
+                WHEN cfc.fault_end IS NOT NULL THEN true
+                ELSE false
+            END as resolved,
+            COALESCE(cfc.fault_data->>'agentErrorDescription', cfc.fault_data->>'fault_description', 'No description') as fault_description,
+            COALESCE(cfc.fault_data->>'fault_type', 'Unknown') as fault_type,
+            COALESCE(cfc.fault_data->>'component_type', 'Unknown') as component_type,
+            cfc.fault_data->>'agentErrorDescription' as agent_error_description
+        FROM complete_fault_cycles cfc
+        {"WHERE 1=1" if include_ongoing else "WHERE cfc.fault_end IS NOT NULL"}
+        ORDER BY cfc.terminal_id, cfc.fault_start
         """
         
         # Execute query with parameters
@@ -2437,7 +2462,7 @@ async def get_fault_history_report(
                 terminal_id=row['terminal_id'],
                 start_time=start_time,
                 end_time=end_time,
-                duration_minutes=int(row['duration_minutes']) if row['duration_minutes'] else None,
+                duration_minutes=float(row['duration_minutes']) if row['duration_minutes'] else None,
                 fault_description=row['fault_description'],
                 fault_type=row['fault_type'],
                 component_type=row['component_type'],
@@ -2460,6 +2485,9 @@ async def get_fault_history_report(
             summary_by_state[state]['total_faults'] += 1
             if row['duration_minutes']:
                 summary_by_state[state]['durations'].append(row['duration_minutes'])
+                
+            # Use the resolved flag from the database query
+            if row['resolved']:
                 summary_by_state[state]['resolved'] += 1
             else:
                 summary_by_state[state]['ongoing'] += 1
