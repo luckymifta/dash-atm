@@ -187,12 +187,35 @@ class CombinedATMRetriever:
     def generate_out_of_service_data(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Generate OUT_OF_SERVICE data for all ATMs when connection fails
+        Uses real terminal IDs and actual locations from database
         
         Returns:
             Tuple of (regional_data, terminal_details_data) with OUT_OF_SERVICE status
         """
         log.warning("Generating OUT_OF_SERVICE data due to connection failure")
         current_time = datetime.now(pytz.UTC)  # Use UTC time for database storage
+        
+        # Real terminal IDs and their actual locations from database
+        REAL_TERMINAL_DATA = {
+            "83": "RUA NICOLAU DOS REIS LOBATO",
+            "2603": "BRI - CENTRAL OFFICE COLMERA 02", 
+            "87": "PERTAMINA INT. BEBORRA RUA. DOS MARTIRES DA PATRIA",
+            "88": "AERO PORTO NICOLAU LOBATU,DILI",
+            "2604": "BRI - SUB-BRANCH AUDIAN",
+            "85": "ESTRADA DE BALIDE, BALIDE",
+            "147": "CENTRO SUPERMERCADO PANTAI KELAPA",
+            "49": "AV. ALM. AMERICO TOMAS",
+            "86": "FATU AHI", 
+            "2605": "BRI - SUB BRANCH HUDILARAN",
+            "169": "BRI SUB-BRANCH FATUHADA",
+            "90": "NOVO TURISMO, BIDAU LECIDERE",
+            "89": "UNTL, RUA JACINTO CANDIDO",
+            "93": "TIMOR PLAZA COMORO"
+        }
+        
+        # Verify we have all required terminals
+        total_real_terminals = len(REAL_TERMINAL_DATA)
+        log.info(f"Using {total_real_terminals} real ATM terminals with actual locations")
         
         # Generate regional data with OUT_OF_SERVICE status for TL-DL region only
         regional_data = []
@@ -206,9 +229,9 @@ class CombinedATMRetriever:
                 'count_warning': 0,
                 'count_zombie': 0,
                 'count_wounded': 0,
-                'count_out_of_service': self.total_atms,  # All ATMs marked as OUT_OF_SERVICE
+                'count_out_of_service': total_real_terminals,  # All real ATMs marked as OUT_OF_SERVICE
                 'date_creation': current_time,
-                'total_atms_in_region': self.total_atms,
+                'total_atms_in_region': total_real_terminals,
                 'percentage_available': 0.0,
                 'percentage_warning': 0.0,
                 'percentage_zombie': 0.0,
@@ -216,25 +239,21 @@ class CombinedATMRetriever:
                 'percentage_out_of_service': 1.0  # 100% OUT_OF_SERVICE
             }
             regional_data.append(record)
-            log.info(f"Generated OUT_OF_SERVICE regional data for {region_code}: all {self.total_atms} ATMs marked as OUT_OF_SERVICE")
+            log.info(f"Generated OUT_OF_SERVICE regional data for {region_code}: all {total_real_terminals} real ATMs marked as OUT_OF_SERVICE")
         
-        # Generate terminal details data with OUT_OF_SERVICE status
+        # Generate terminal details data with OUT_OF_SERVICE status using real terminal data
         terminal_details_data = []
-        for i in range(self.total_atms * len(regions)):  # Generate for all ATMs across all regions
-            terminal_id = str(80 + i)  # Start from 80 as seen in sample data
-            region_index = i // self.total_atms
-            region_code = regions[region_index] if region_index < len(regions) else regions[0]
-            
+        for terminal_id, actual_location in REAL_TERMINAL_DATA.items():
             terminal_detail = {
                 'unique_request_id': str(uuid.uuid4()),
                 'terminalId': terminal_id,
-                'location': f"Connection Lost - {region_code}",
+                'location': actual_location,  # Use real location from database
                 'issueStateName': 'OUT_OF_SERVICE',
                 'issueStateCode': 'OUT_OF_SERVICE',
-                'brand': 'Connection Failed',
+                'brand': 'CONNECTION_FAILED',  # Indicate this is due to connection failure
                 'model': 'N/A',
                 'serialNumber': f"CONN_FAIL_{terminal_id}",
-                'agentErrorDescription': 'Connection to monitoring system failed',
+                'agentErrorDescription': f'Connection to monitoring system failed - Terminal {terminal_id} at {actual_location}',
                 'externalFaultId': 'CONN_FAILURE',
                 'year': str(current_time.year),
                 'month': str(current_time.month).zfill(2),
@@ -243,11 +262,14 @@ class CombinedATMRetriever:
                 'details_status': 'CONNECTION_FAILED',
                 'retrievedDate': current_time.isoformat(),
                 'dateRequest': current_time.strftime("%d-%m-%Y %H:%M:%S"),
-                'region_code': region_code
+                'region_code': 'TL-DL'  # All terminals in TL-DL region
             }
             terminal_details_data.append(terminal_detail)
+            log.debug(f"Generated OUT_OF_SERVICE data for terminal {terminal_id} at {actual_location}")
         
-        log.info(f"Generated {len(terminal_details_data)} terminal details with OUT_OF_SERVICE status")
+        log.info(f"Generated {len(terminal_details_data)} terminal details with OUT_OF_SERVICE status using real terminal data")
+        log.info(f"Real terminals included: {', '.join(sorted(REAL_TERMINAL_DATA.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')))}")
+        return regional_data, terminal_details_data
         return regional_data, terminal_details_data
 
     def authenticate(self) -> bool:
