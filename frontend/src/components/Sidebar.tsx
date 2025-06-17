@@ -14,7 +14,8 @@ import {
   Shield,
   FileText,
   TrendingUp,
-  ClipboardList
+  ClipboardList,
+  BarChart3
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,6 +39,11 @@ const menuItems = [
     name: 'Fault History Report',
     href: '/fault-history',
     icon: ClipboardList,
+  },
+  {
+    name: 'ATM Status Report',
+    href: '/atm-status-report',
+    icon: BarChart3,
   },
   {
     name: 'Predictive Analytics',
