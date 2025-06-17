@@ -193,7 +193,7 @@ class CombinedATMRetriever:
             Tuple of (regional_data, terminal_details_data) with OUT_OF_SERVICE status
         """
         log.warning("Generating OUT_OF_SERVICE data due to connection failure")
-        current_time = datetime.now(pytz.UTC)  # Use UTC time for database storage
+        current_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency (same as normal operation)
         
         # Real terminal IDs and their actual locations from database
         REAL_TERMINAL_DATA = {
@@ -260,7 +260,7 @@ class CombinedATMRetriever:
                 'day': str(current_time.day).zfill(2),
                 'fetched_status': 'OUT_OF_SERVICE',
                 'details_status': 'CONNECTION_FAILED',
-                'retrievedDate': current_time.isoformat(),
+                'retrievedDate': current_time.strftime('%Y-%m-%d %H:%M:%S'),  # Use consistent format with normal operation
                 'dateRequest': current_time.strftime("%d-%m-%Y %H:%M:%S"),
                 'region_code': 'TL-DL'  # All terminals in TL-DL region
             }
@@ -1623,10 +1623,37 @@ class CombinedATMRetriever:
                     try:
                         retrieved_date_str = detail['retrievedDate']
                         if isinstance(retrieved_date_str, str):
-                            # Try to parse the date string format: "2025-05-30 17:55:04"
-                            # The retrievedDate from the API is already in Dili time format, keep it as Dili time
-                            retrieved_date = datetime.strptime(retrieved_date_str, '%Y-%m-%d %H:%M:%S')
-                            retrieved_date = self.dili_tz.localize(retrieved_date)  # Keep as Dili timezone
+                            # Try multiple datetime formats to handle both API and generated data
+                            formats_to_try = [
+                                '%Y-%m-%d %H:%M:%S',  # Original format: "2025-05-30 17:55:04"
+                                '%Y-%m-%dT%H:%M:%S.%fZ',  # ISO format with Z: "2025-06-17T02:13:18.640254Z"
+                                '%Y-%m-%dT%H:%M:%S.%f%z',  # ISO format with timezone: "2025-06-17T02:13:18.640254+00:00"
+                                '%Y-%m-%dT%H:%M:%S%z',  # ISO format without microseconds: "2025-06-17T02:13:18+00:00"
+                                '%Y-%m-%dT%H:%M:%S',  # ISO format simple: "2025-06-17T02:13:18"
+                            ]
+                            
+                            retrieved_date = None
+                            for fmt in formats_to_try:
+                                try:
+                                    if fmt.endswith('%z'):
+                                        # Parse with timezone info and convert to Dili time
+                                        retrieved_date = datetime.strptime(retrieved_date_str, fmt)
+                                        retrieved_date = retrieved_date.astimezone(self.dili_tz)
+                                    elif fmt.endswith('Z'):
+                                        # Handle UTC format with Z
+                                        retrieved_date = datetime.strptime(retrieved_date_str, fmt)
+                                        retrieved_date = pytz.UTC.localize(retrieved_date).astimezone(self.dili_tz)
+                                    else:
+                                        # Parse without timezone and assume Dili time
+                                        retrieved_date = datetime.strptime(retrieved_date_str, fmt)
+                                        retrieved_date = self.dili_tz.localize(retrieved_date)
+                                    break  # Successfully parsed, exit loop
+                                except ValueError:
+                                    continue  # Try next format
+                                    
+                            if not retrieved_date:
+                                raise ValueError(f"Could not parse datetime format: {retrieved_date_str}")
+                                
                     except (ValueError, TypeError) as e:
                         log.warning(f"Could not parse retrievedDate '{detail.get('retrievedDate')}': {e}")
                         retrieved_date = datetime.now(self.dili_tz)  # Use Dili time for fallback
