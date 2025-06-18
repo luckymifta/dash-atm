@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   LayoutDashboard, 
   Landmark, 
   Users,
@@ -15,7 +16,8 @@ import {
   FileText,
   TrendingUp,
   ClipboardList,
-  BarChart3
+  BarChart3,
+  FolderOpen
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,7 +26,22 @@ interface SidebarProps {
   className?: string;
 }
 
-const menuItems = [
+interface MenuSubItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+}
+
+interface MenuItem {
+  name: string;
+  href?: string;
+  icon: React.ElementType;
+  roles?: string[];
+  isDropdown?: boolean;
+  subItems?: MenuSubItem[];
+}
+
+const menuItems: MenuItem[] = [
   {
     name: 'Dashboard',
     href: '/dashboard',
@@ -36,14 +53,21 @@ const menuItems = [
     icon: Landmark,
   },
   {
-    name: 'Fault History Report',
-    href: '/fault-history',
-    icon: ClipboardList,
-  },
-  {
-    name: 'ATM Status Report',
-    href: '/atm-status-report',
-    icon: BarChart3,
+    name: 'Reports',
+    icon: FolderOpen,
+    isDropdown: true,
+    subItems: [
+      {
+        name: 'Fault History Report',
+        href: '/fault-history',
+        icon: ClipboardList,
+      },
+      {
+        name: 'ATM Status Report',
+        href: '/atm-status-report',
+        icon: BarChart3,
+      },
+    ],
   },
   {
     name: 'Predictive Analytics',
@@ -66,12 +90,36 @@ const menuItems = [
 export default function Sidebar({ className }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
+  };
+
+  const toggleDropdown = (itemName: string) => {
+    if (isCollapsed) return; // Don't allow dropdown when collapsed
+    
+    setOpenDropdowns(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemName)) {
+        newSet.delete(itemName);
+      } else {
+        newSet.add(itemName);
+      }
+      return newSet;
+    });
+  };
+
+  const isDropdownOpen = (itemName: string) => {
+    return openDropdowns.has(itemName) && !isCollapsed;
+  };
+
+  // Check if any sub-item is active for dropdown highlighting
+  const isDropdownActive = (subItems: MenuSubItem[] = []) => {
+    return subItems.some(subItem => pathname === subItem.href);
   };
 
   const handleLogout = async () => {
@@ -158,29 +206,95 @@ export default function Sidebar({ className }: SidebarProps) {
           {menuItems.filter(item => 
             !item.roles || (user && item.roles.includes(user.role))
           ).map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
+            if (item.isDropdown && item.subItems) {
+              // Dropdown menu item
+              const isActive = isDropdownActive(item.subItems);
+              const isOpen = isDropdownOpen(item.name);
+              const Icon = item.icon;
 
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={clsx(
-                    'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white',
-                    isCollapsed ? 'justify-center' : 'justify-start'
+              return (
+                <li key={item.name}>
+                  <button
+                    onClick={() => toggleDropdown(item.name)}
+                    className={clsx(
+                      'flex items-center w-full rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-blue-600 text-white'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                      isCollapsed ? 'justify-center' : 'justify-between'
+                    )}
+                    title={isCollapsed ? item.name : undefined}
+                  >
+                    <div className="flex items-center">
+                      <Icon className="h-5 w-5 flex-shrink-0" />
+                      {!isCollapsed && (
+                        <span className="ml-3 truncate">{item.name}</span>
+                      )}
+                    </div>
+                    {!isCollapsed && (
+                      <ChevronDown 
+                        className={clsx(
+                          'h-4 w-4 transition-transform',
+                          isOpen ? 'rotate-180' : ''
+                        )}
+                      />
+                    )}
+                  </button>
+                  
+                  {/* Dropdown submenu */}
+                  {isOpen && !isCollapsed && (
+                    <ul className="mt-2 ml-6 space-y-1">
+                      {item.subItems.map((subItem) => {
+                        const isSubActive = pathname === subItem.href;
+                        const SubIcon = subItem.icon;
+                        
+                        return (
+                          <li key={subItem.href}>
+                            <Link
+                              href={subItem.href}
+                              className={clsx(
+                                'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                isSubActive
+                                  ? 'bg-blue-500 text-white'
+                                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                              )}
+                            >
+                              <SubIcon className="h-4 w-4 flex-shrink-0" />
+                              <span className="ml-3 truncate">{subItem.name}</span>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
-                  title={isCollapsed ? item.name : undefined}
-                >
-                  <Icon className="h-5 w-5 flex-shrink-0" />
-                  {!isCollapsed && (
-                    <span className="ml-3 truncate">{item.name}</span>
-                  )}
-                </Link>
-              </li>
-            );
+                </li>
+              );
+            } else {
+              // Regular menu item
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+
+              return (
+                <li key={item.href || item.name}>
+                  <Link
+                    href={item.href!}
+                    className={clsx(
+                      'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-blue-600 text-white'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                      isCollapsed ? 'justify-center' : 'justify-start'
+                    )}
+                    title={isCollapsed ? item.name : undefined}
+                  >
+                    <Icon className="h-5 w-5 flex-shrink-0" />
+                    {!isCollapsed && (
+                      <span className="ml-3 truncate">{item.name}</span>
+                    )}
+                  </Link>
+                </li>
+              );
+            }
           })}
         </ul>
       </nav>
