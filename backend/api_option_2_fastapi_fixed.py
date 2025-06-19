@@ -517,6 +517,29 @@ async def get_atm_summary(
         
         rows = await conn.fetch(query)
         
+        # Enhanced fallback logic: if no data found for 24h, try longer periods
+        actual_hours_used = 24
+        if not rows:
+            # Try progressively longer periods
+            fallback_periods = [48, 72, 168, 336, 720]  # 2 days, 3 days, 1 week, 2 weeks, 1 month
+            
+            logger.info(f"No data found for 24h period in summary, trying longer fallback periods: {fallback_periods}")
+            
+            for fallback_hours in fallback_periods:
+                fallback_query = """
+                    SELECT DISTINCT ON (terminal_id)
+                        terminal_id, fetched_status, retrieved_date
+                    FROM terminal_details
+                    WHERE retrieved_date >= NOW() - INTERVAL '%s hours'
+                    ORDER BY terminal_id, retrieved_date DESC
+                """ % fallback_hours
+                
+                rows = await conn.fetch(fallback_query)
+                if rows:
+                    actual_hours_used = fallback_hours
+                    logger.info(f"Found {len(rows)} ATM records using {fallback_hours}h fallback period")
+                    break
+        
         if not rows:
             raise HTTPException(status_code=404, detail="No ATM data found")
         
@@ -763,11 +786,11 @@ async def get_regional_trends(
         fallback_message = None
         
         if not rows:
-            # Define fallback periods to try in descending order
-            fallback_periods = [168, 72, 24, 12, 6, 1]  # 7 days, 3 days, 1 day, 12h, 6h, 1h
-            fallback_periods = [period for period in fallback_periods if period < hours]
+            # Define fallback periods to try in ascending order (longer periods first)
+            fallback_periods = [48, 72, 168, 336, 720]  # 2 days, 3 days, 1 week, 2 weeks, 1 month
+            fallback_periods = [period for period in fallback_periods if period > hours]
             
-            logger.info(f"No data found for {hours}h period, trying fallback periods: {fallback_periods}")
+            logger.info(f"No data found for {hours}h period, trying longer fallback periods: {fallback_periods}")
             
             for fallback_hours in fallback_periods:
                 if table_type == TableTypeEnum.LEGACY:
@@ -954,22 +977,79 @@ async def get_latest_data(
                 terminal_query = """
                     SELECT DISTINCT ON (terminal_id)
                         terminal_id, location, issue_state_name, serial_number,
-                        fetched_status, retrieved_date, fault_data, metadata
+                        fetched_status, retrieved_date, fault_data, metadata,
+                        raw_terminal_data
                     FROM terminal_details
                     WHERE retrieved_date >= NOW() - INTERVAL '24 hours'
                     ORDER BY terminal_id, retrieved_date DESC
                 """
                 terminal_rows = await conn.fetch(terminal_query)
                 
+                # Enhanced fallback logic: if no terminal data found for 24h, try longer periods
+                actual_hours_used = 24
+                if not terminal_rows:
+                    # Try progressively longer periods
+                    fallback_periods = [48, 72, 168, 336, 720]  # 2 days, 3 days, 1 week, 2 weeks, 1 month
+                    
+                    logger.info(f"No terminal details found for 24h period, trying longer fallback periods: {fallback_periods}")
+                    
+                    for fallback_hours in fallback_periods:
+                        fallback_query = """
+                            SELECT DISTINCT ON (terminal_id)
+                                terminal_id, location, issue_state_name, serial_number,
+                                fetched_status, retrieved_date, fault_data, metadata,
+                                raw_terminal_data
+                            FROM terminal_details
+                            WHERE retrieved_date >= NOW() - INTERVAL '%s hours'
+                            ORDER BY terminal_id, retrieved_date DESC
+                        """ % fallback_hours
+                        
+                        terminal_rows = await conn.fetch(fallback_query)
+                        if terminal_rows:
+                            actual_hours_used = fallback_hours
+                            logger.info(f"Found {len(terminal_rows)} terminal records using {fallback_hours}h fallback period")
+                            break
+                
                 terminal_data = []
                 for row in terminal_rows:
+                    # Parse raw_terminal_data to extract additional fields
+                    additional_fields = {}
+                    if row['raw_terminal_data']:
+                        try:
+                            if isinstance(row['raw_terminal_data'], str):
+                                raw_data = json.loads(row['raw_terminal_data'])
+                            else:
+                                raw_data = row['raw_terminal_data']
+                            
+                            # Extract additional fields from raw data
+                            if isinstance(raw_data, dict):
+                                additional_fields.update({
+                                    'external_id': raw_data.get('externalId', row['terminal_id']),
+                                    'bank': raw_data.get('bank', 'Unknown'),
+                                    'brand': raw_data.get('brand'),
+                                    'model': raw_data.get('model'),
+                                    'city': raw_data.get('city'),
+                                    'region': raw_data.get('region'),
+                                })
+                        except (json.JSONDecodeError, AttributeError):
+                            logger.warning(f"Failed to parse raw_terminal_data for terminal {row['terminal_id']}")
+                    
                     terminal_data.append({
-                        'terminal_id': row['terminal_id'],
+                        'terminal_id': str(row['terminal_id']),
+                        'external_id': additional_fields.get('external_id', str(row['terminal_id'])),
                         'location': row['location'],
+                        'location_str': row['location'],  # Frontend expects location_str
+                        'city': additional_fields.get('city'),
+                        'region': additional_fields.get('region'),
+                        'bank': additional_fields.get('bank'),
+                        'brand': additional_fields.get('brand'),
+                        'model': additional_fields.get('model'),
                         'issue_state_name': row['issue_state_name'],
-                        'serial_number': row['serial_number'],
+                        'status': row['fetched_status'],
                         'fetched_status': row['fetched_status'],
+                        'serial_number': row['serial_number'],
                         'retrieved_date': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None,
+                        'last_updated': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None,
                         'fault_data': row['fault_data'],
                         'metadata': row['metadata']
                     })
