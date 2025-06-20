@@ -28,6 +28,8 @@ import logging
 import sys
 import time
 import uuid
+import subprocess
+import platform
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple, Any
 import argparse
@@ -162,26 +164,74 @@ class CombinedATMRetriever:
     
     def check_connectivity(self) -> bool:
         """
-        Check connectivity to the target server 172.31.1.46
+        Check connectivity to the target server 172.31.1.46 using ping
         
         Returns:
-            bool: True if server is reachable, False otherwise
+            bool: True if server is reachable via ping, False otherwise
         """
         if self.demo_mode:
             log.info("Demo mode: Skipping connectivity check")
             return True
         
+        target_host = "172.31.1.46"
+        log.info(f"Testing connectivity to {target_host} using ping...")
+        
         try:
-            log.info("Testing connectivity to 172.31.1.46...")
+            # Determine ping command based on operating system
+            if platform.system().lower() == "windows":
+                # Windows ping command
+                ping_cmd = ["ping", "-n", "3", target_host]
+            else:
+                # Unix/Linux/macOS ping command
+                ping_cmd = ["ping", "-c", "3", target_host]
+            
+            # Execute ping command
+            result = subprocess.run(
+                ping_cmd,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                log.info(f"✅ Ping successful to {target_host}")
+                log.debug(f"Ping output: {result.stdout.strip()}")
+                return True
+            else:
+                log.error(f"❌ Ping failed to {target_host}")
+                log.debug(f"Ping error: {result.stderr.strip()}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            log.error(f"❌ Ping timeout to {target_host} (10 seconds)")
+            return False
+        except FileNotFoundError:
+            log.error("❌ Ping command not found on system - falling back to HTTP check")
+            # Fallback to original HTTP-based connectivity check
+            return self._fallback_http_connectivity_check()
+        except Exception as e:
+            log.error(f"❌ Ping command failed: {str(e)} - falling back to HTTP check")
+            # Fallback to original HTTP-based connectivity check
+            return self._fallback_http_connectivity_check()
+    
+    def _fallback_http_connectivity_check(self) -> bool:
+        """
+        Fallback HTTP-based connectivity check (original implementation)
+        
+        Returns:
+            bool: True if server is reachable via HTTP, False otherwise
+        """
+        try:
+            log.info("Testing connectivity to 172.31.1.46 via HTTP...")
             response = requests.head(
                 "https://172.31.1.46/",
                 timeout=10,
                 verify=False
             )
-            log.info(f"Connectivity test successful: HTTP {response.status_code}")
+            log.info(f"HTTP connectivity test successful: HTTP {response.status_code}")
             return True
         except requests.exceptions.RequestException as e:
-            log.error(f"Connectivity test failed: {str(e)}")
+            log.error(f"HTTP connectivity test failed: {str(e)}")
             return False
     
     def generate_out_of_service_data(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -270,6 +320,91 @@ class CombinedATMRetriever:
         log.info(f"Generated {len(terminal_details_data)} terminal details with OUT_OF_SERVICE status using real terminal data")
         log.info(f"Real terminals included: {', '.join(sorted(REAL_TERMINAL_DATA.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')))}")
         return regional_data, terminal_details_data
+
+    def generate_auth_failure_data(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Generate OUT_OF_SERVICE data for all ATMs when authentication fails but ping succeeds
+        Uses real terminal IDs and actual locations with special identifiers for auth failure
+        
+        Returns:
+            Tuple of (regional_data, terminal_details_data) with AUTH_FAILURE status
+        """
+        log.warning("Generating AUTH_FAILURE data - connection available but authentication failed")
+        current_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency
+        
+        # Real terminal IDs and their actual locations from database
+        REAL_TERMINAL_DATA = {
+            "83": "RUA NICOLAU DOS REIS LOBATO",
+            "2603": "BRI - CENTRAL OFFICE COLMERA 02", 
+            "87": "PERTAMINA INT. BEBORRA RUA. DOS MARTIRES DA PATRIA",
+            "88": "AERO PORTO NICOLAU LOBATU,DILI",
+            "2604": "BRI - SUB-BRANCH AUDIAN",
+            "85": "ESTRADA DE BALIDE, BALIDE",
+            "147": "CENTRO SUPERMERCADO PANTAI KELAPA",
+            "49": "AV. ALM. AMERICO TOMAS",
+            "86": "FATU AHI", 
+            "2605": "BRI - SUB BRANCH HUDILARAN",
+            "169": "BRI SUB-BRANCH FATUHADA",
+            "90": "NOVO TURISMO, BIDAU LECIDERE",
+            "89": "UNTL, RUA JACINTO CANDIDO",
+            "93": "TIMOR PLAZA COMORO"
+        }
+        
+        total_real_terminals = len(REAL_TERMINAL_DATA)
+        log.info(f"Generating AUTH_FAILURE data for {total_real_terminals} real ATM terminals")
+        
+        # Generate regional data with OUT_OF_SERVICE status for TL-DL region only
+        regional_data = []
+        regions = ["TL-DL"]  # Only TL-DL region to avoid connection failures
+        
+        for region_code in regions:
+            record = {
+                'unique_request_id': str(uuid.uuid4()),
+                'region_code': region_code,
+                'count_available': 0,
+                'count_warning': 0,
+                'count_zombie': 0,
+                'count_wounded': 0,
+                'count_out_of_service': total_real_terminals,  # All real ATMs marked as OUT_OF_SERVICE
+                'date_creation': current_time,
+                'total_atms_in_region': total_real_terminals,
+                'percentage_available': 0.0,
+                'percentage_warning': 0.0,
+                'percentage_zombie': 0.0,
+                'percentage_wounded': 0.0,
+                'percentage_out_of_service': 1.0  # 100% OUT_OF_SERVICE
+            }
+            regional_data.append(record)
+            log.info(f"Generated AUTH_FAILURE regional data for {region_code}: all {total_real_terminals} real ATMs marked as OUT_OF_SERVICE")
+        
+        # Generate terminal details data with AUTH_FAILURE status using real terminal data
+        terminal_details_data = []
+        for terminal_id, actual_location in REAL_TERMINAL_DATA.items():
+            terminal_detail = {
+                'unique_request_id': str(uuid.uuid4()),
+                'terminalId': terminal_id,
+                'location': actual_location,  # Use real location from database
+                'issueStateName': 'OUT_OF_SERVICE',
+                'issueStateCode': 'OUT_OF_SERVICE',
+                'brand': 'AUTH_FAILED',  # Indicate this is due to authentication failure
+                'model': 'LOGIN_ERROR',
+                'serialNumber': f"AUTH_FAIL_{terminal_id}",
+                'agentErrorDescription': f'Authentication failed - Unable to login to monitoring system for Terminal {terminal_id} at {actual_location}',
+                'externalFaultId': 'AUTH_FAILURE',
+                'year': str(current_time.year),
+                'month': str(current_time.month).zfill(2),
+                'day': str(current_time.day).zfill(2),
+                'fetched_status': 'OUT_OF_SERVICE',
+                'details_status': 'AUTH_FAILED',
+                'retrievedDate': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'dateRequest': current_time.strftime("%d-%m-%Y %H:%M:%S"),
+                'region_code': 'TL-DL'  # All terminals in TL-DL region
+            }
+            terminal_details_data.append(terminal_detail)
+            log.debug(f"Generated AUTH_FAILURE data for terminal {terminal_id} at {actual_location}")
+        
+        log.info(f"Generated {len(terminal_details_data)} terminal details with AUTH_FAILURE status")
+        log.info(f"Auth failure terminals: {', '.join(sorted(REAL_TERMINAL_DATA.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')))}")
         return regional_data, terminal_details_data
 
     def authenticate(self) -> bool:
@@ -966,14 +1101,14 @@ class CombinedATMRetriever:
             "failover_mode": False
         }
         
-        # Step 1: Check connectivity to 172.31.1.46 (skip for demo mode)
+        # Step 1: Check connectivity to 172.31.1.46 using ping (skip for demo mode)
         if not self.demo_mode:
             connectivity_ok = self.check_connectivity()
             if not connectivity_ok:
-                log.error("Failed to connect to 172.31.1.46 - Activating failover mode")
-                log.info("Generating OUT_OF_SERVICE status for all ATMs due to connection failure")
+                log.error("❌ Ping failed to 172.31.1.46 - Activating connection failure mode")
+                log.info("Generating OUT_OF_SERVICE status for all ATMs due to network connectivity failure")
                 
-                # Generate OUT_OF_SERVICE data for all ATMs
+                # Generate OUT_OF_SERVICE data for all ATMs due to connection failure
                 regional_data, terminal_details_data = self.generate_out_of_service_data()
                 
                 all_data["regional_data"] = regional_data
@@ -988,26 +1123,29 @@ class CombinedATMRetriever:
                     "total_terminals": total_terminals,
                     "total_terminal_details": total_terminals,
                     "failover_activated": True,
-                    "connection_status": "FAILED"
+                    "connection_status": "PING_FAILED",
+                    "failure_type": "NETWORK_CONNECTIVITY_FAILURE"
                 }
                 
                 # Save to database if requested
                 if save_to_db and DB_AVAILABLE:
                     success = self.save_data_to_database(all_data, use_new_tables)
                     if success:
-                        log.info("OUT_OF_SERVICE failover data saved to database successfully")
+                        log.info("Connection failure data saved to database successfully")
                     else:
-                        log.error("Failed to save OUT_OF_SERVICE failover data to database")
+                        log.error("Failed to save connection failure data to database")
                 
-                log.warning("Failover mode completed - all ATMs marked as OUT_OF_SERVICE")
+                log.warning("Connection failure mode completed - all ATMs marked as OUT_OF_SERVICE due to ping failure")
                 return True, all_data  # Return success=True as failover worked as intended
+            else:
+                log.info("✅ Ping successful to 172.31.1.46 - proceeding with authentication")
         
         # Step 2: Normal operation - Authenticate
         if not self.authenticate():
-            log.error("Authentication failed after connectivity was confirmed - Activating failover mode")
+            log.error("Authentication failed after connectivity was confirmed - Activating authentication failure mode")
             
-            # Generate OUT_OF_SERVICE data for authentication failure
-            regional_data, terminal_details_data = self.generate_out_of_service_data()
+            # Generate AUTH_FAILURE data for authentication failure (ping succeeded but login failed)
+            regional_data, terminal_details_data = self.generate_auth_failure_data()
             
             all_data["regional_data"] = regional_data
             all_data["terminal_details_data"] = terminal_details_data
@@ -1021,17 +1159,19 @@ class CombinedATMRetriever:
                 "total_terminals": total_terminals,
                 "total_terminal_details": total_terminals,
                 "failover_activated": True,
-                "connection_status": "AUTH_FAILED"
+                "connection_status": "AUTH_FAILED",
+                "failure_type": "AUTHENTICATION_FAILURE"
             }
             
             # Save to database if requested
             if save_to_db and DB_AVAILABLE:
                 success = self.save_data_to_database(all_data, use_new_tables)
                 if success:
-                    log.info("OUT_OF_SERVICE failover data saved to database successfully")
+                    log.info("AUTH_FAILURE data saved to database successfully")
                 else:
-                    log.error("Failed to save OUT_OF_SERVICE failover data to database")
+                    log.error("Failed to save AUTH_FAILURE data to database")
             
+            log.warning("Authentication failure mode completed - all ATMs marked as OUT_OF_SERVICE due to login failure")
             return True, all_data  # Return success=True as failover worked as intended
         
         # Step 3: Fetch regional data
