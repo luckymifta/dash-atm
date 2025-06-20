@@ -76,6 +76,26 @@ export default function PredictiveAnalyticsPage() {
     setSelectedTerminalId(null);
   };
 
+  // Helper function to filter out invalid location records
+  const getValidATMRecords = () => {
+    if (!summaryData?.summary) return [];
+    
+    const validRecords = summaryData.summary.filter((atm) => {
+      // Filter out records with invalid or missing location information
+      return atm.location && 
+             atm.location.trim() !== "" && 
+             atm.location !== "Connection Lost TL DL" &&
+             atm.location !== "Connection Lost - TL-DL";
+    });
+
+    // Remove duplicates based on terminal_id to prevent React key conflicts
+    const uniqueRecords = validRecords.filter((atm, index, self) => 
+      index === self.findIndex(t => t.terminal_id === atm.terminal_id)
+    );
+
+    return uniqueRecords;
+  };
+
   useEffect(() => {
     fetchPredictiveData();
   }, [fetchPredictiveData]);
@@ -90,7 +110,7 @@ export default function PredictiveAnalyticsPage() {
     })) : [];
 
   const healthScoreDistribution = summaryData && summaryData.summary ?
-    summaryData.summary.reduce((acc, atm) => {
+    getValidATMRecords().reduce((acc, atm) => {
       if (atm.overall_health_score !== undefined) {
         const bucket = Math.floor(atm.overall_health_score / 10) * 10;
         const key = `${bucket}-${bucket + 9}%`;
@@ -310,7 +330,7 @@ export default function PredictiveAnalyticsPage() {
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900">ATM Risk Assessment</h3>
             <p className="text-sm text-gray-600 mt-1">
-              Showing {summaryData?.summary.length || 0} ATMs sorted by risk level
+              Showing {getValidATMRecords().length} ATMs sorted by risk level (excluding invalid locations)
             </p>
           </div>
           
@@ -345,8 +365,8 @@ export default function PredictiveAnalyticsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {summaryData?.summary.map((atm) => (
-                  <tr key={atm.terminal_id} className="hover:bg-gray-50">
+                {getValidATMRecords().map((atm, index) => (
+                  <tr key={`${atm.terminal_id}-${index}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {atm.terminal_id}
                     </td>
