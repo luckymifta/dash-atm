@@ -1025,7 +1025,7 @@ async def get_latest_data(
                             if isinstance(raw_data, dict):
                                 additional_fields.update({
                                     'external_id': raw_data.get('externalId', row['terminal_id']),
-                                    'bank': raw_data.get('bank', 'Unknown'),
+                                    'bank': raw_data.get('bank') if raw_data.get('bank') else None,  # Don't use 'Unknown' default
                                     'brand': raw_data.get('brand'),
                                     'model': raw_data.get('model'),
                                     'city': raw_data.get('city'),

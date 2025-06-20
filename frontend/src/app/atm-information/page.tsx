@@ -589,15 +589,18 @@ function ATMInformationContent() {
                           <div className="text-sm font-medium text-gray-900">
                             {terminal.terminal_id || 'N/A'}
                           </div>
-                          <div className="text-xs text-gray-500">
-                            {terminal.external_id || 'No External ID'}
-                          </div>
+                          {/* Only show external_id if it's different from terminal_id */}
+                          {terminal.external_id && terminal.external_id !== terminal.terminal_id && (
+                            <div className="text-xs text-gray-500">
+                              Ext: {terminal.external_id}
+                            </div>
+                          )}
                         </div>
                         {getStatusBadge(terminal.status, terminal.issue_state_name)}
                       </div>
 
-                      {/* Bank */}
-                      {terminal.bank && (
+                      {/* Bank - Only show if it's not empty/null */}
+                      {terminal.bank && terminal.bank !== 'Unknown' && (
                         <div className="text-xs text-blue-600 font-medium">
                           {terminal.bank}
                         </div>
@@ -667,10 +670,14 @@ function ATMInformationContent() {
                               <div className="text-sm font-medium text-gray-900">
                                 {terminal.terminal_id || 'N/A'}
                               </div>
-                              <div className="text-sm text-gray-500">
-                                {terminal.external_id || 'No External ID'}
-                              </div>
-                              {terminal.bank && (
+                              {/* Only show external_id if it's different from terminal_id */}
+                              {terminal.external_id && terminal.external_id !== terminal.terminal_id && (
+                                <div className="text-sm text-gray-500">
+                                  Ext: {terminal.external_id}
+                                </div>
+                              )}
+                              {/* Only show bank if it's not "Unknown" */}
+                              {terminal.bank && terminal.bank !== 'Unknown' && (
                                 <div className="text-xs text-blue-600 font-medium">
                                   {terminal.bank}
                                 </div>
