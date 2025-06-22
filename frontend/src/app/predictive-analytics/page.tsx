@@ -82,16 +82,52 @@ export default function PredictiveAnalyticsPage() {
     
     const validRecords = summaryData.summary.filter((atm) => {
       // Filter out records with invalid or missing location information
-      return atm.location && 
-             atm.location.trim() !== "" && 
-             atm.location !== "Connection Lost TL DL" &&
-             atm.location !== "Connection Lost - TL-DL";
+      if (!atm.location || atm.location.trim() === "") return false;
+      
+      // Filter out connection failure records (be robust with variations)
+      const location = atm.location.toLowerCase().trim();
+      const invalidPatterns = [
+        'connection lost',
+        'tl-dl',
+        'tl dl',
+        'auth_failed',
+        'auth failed',
+        'network_failed',
+        'network failed',
+        'timeout',
+        'connection_error',
+        'connection error'
+      ];
+      
+      return !invalidPatterns.some(pattern => location.includes(pattern));
     });
 
-    // Remove duplicates based on terminal_id to prevent React key conflicts
-    const uniqueRecords = validRecords.filter((atm, index, self) => 
-      index === self.findIndex(t => t.terminal_id === atm.terminal_id)
-    );
+    // Remove duplicates based on terminal_id, but prioritize records with better data
+    const uniqueRecords = validRecords.reduce((acc, atm) => {
+      const existingIndex = acc.findIndex(existing => existing.terminal_id === atm.terminal_id);
+      
+      if (existingIndex === -1) {
+        // No duplicate found, add the record
+        acc.push(atm);
+      } else {
+        // Duplicate found, keep the one with better data quality
+        const existing = acc[existingIndex];
+        
+        // Prioritize records with:
+        // 1. Higher health score
+        // 2. More complete location (longer, more descriptive)
+        // 3. Better risk level data
+        const currentScore = (atm.overall_health_score || 0) + (atm.location?.length || 0);
+        const existingScore = (existing.overall_health_score || 0) + (existing.location?.length || 0);
+        
+        if (currentScore > existingScore) {
+          acc[existingIndex] = atm; // Replace with better record
+        }
+        // Otherwise keep the existing one
+      }
+      
+      return acc;
+    }, [] as typeof validRecords);
 
     return uniqueRecords;
   };
@@ -100,17 +136,26 @@ export default function PredictiveAnalyticsPage() {
     fetchPredictiveData();
   }, [fetchPredictiveData]);
 
-  // Prepare chart data
-  const riskDistributionData = summaryData && summaryData.fleet_statistics ? 
-    Object.entries(summaryData.fleet_statistics.risk_distribution).map(([risk, count]) => ({
-      name: risk,
-      value: count,
-      percentage: summaryData.fleet_statistics.total_atms_analyzed > 0 ? 
-        ((count / summaryData.fleet_statistics.total_atms_analyzed) * 100).toFixed(1) : '0'
-    })) : [];
+  // Calculate statistics from valid records only
+  const validRecords = getValidATMRecords();
+  
+  // Prepare chart data using valid records only
+  const riskDistributionData = validRecords.length > 0 ? 
+    validRecords.reduce((acc, atm) => {
+      const risk = atm.risk_level || 'UNKNOWN';
+      acc[risk] = (acc[risk] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>) : {};
 
-  const healthScoreDistribution = summaryData && summaryData.summary ?
-    getValidATMRecords().reduce((acc, atm) => {
+  const riskChartData = Object.entries(riskDistributionData).map(([risk, count]) => ({
+    name: risk,
+    value: count,
+    percentage: validRecords.length > 0 ? 
+      ((count / validRecords.length) * 100).toFixed(1) : '0'
+  }));
+
+  const healthScoreDistribution = validRecords.length > 0 ?
+    validRecords.reduce((acc, atm) => {
       if (atm.overall_health_score !== undefined) {
         const bucket = Math.floor(atm.overall_health_score / 10) * 10;
         const key = `${bucket}-${bucket + 9}%`;
@@ -118,6 +163,18 @@ export default function PredictiveAnalyticsPage() {
       }
       return acc;
     }, {} as Record<string, number>) : {};
+
+  // Calculate fleet statistics from valid records
+  const validFleetStats = {
+    total_atms_analyzed: validRecords.length,
+    average_health_score: validRecords.length > 0 ? 
+      validRecords.reduce((sum, atm) => sum + (atm.overall_health_score || 0), 0) / validRecords.length : 0,
+    average_risk_score: validRecords.length > 0 ? 
+      validRecords.reduce((sum, atm) => sum + (atm.risk_score || 0), 0) / validRecords.length : 0,
+    high_risk_count: validRecords.filter(atm => 
+      atm.risk_level === 'HIGH' || atm.risk_level === 'CRITICAL'
+    ).length
+  };
 
   const healthDistributionData = Object.entries(healthScoreDistribution).map(([range, count]) => ({
     range,
@@ -189,7 +246,7 @@ export default function PredictiveAnalyticsPage() {
     );
   }
 
-  const fleetStats = summaryData?.fleet_statistics;
+  const fleetStats = validFleetStats;
 
   return (
     <DashboardLayout>
@@ -271,7 +328,7 @@ export default function PredictiveAnalyticsPage() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">High Risk ATMs</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {((fleetStats?.risk_distribution?.HIGH || 0) + (fleetStats?.risk_distribution?.CRITICAL || 0))}
+                    {fleetStats?.high_risk_count || 0}
                   </p>
                 </div>
                 <AlertTriangle className="h-8 w-8 text-red-500" />
@@ -289,7 +346,7 @@ export default function PredictiveAnalyticsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={riskDistributionData}
+                    data={riskChartData}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
@@ -298,7 +355,7 @@ export default function PredictiveAnalyticsPage() {
                     fill="#8884d8"
                     dataKey="value"
                   >
-                    {riskDistributionData.map((entry, index) => (
+                    {riskChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={RISK_COLORS[entry.name as keyof typeof RISK_COLORS]} />
                     ))}
                   </Pie>
@@ -438,9 +495,9 @@ export default function PredictiveAnalyticsPage() {
                 Health scores are calculated based on component performance, fault frequency, and historical patterns. 
                 Maintenance recommendations are prioritized to help prevent downtime and optimize service availability.
               </p>
-              {fleetStats && (
+              {summaryData?.fleet_statistics?.analysis_timestamp && (
                 <p className="mt-2 text-xs text-blue-600">
-                  Last updated: {new Date(fleetStats.analysis_timestamp).toLocaleString()}
+                  Last updated: {new Date(summaryData.fleet_statistics.analysis_timestamp).toLocaleString()}
                 </p>
               )}
             </div>
