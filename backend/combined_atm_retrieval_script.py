@@ -30,6 +30,7 @@ import time
 import uuid
 import subprocess
 import platform
+from database_log_handler import DatabaseLogHandler, LogMetricsCollector
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple, Any
 import argparse
@@ -53,6 +54,11 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger("CombinedATMRetrieval")
+
+# Global variables for database logging
+db_log_handler = None
+log_metrics = LogMetricsCollector()
+execution_id = None
 
 # Global variables for continuous operation
 stop_flag = threading.Event()
@@ -120,16 +126,50 @@ PARAMETER_VALUES = ["WOUNDED", "HARD", "CASH", "UNAVAILABLE", "AVAILABLE", "WARN
 class CombinedATMRetriever:
     """Main class for handling combined ATM data retrieval (regional + terminal details)"""
     
-    def __init__(self, demo_mode: bool = False, total_atms: int = 14):
+    def __init__(self, demo_mode: bool = False, total_atms: int = 14, enable_db_logging: bool = True):
         """
         Initialize the retriever with Windows production environment optimizations
         
         Args:
             demo_mode: Whether to use demo mode (no actual network requests)
             total_atms: Total number of ATMs for percentage to count conversion
+            enable_db_logging: Whether to enable database logging for this execution
         """
+        global db_log_handler, log_metrics, execution_id
+        
         self.demo_mode = demo_mode
         self.total_atms = total_atms
+        
+        # Initialize database logging if enabled
+        if enable_db_logging:
+            execution_id = str(uuid.uuid4())
+            log_metrics.reset()
+            
+            # Try to initialize database logging
+            try:
+                if not demo_mode and DB_AVAILABLE and db_connector:
+                    db_log_handler = DatabaseLogHandler(db_connector, execution_id, demo_mode)
+                    log.addHandler(db_log_handler)
+                    log.info(f"✅ Database logging enabled for execution: {execution_id}")
+                else:
+                    log.info("Database logging disabled (demo mode or DB unavailable)")
+            except Exception as e:
+                log.warning(f"Failed to initialize database logging: {e}")
+                db_log_handler = None
+            execution_id = str(uuid.uuid4())
+            log_metrics.reset()
+            
+            # Try to initialize database logging
+            try:
+                if not demo_mode and DB_AVAILABLE and db_connector:
+                    db_log_handler = DatabaseLogHandler(db_connector, execution_id, demo_mode)
+                    log.addHandler(db_log_handler)
+                    log.info(f"✅ Database logging enabled for execution: {execution_id}")
+                else:
+                    log.info("Database logging disabled (demo mode or DB unavailable)")
+            except Exception as e:
+                log.warning(f"Failed to initialize database logging: {e}")
+                db_log_handler = None
         
         # Initialize session with Windows-compatible settings
         self.session = requests.Session()
@@ -151,6 +191,11 @@ class CombinedATMRetriever:
         self.dili_tz = pytz.timezone('Asia/Dili')  # UTC+9
         current_time = datetime.now(self.dili_tz)
         
+        # Set initial context for database logging
+        if db_log_handler:
+            db_log_handler.set_context(phase="INITIALIZATION")
+            db_log_handler.set_context(phase="INITIALIZATION")
+        
         # Log system information for Windows troubleshooting
         log.info(f"🚀 Initialized CombinedATMRetriever - Demo: {demo_mode}, Total ATMs: {total_atms}")
         log.info(f"🕒 Using Dili timezone (UTC+9) for timestamps: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
@@ -159,6 +204,10 @@ class CombinedATMRetriever:
         # Log current working directory for Windows debugging
         log.info(f"📁 Working directory: {os.getcwd()}")
         log.info(f"📄 Script location: {os.path.abspath(__file__)}")
+        
+        if enable_db_logging and execution_id:
+            log.info(f"🔗 Execution ID: {execution_id}")
+            log.info(f"🔗 Execution ID: {execution_id}")
     
     # Removed check_connectivity - authentication will catch connectivity issues
     
@@ -1003,7 +1052,7 @@ class CombinedATMRetriever:
             if region_code != "TL-DL":
                 log.info(f"Skipping region {region_code} - only processing TL-DL")
                 continue
-                
+            
             if not state_count:
                 log.warning(f"No state_count data found for region {region_code}")
                 continue
@@ -1088,8 +1137,19 @@ class CombinedATMRetriever:
         Returns:
             Tuple of (success: bool, all_data: Dict containing all retrieved data)
         """
+        global db_log_handler, log_metrics
+        
+        # Initialize execution tracking
+        start_time = datetime.now(self.dili_tz)
+        
+        # Set database logging context
+        if db_log_handler:
+            db_log_handler.set_context(phase="STARTING_RETRIEVAL")
+        
         log.info("=" * 80)
         log.info("STARTING COMBINED ATM DATA RETRIEVAL WITH FAILOVER CAPABILITY")
+        if execution_id:
+            log.info(f"Execution ID: {execution_id}")
         log.info("=" * 80)
         
         all_data = {
@@ -1102,6 +1162,9 @@ class CombinedATMRetriever:
         }
         
         # Step 1: Check connectivity to 172.31.1.46 using ping (skip for demo mode)
+        if db_log_handler:
+            db_log_handler.set_context(phase="CONNECTIVITY_CHECK")
+            
         if not self.demo_mode:
             connectivity_ok = self.check_connectivity()
             if not connectivity_ok:
@@ -1141,6 +1204,9 @@ class CombinedATMRetriever:
                 log.info("✅ Ping successful to 172.31.1.46 - proceeding with authentication")
         
         # Step 2: Normal operation - Authenticate
+        if db_log_handler:
+            db_log_handler.set_context(phase="AUTHENTICATION")
+            
         if not self.authenticate():
             log.error("Authentication failed after connectivity was confirmed - Activating authentication failure mode")
             
@@ -1428,6 +1494,28 @@ class CombinedATMRetriever:
         log.info("=" * 80)
         log.info("COMBINED ATM DATA RETRIEVAL COMPLETED SUCCESSFULLY")
         log.info("=" * 80)
+        
+        # Finalize database logging
+        if db_log_handler:
+            end_time = datetime.now(self.dili_tz)
+            log_metrics.finalize()
+            
+            # Prepare execution summary
+            execution_summary = log_metrics.get_summary()
+            execution_summary.update({
+                'demo_mode': self.demo_mode,
+                'total_atms': self.total_atms,
+                'success': True,
+                'failover_activated': all_data.get('failover_mode', False),
+                'failure_type': all_data.get('summary', {}).get('failure_type'),
+                'connection_status': all_data.get('summary', {}).get('connection_status', 'SUCCESS'),
+                'regional_records_processed': len(all_data.get('regional_data', [])),
+                'terminal_details_processed': len(all_data.get('terminal_details_data', []))
+            })
+            
+            # Save execution summary to database
+            db_log_handler.save_execution_summary(execution_summary)
+            log.info(f"📊 Execution summary saved to database for ID: {execution_id}")
         
         return True, all_data
     
@@ -2367,11 +2455,15 @@ def run_continuous_operation(args):
     
     log.info("[START] Starting continuous ATM data retrieval operation")
     log.info(f"[TIME] Start time: {execution_stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
-    log.info(f"[CONFIG] Configuration: Demo={args.demo}, Save-to-DB={args.save_to_db}, Use-New-Tables={args.use_new_tables}")
+    log.info(f"[CONFIG] Configuration: Demo={args.demo}, Save-to-DB={args.save_to_db}, Use-New-Tables={args.use_new_tables}, DB-Logging={getattr(args, 'enable_db_logging', False)}")
     log.info("[INFO] Running every 15 minutes. Press Ctrl+C for graceful shutdown.")
     
     # Create retriever instance
-    retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
+    retriever = CombinedATMRetriever(
+        demo_mode=args.demo, 
+        total_atms=args.total_atms,
+        enable_db_logging=getattr(args, 'enable_db_logging', False)
+    )
     cycle_number = 0
     success = False  # Initialize success variable
     
@@ -2567,6 +2659,8 @@ Examples:
   python combined_atm_retrieval_script.py --continuous              # Continuous mode (15-min intervals)
   python combined_atm_retrieval_script.py --continuous --save-to-db --use-new-tables
   python combined_atm_retrieval_script.py --demo --save-json --total-atms 20
+  python combined_atm_retrieval_script.py --enable-db-logging       # Enable database logging
+  python combined_atm_retrieval_script.py --continuous --total-atms 14 --save-to-db --use-new-tables --enable-db-logging
         """
     )
     
@@ -2582,6 +2676,8 @@ Examples:
                        help='Run continuously with 15-minute intervals (enhanced error handling)')
     parser.add_argument('--total-atms', type=int, default=14,
                        help='Total number of ATMs for percentage to count conversion (default: 14)')
+    parser.add_argument('--enable-db-logging', action='store_true',
+                       help='Enable database logging for execution tracking and analytics')
     parser.add_argument('--quiet', action='store_true',
                        help='Reduce logging output (errors and warnings only)')
     
@@ -2599,7 +2695,11 @@ Examples:
     
     # Single execution mode (original behavior)
     # Create retriever instance
-    retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
+    retriever = CombinedATMRetriever(
+        demo_mode=args.demo, 
+        total_atms=args.total_atms,
+        enable_db_logging=args.enable_db_logging
+    )
     
     try:
         # Execute the complete retrieval and processing flow
