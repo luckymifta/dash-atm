@@ -30,7 +30,6 @@ import time
 import uuid
 import subprocess
 import platform
-from database_log_handler import DatabaseLogHandler, LogMetricsCollector
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Tuple, Any
 import argparse
@@ -40,9 +39,6 @@ from tqdm import tqdm
 import signal
 import threading
 from collections import defaultdict, deque
-import concurrent.futures
-import asyncio
-from functools import wraps
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -58,11 +54,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("CombinedATMRetrieval")
 
-# Global variables for database logging
-db_log_handler = None
-log_metrics = LogMetricsCollector()
-execution_id = None
-
 # Global variables for continuous operation
 stop_flag = threading.Event()
 execution_stats = {
@@ -75,31 +66,20 @@ execution_stats = {
     'cycle_history': deque(maxlen=50)  # Keep last 50 cycle results
 }
 
-# Global variables for database connector - will be initialized on demand
-db_connector = None
-DB_AVAILABLE = False
-
-def initialize_database_connector():
-    """Initialize database connector only when needed"""
-    global db_connector, DB_AVAILABLE
-    
-    if DB_AVAILABLE:  # Already initialized
-        return
-    
-    # Try to import database connector if available
+# Try to import database connector if available
+try:
+    from db_connector_new import db_connector
+    DB_AVAILABLE = True
+    log.info("Database connector available")
+except ImportError:
     try:
-        from db_connector_new import db_connector
+        import db_connector
         DB_AVAILABLE = True
-        log.info("Database connector available")
+        log.info("Legacy database connector available")
     except ImportError:
-        try:
-            import db_connector
-            DB_AVAILABLE = True
-            log.info("Legacy database connector available")
-        except ImportError:
-            db_connector = None
-            DB_AVAILABLE = False
-            log.warning("Database connector not available - database operations will be skipped")
+        db_connector = None
+        DB_AVAILABLE = False
+        log.warning("Database connector not available - database operations will be skipped")
 
 # Configuration
 LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"
@@ -140,39 +120,16 @@ PARAMETER_VALUES = ["WOUNDED", "HARD", "CASH", "UNAVAILABLE", "AVAILABLE", "WARN
 class CombinedATMRetriever:
     """Main class for handling combined ATM data retrieval (regional + terminal details)"""
     
-    def __init__(self, demo_mode: bool = False, total_atms: int = 14, enable_db_logging: bool = True):
+    def __init__(self, demo_mode: bool = False, total_atms: int = 14):
         """
         Initialize the retriever with Windows production environment optimizations
         
         Args:
             demo_mode: Whether to use demo mode (no actual network requests)
             total_atms: Total number of ATMs for percentage to count conversion
-            enable_db_logging: Whether to enable database logging for this execution
         """
-        global db_log_handler, log_metrics, execution_id
-        
         self.demo_mode = demo_mode
         self.total_atms = total_atms
-        
-        # Initialize database logging if enabled
-        if enable_db_logging:
-            # Initialize database connector if needed
-            initialize_database_connector()
-            
-            execution_id = str(uuid.uuid4())
-            log_metrics.reset()
-            
-            # Try to initialize database logging
-            try:
-                if not demo_mode and DB_AVAILABLE and db_connector:
-                    db_log_handler = DatabaseLogHandler(db_connector, execution_id, demo_mode)
-                    log.addHandler(db_log_handler)
-                    log.info(f"✅ Database logging enabled for execution: {execution_id}")
-                else:
-                    log.info("Database logging disabled (demo mode or DB unavailable)")
-            except Exception as e:
-                log.warning(f"Failed to initialize database logging: {e}")
-                db_log_handler = None
         
         # Initialize session with Windows-compatible settings
         self.session = requests.Session()
@@ -186,18 +143,13 @@ class CombinedATMRetriever:
         ))
         
         # Note: Session-level timeout is not supported, will use per-request timeouts
-        self.default_timeout = (15, 30)  # Reduced from (30, 60) - (connection_timeout, read_timeout)
+        self.default_timeout = (30, 60)  # (connection_timeout, read_timeout)
         
         self.user_token = None
         
         # Log timezone info for clarity
         self.dili_tz = pytz.timezone('Asia/Dili')  # UTC+9
         current_time = datetime.now(self.dili_tz)
-        
-        # Set initial context for database logging
-        if db_log_handler:
-            db_log_handler.set_context(phase="INITIALIZATION")
-            db_log_handler.set_context(phase="INITIALIZATION")
         
         # Log system information for Windows troubleshooting
         log.info(f"🚀 Initialized CombinedATMRetriever - Demo: {demo_mode}, Total ATMs: {total_atms}")
@@ -207,10 +159,6 @@ class CombinedATMRetriever:
         # Log current working directory for Windows debugging
         log.info(f"📁 Working directory: {os.getcwd()}")
         log.info(f"📄 Script location: {os.path.abspath(__file__)}")
-        
-        if enable_db_logging and execution_id:
-            log.info(f"🔗 Execution ID: {execution_id}")
-            log.info(f"🔗 Execution ID: {execution_id}")
     
     # Removed check_connectivity - authentication will catch connectivity issues
     
@@ -858,14 +806,17 @@ class CombinedATMRetriever:
                 if retry_count >= max_retries:
                     log.error(f"All JSON parsing attempts failed for {param_value}. Skipping this parameter.")
                     return []
+                log.info(f"Retrying in 3 seconds...")
+                time.sleep(3)
+                continue
                 
         return terminals
     
     def fetch_terminal_details(self, terminal_id: str, issue_state_code: str) -> Optional[Dict[str, Any]]:
         """
-        Fetch detailed information for a specific terminal ID - optimized version
+        Fetch detailed information for a specific terminal ID
+        Extracted from atm_crawler_complete.py fetch_terminal_details function
         """
-        return self.fetch_terminal_details_optimized(terminal_id, issue_state_code)
         if self.demo_mode:
             log.info(f"DEMO MODE: Generating sample data for terminal {terminal_id}")
             
@@ -1052,7 +1003,7 @@ class CombinedATMRetriever:
             if region_code != "TL-DL":
                 log.info(f"Skipping region {region_code} - only processing TL-DL")
                 continue
-            
+                
             if not state_count:
                 log.warning(f"No state_count data found for region {region_code}")
                 continue
@@ -1137,19 +1088,8 @@ class CombinedATMRetriever:
         Returns:
             Tuple of (success: bool, all_data: Dict containing all retrieved data)
         """
-        global db_log_handler, log_metrics
-        
-        # Initialize execution tracking
-        start_time = datetime.now(self.dili_tz)
-        
-        # Set database logging context
-        if db_log_handler:
-            db_log_handler.set_context(phase="STARTING_RETRIEVAL")
-        
         log.info("=" * 80)
         log.info("STARTING COMBINED ATM DATA RETRIEVAL WITH FAILOVER CAPABILITY")
-        if execution_id:
-            log.info(f"Execution ID: {execution_id}")
         log.info("=" * 80)
         
         all_data = {
@@ -1162,9 +1102,6 @@ class CombinedATMRetriever:
         }
         
         # Step 1: Check connectivity to 172.31.1.46 using ping (skip for demo mode)
-        if db_log_handler:
-            db_log_handler.set_context(phase="CONNECTIVITY_CHECK")
-            
         if not self.demo_mode:
             connectivity_ok = self.check_connectivity()
             if not connectivity_ok:
@@ -1204,9 +1141,6 @@ class CombinedATMRetriever:
                 log.info("✅ Ping successful to 172.31.1.46 - proceeding with authentication")
         
         # Step 2: Normal operation - Authenticate
-        if db_log_handler:
-            db_log_handler.set_context(phase="AUTHENTICATION")
-            
         if not self.authenticate():
             log.error("Authentication failed after connectivity was confirmed - Activating authentication failure mode")
             
@@ -1293,13 +1227,119 @@ class CombinedATMRetriever:
         log.info("Implementing comprehensive terminal search for all 14 ATMs...")
         all_terminals, status_counts = self.comprehensive_terminal_search()
         
-        # Step 5: Fetch detailed information for ALL terminals - OPTIMIZED WITH CONCURRENT PROCESSING
-        log.info("\n--- PHASE 3: Retrieving Terminal Details (Concurrent Processing) ---")
+        # Step 5: Fetch detailed information for ALL terminals
+        log.info("\n--- PHASE 3: Retrieving Terminal Details ---")
         log.info(f"Found {len(all_terminals)} terminals to process for details")
         
-        # Use concurrent processing for terminal details
-        max_workers = 4 if not self.demo_mode else 2  # Limit concurrency for production stability
-        all_terminal_details = self.fetch_terminal_details_concurrent(all_terminals, max_workers=max_workers)
+        all_terminal_details = []
+        current_retrieval_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency
+        
+        for terminal in tqdm(all_terminals, desc="Fetching terminal details", unit="terminal"):
+            terminal_id = terminal.get('terminalId')
+            issue_state_code = terminal.get('issueStateCode', 'HARD')  # Default to HARD if not available
+            
+            if not terminal_id:
+                log.warning(f"Skipping terminal with missing ID: {terminal}")
+                continue
+            
+            # Windows production environment: Add retry logic for terminal details
+            max_retries = 3 if os.name == 'nt' else 2  # More retries on Windows
+            retry_delay = 2.0 if os.name == 'nt' else 1.0  # Longer delays on Windows
+            
+            terminal_data = None
+            for attempt in range(max_retries):
+                try:
+                    # Get detailed information for this terminal
+                    terminal_data = self.fetch_terminal_details(terminal_id, issue_state_code)
+                    if terminal_data:
+                        break  # Success, exit retry loop
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if attempt < max_retries - 1:  # Not the last attempt
+                        if os.name == 'nt':  # Windows-specific logging
+                            log.warning(f"🪟 Windows retry {attempt + 1}/{max_retries} for terminal {terminal_id}: {error_msg}")
+                        else:
+                            log.warning(f"Retry {attempt + 1}/{max_retries} for terminal {terminal_id}: {error_msg}")
+                        time.sleep(retry_delay)
+                    else:
+                        log.error(f"❌ Failed to fetch terminal {terminal_id} after {max_retries} attempts: {error_msg}")
+            
+            if terminal_data:
+                # Process the terminal data
+                terminal_body = terminal_data.get('body', [])
+                items_processed = 0
+                
+                if isinstance(terminal_body, list) and terminal_body:
+                    for item in terminal_body:
+                        # Generate unique request ID for this specific ATM status record
+                        unique_request_id = str(uuid.uuid4())
+                        
+                        # Extract the specific fields we need for this terminal
+                        extracted_data = {
+                            'unique_request_id': unique_request_id,  # Unique ID for each ATM status
+                            'terminalId': item.get('terminalId', ''),
+                            'location': item.get('location', ''),
+                            'issueStateName': item.get('issueStateName', ''),
+                            'serialNumber': item.get('serialNumber', ''),
+                            'retrievedDate': current_retrieval_time.strftime('%Y-%m-%d %H:%M:%S')  # Current request retrieved date
+                        }
+                        
+                        # Extract fault details if available
+                        fault_list = item.get('faultList', [])
+                        if fault_list and isinstance(fault_list, list) and len(fault_list) > 0:
+                            # Get the first fault in the list (most recent)
+                            fault = fault_list[0]
+                            extracted_data.update({
+                                'year': fault.get('year', ''),
+                                'month': fault.get('month', ''),
+                                'day': fault.get('day', ''),
+                                'externalFaultId': fault.get('externalFaultId', ''),
+                                'agentErrorDescription': fault.get('agentErrorDescription', '')
+                            })
+                            
+                            # Add creationDate from faultList with proper formatting
+                            creation_timestamp = fault.get('creationDate', None)
+                            if creation_timestamp:
+                                try:
+                                    # Convert Unix timestamp (milliseconds) to datetime
+                                    creation_dt = datetime.fromtimestamp(creation_timestamp / 1000, tz=self.dili_tz)
+                                    # Format as dd:mm:YYYY hh:mm:ss
+                                    extracted_data['creationDate'] = creation_dt.strftime('%d:%m:%Y %H:%M:%S')
+                                except (ValueError, TypeError) as e:
+                                    log.warning(f"Error converting creationDate for terminal {terminal_id}: {e}")
+                                    extracted_data['creationDate'] = ''
+                            else:
+                                extracted_data['creationDate'] = ''
+                        else:
+                            # Set default values if no fault information is available
+                            extracted_data.update({
+                                'year': '',
+                                'month': '',
+                                'day': '',
+                                'externalFaultId': '',
+                                'agentErrorDescription': '',
+                                'creationDate': ''
+                            })
+                            
+                        # Add the status from the original search
+                        extracted_data['fetched_status'] = terminal.get('fetched_status', '')
+                        
+                        # Add to the combined results
+                        all_terminal_details.append(extracted_data)
+                        items_processed += 1
+                        
+                        log.debug(f"Processed item {items_processed} for terminal {terminal_id} with unique_request_id: {unique_request_id}")
+                        
+                    log.info(f"Added {items_processed} detail record(s) for terminal {terminal_id}")
+                else:
+                    log.warning(f"No details found in body for terminal {terminal_id}")
+            else:
+                log.warning(f"Failed to fetch details for terminal {terminal_id}")
+            
+            # Add a small delay between requests to avoid overwhelming the server
+            if not self.demo_mode:
+                time.sleep(1)
         
         all_data["terminal_details_data"] = all_terminal_details
         
@@ -1388,28 +1428,6 @@ class CombinedATMRetriever:
         log.info("=" * 80)
         log.info("COMBINED ATM DATA RETRIEVAL COMPLETED SUCCESSFULLY")
         log.info("=" * 80)
-        
-        # Finalize database logging
-        if db_log_handler:
-            end_time = datetime.now(self.dili_tz)
-            log_metrics.finalize()
-            
-            # Prepare execution summary
-            execution_summary = log_metrics.get_summary()
-            execution_summary.update({
-                'demo_mode': self.demo_mode,
-                'total_atms': self.total_atms,
-                'success': True,
-                'failover_activated': all_data.get('failover_mode', False),
-                'failure_type': all_data.get('summary', {}).get('failure_type'),
-                'connection_status': all_data.get('summary', {}).get('connection_status', 'SUCCESS'),
-                'regional_records_processed': len(all_data.get('regional_data', [])),
-                'terminal_details_processed': len(all_data.get('terminal_details_data', []))
-            })
-            
-            # Save execution summary to database
-            db_log_handler.save_execution_summary(execution_summary)
-            log.info(f"📊 Execution summary saved to database for ID: {execution_id}")
         
         return True, all_data
     
@@ -2206,509 +2224,426 @@ class CombinedATMRetriever:
         
         return sorted(list(all_known_terminals))
     
-    def smart_retry(self, func, *args, max_retries=2, base_delay=1.0, exponential_backoff=True, **kwargs):
-        """
-        Smart retry logic with exponential backoff and reduced delays
-        
-        Args:
-            func: Function to retry
-            *args: Function arguments
-            max_retries: Maximum number of retries
-            base_delay: Base delay between retries
-            exponential_backoff: Whether to use exponential backoff
-            **kwargs: Function keyword arguments
-        
-        Returns:
-            Function result or None if all retries failed
-        """
-        for attempt in range(max_retries + 1):  # +1 for initial attempt
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                if attempt == max_retries:  # Last attempt
-                    log.error(f"❌ All {max_retries + 1} attempts failed for {func.__name__}: {str(e)}")
-                    raise e
-                
-                # Calculate delay with exponential backoff
-                if exponential_backoff:
-                    delay = base_delay * (2 ** attempt)
-                else:
-                    delay = base_delay
-                
-                # Cap maximum delay at 5 seconds
-                delay = min(delay, 5.0)
-                
-                log.warning(f"⚠️ Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}: {str(e)}")
-                log.info(f"🔄 Retrying in {delay:.1f}s...")
-                time.sleep(delay)
-        
-        return None
+def signal_handler(signum, frame):
+    """Handle SIGINT (Ctrl+C) and SIGTERM signals gracefully"""
+    signal_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+    log.info(f"\n[STOP] Received {signal_name} signal. Initiating graceful shutdown...")
+    stop_flag.set()
+    print("\nWARNING: Shutting down gracefully. Please wait for current operation to complete...")
 
-    def fetch_terminal_details_concurrent(self, terminals_list: List[Dict[str, Any]], max_workers: int = 4) -> List[Dict[str, Any]]:
-        """
-        Fetch terminal details concurrently with controlled parallelism
-        
-        Args:
-            terminals_list: List of terminals to process
-            max_workers: Maximum number of concurrent workers
-        
-        Returns:
-            List of processed terminal details
-        """
-        if not terminals_list:
-            return []
-        
-        log.info(f"🚀 Starting concurrent terminal details processing with {max_workers} workers")
-        log.info(f"📊 Processing {len(terminals_list)} terminals concurrently")
-        
-        all_terminal_details = []
-        current_retrieval_time = datetime.now(self.dili_tz)
-        
-        # Set database logging context
-        if db_log_handler:
-            db_log_handler.set_context(phase="CONCURRENT_TERMINAL_PROCESSING")
-        
-        def process_single_terminal(terminal_info):
-            """Process a single terminal - designed for concurrent execution"""
-            terminal_id = terminal_info.get('terminalId')
-            issue_state_code = terminal_info.get('issueStateCode', 'HARD')
-            
-            if not terminal_id:
-                log.warning(f"Skipping terminal with missing ID: {terminal_info}")
-                return []
-            
-            # Set context for database logging
-            if db_log_handler:
-                db_log_handler.set_context(terminal_id=terminal_id)
-            
-            try:
-                # Use smart retry for terminal details fetching
-                terminal_data = self.smart_retry(
-                    self.fetch_terminal_details,
-                    terminal_id, 
-                    issue_state_code,
-                    max_retries=2,
-                    base_delay=0.5,  # Reduced from 1.0-2.0
-                    exponential_backoff=True
-                )
-                
-                if not terminal_data:
-                    log.warning(f"❌ Failed to fetch details for terminal {terminal_id} after retries")
-                    return []
-                
-                # Process terminal data
-                terminal_details = []
-                terminal_body = terminal_data.get('body', [])
-                
-                if isinstance(terminal_body, list) and terminal_body:
-                    for item in terminal_body:
-                        unique_request_id = str(uuid.uuid4())
-                        
-                        # Extract terminal data
-                        extracted_data = {
-                            'unique_request_id': unique_request_id,
-                            'terminalId': item.get('terminalId', ''),
-                            'location': item.get('location', ''),
-                            'issueStateName': item.get('issueStateName', ''),
-                            'serialNumber': item.get('serialNumber', ''),
-                            'retrievedDate': current_retrieval_time.strftime('%Y-%m-%d %H:%M:%S')
-                        }
-                        
-                        # Extract fault details
-                        fault_list = item.get('faultList', [])
-                        if fault_list and isinstance(fault_list, list) and len(fault_list) > 0:
-                            fault = fault_list[0]
-                            extracted_data.update({
-                                'year': fault.get('year', ''),
-                                'month': fault.get('month', ''),
-                                'day': fault.get('day', ''),
-                                'externalFaultId': fault.get('externalFaultId', ''),
-                                'agentErrorDescription': fault.get('agentErrorDescription', '')
-                            })
-                            
-                            # Format creation date
-                            creation_timestamp = fault.get('creationDate', None)
-                            if creation_timestamp:
-                                try:
-                                    creation_dt = datetime.fromtimestamp(creation_timestamp / 1000, tz=self.dili_tz)
-                                    extracted_data['creationDate'] = creation_dt.strftime('%d:%m:%Y %H:%M:%S')
-                                except (ValueError, TypeError) as e:
-                                    log.warning(f"Error converting creationDate for terminal {terminal_id}: {e}")
-                                    extracted_data['creationDate'] = ''
-                            else:
-                                extracted_data['creationDate'] = ''
-                        else:
-                            # Default values
-                            extracted_data.update({
-                                'year': '', 'month': '', 'day': '',
-                                'externalFaultId': '', 'agentErrorDescription': '', 'creationDate': ''
-                            })
-                        
-                        # Add fetched status
-                        extracted_data['fetched_status'] = terminal_info.get('fetched_status', '')
-                        terminal_details.append(extracted_data)
-                    
-                    log.info(f"✅ Processed {len(terminal_details)} detail record(s) for terminal {terminal_id}")
-                else:
-                    log.warning(f"⚠️ No details found for terminal {terminal_id}")
-                
-                return terminal_details
-                
-            except Exception as e:
-                log.error(f"❌ Error processing terminal {terminal_id}: {str(e)}")
-                return []
-        
-        # Use ThreadPoolExecutor for concurrent processing
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            future_to_terminal = {
-                executor.submit(process_single_terminal, terminal): terminal 
-                for terminal in terminals_list
-            }
-            
-            # Process completed futures with progress tracking
-            completed_count = 0
-            total_count = len(terminals_list)
-            
-            for future in concurrent.futures.as_completed(future_to_terminal):
-                terminal = future_to_terminal[future]
-                terminal_id = terminal.get('terminalId', 'unknown')
-                
-                try:
-                    terminal_details = future.result()
-                    all_terminal_details.extend(terminal_details)
-                    completed_count += 1
-                    
-                    # Progress logging
-                    progress = (completed_count / total_count) * 100
-                    log.info(f"📈 Progress: {completed_count}/{total_count} terminals processed ({progress:.1f}%)")
-                    
-                except Exception as e:
-                    log.error(f"❌ Concurrent processing error for terminal {terminal_id}: {str(e)}")
-                    completed_count += 1
-        
-        log.info(f"🎉 Concurrent processing completed: {len(all_terminal_details)} terminal details retrieved")
-        return all_terminal_details
 
-    def fetch_terminal_details_optimized(self, terminal_id: str, issue_state_code: str, timeout: int = 20) -> Optional[Dict[str, Any]]:
-        """
-        Optimized version of fetch_terminal_details with reduced timeouts and improved error handling
-        
-        Args:
-            terminal_id: Terminal ID to fetch details for
-            issue_state_code: Issue state code for the terminal
-            timeout: Request timeout in seconds (reduced from 30)
-        
-        Returns:
-            Terminal data or None if failed
-        """
-        if self.demo_mode:
-            log.debug(f"DEMO MODE: Generating sample data for terminal {terminal_id}")
-            # Return demo data quickly
-            return {
-                "body": [{
-                    "terminalId": terminal_id,
-                    "location": f"Demo location for {terminal_id}",
-                    "issueStateName": issue_state_code,
-                    "serialNumber": f"DEMO_{terminal_id}",
-                    "faultList": [{
-                        "year": datetime.now().strftime("%Y"),
-                        "month": datetime.now().strftime("%b").upper(),
-                        "day": datetime.now().strftime("%d"),
-                        "externalFaultId": f"DEMO_{terminal_id}",
-                        "agentErrorDescription": "Demo fault description",
-                        "creationDate": int(datetime.now().timestamp() * 1000)
-                    }]
-                }]
-            }
-        
-        details_url = f"{DASHBOARD_URL}&terminal_id={terminal_id}"
-        details_payload = {
-            "header": {
-                "logged_user": LOGIN_PAYLOAD["user_name"],
-                "user_token": self.user_token
-            },
-            "body": {
-                "parameters_list": [{
-                    "parameter_name": "issueStateCode",
-                    "parameter_values": [issue_state_code]
-                }]
-            }
-        }
-        
-        try:
-            response = self.session.put(
-                details_url, 
-                json=details_payload, 
-                headers=COMMON_HEADERS, 
-                verify=False, 
-                timeout=timeout  # Reduced timeout
-            )
-            response.raise_for_status()
-            
-            details_data = response.json()
-            
-            # Quick validation
-            if not isinstance(details_data, dict) or "body" not in details_data:
-                log.warning(f"Invalid response structure for terminal {terminal_id}")
-                return None
-            
-            # Update token if provided
-            if "header" in details_data and "user_token" in details_data["header"]:
-                new_token = details_data["header"]["user_token"]
-                if new_token != self.user_token:
-                    self.user_token = new_token
-                    log.debug(f"Token updated for terminal {terminal_id}")
-            
-            return details_data
-            
-        except requests.exceptions.Timeout:
-            log.warning(f"⏱️ Timeout fetching details for terminal {terminal_id}")
-            return None
-        except requests.exceptions.RequestException as e:
-            log.warning(f"🌐 Network error for terminal {terminal_id}: {str(e)}")
-            return None
-        except json.JSONDecodeError:
-            log.warning(f"📄 Invalid JSON response for terminal {terminal_id}")
-            return None
-        except Exception as e:
-            log.error(f"❌ Unexpected error for terminal {terminal_id}: {str(e)}")
-            return None
+def update_execution_stats(success: bool, error_type: Optional[str] = None):
+    """Update global execution statistics"""
+    global execution_stats
+    
+    current_time = datetime.now()
+    execution_stats['total_cycles'] += 1
+    
+    if success:
+        execution_stats['successful_cycles'] += 1
+        execution_stats['last_success'] = current_time
+        execution_stats['cycle_history'].append({
+            'timestamp': current_time,
+            'success': True,
+            'error': None
+        })
+    else:
+        execution_stats['failed_cycles'] += 1
+        if error_type == 'connection':
+            execution_stats['connection_failures'] += 1
+        execution_stats['cycle_history'].append({
+            'timestamp': current_time,
+            'success': False,
+            'error': error_type
+        })
 
-    def retrieve_regional_data(self) -> Optional[List[Dict[str, Any]]]:
-        """
-        Retrieve only regional data
+
+def print_execution_stats():
+    """Print comprehensive execution statistics"""
+    if execution_stats['total_cycles'] == 0:
+        return
+    
+    current_time = datetime.now()
+    uptime = current_time - execution_stats['start_time'] if execution_stats['start_time'] else current_time
+    success_rate = (execution_stats['successful_cycles'] / execution_stats['total_cycles']) * 100
+    
+    print("\n" + "=" * 80)
+    print("=== EXECUTION STATISTICS ===")
+    print("=" * 80)
+    print(f"[TIME] Total uptime: {uptime}")
+    print(f"[CYCLES] Total cycles: {execution_stats['total_cycles']}")
+    print(f"[SUCCESS] Successful cycles: {execution_stats['successful_cycles']}")
+    print(f"[FAILED] Failed cycles: {execution_stats['failed_cycles']}")
+    print(f"[NET] Connection failures: {execution_stats['connection_failures']}")
+    print(f"[STATS] Success rate: {success_rate:.1f}%")
+    
+    if execution_stats['last_success']:
+        time_since_success = current_time - execution_stats['last_success']
+        print(f"[TIME] Last successful cycle: {time_since_success} ago")
+    
+    # Show recent cycle history
+    recent_cycles = list(execution_stats['cycle_history'])[-10:]  # Last 10 cycles
+    if recent_cycles:
+        print(f"\n[HISTORY] Recent cycle history (last {len(recent_cycles)}):")
+        for i, cycle in enumerate(recent_cycles, 1):
+            status = "[OK]" if cycle['success'] else "[FAIL]"
+            error_info = f" ({cycle['error']})" if cycle['error'] else ""
+            timestamp = cycle['timestamp'].strftime('%H:%M:%S')
+            print(f"  {i:2d}. {status} {timestamp}{error_info}")
+    
+    print("=" * 80)
+
+
+def wait_with_progress(duration_minutes: int, reason: str):
+    """Wait for specified duration with progress indication and early exit on stop signal"""
+    total_seconds = duration_minutes * 60
+    log.info(f"[WAIT] {reason} - waiting {duration_minutes} minutes...")
+    
+    for remaining in range(total_seconds, 0, -1):
+        if stop_flag.is_set():
+            log.info("Stop signal received during wait period")
+            return False
         
-        Returns:
-            List of regional data or None if failed
-        """
-        log.info("🗺️ Retrieving regional data only...")
-        
-        if not self.demo_mode:
-            # Check connectivity first
-            if not self.check_connectivity():
-                log.error("❌ Connectivity check failed")
-                return None
+        # Update progress every 30 seconds or on first/last iterations
+        if remaining % 30 == 0 or remaining <= 5 or remaining == total_seconds:
+            hours, remainder = divmod(remaining, 3600)
+            minutes, seconds = divmod(remainder, 60)
             
-            # Authenticate
-            if not self.authenticate():
-                log.error("❌ Authentication failed")
-                return None
-        
-        # Fetch and process regional data
-        try:
-            raw_regional_data = self.fetch_regional_data()
-            if raw_regional_data:
-                processed_regional_data = self.process_regional_data(raw_regional_data)
-                log.info(f"✅ Successfully retrieved regional data for {len(processed_regional_data)} regions")
-                return processed_regional_data
+            if hours > 0:
+                time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             else:
-                log.error("❌ Failed to fetch regional data")
-                return None
-        finally:
-            # Logout
-            if not self.demo_mode:
-                self.logout()
-    
-    def retrieve_terminal_details(self) -> Optional[List[Dict[str, Any]]]:
-        """
-        Retrieve only terminal details data
-        
-        Returns:
-            List of terminal details or None if failed
-        """
-        log.info("🏧 Retrieving terminal details only...")
-        
-        if not self.demo_mode:
-            # Check connectivity first
-            if not self.check_connectivity():
-                log.error("❌ Connectivity check failed")
-                return None
+                time_str = f"{minutes:02d}:{seconds:02d}"
             
-            # Authenticate
-            if not self.authenticate():
-                log.error("❌ Authentication failed")
-                return None
+            print(f"\r[WAIT] {reason} - Time remaining: {time_str}    ", end="", flush=True)
+        
+        time.sleep(1)
+    
+    print()  # New line after progress
+    return True
+
+
+def handle_connection_error(error: Exception, cycle_number: int) -> bool:
+    """
+    Handle connection errors with intelligent retry logic
+    
+    Returns:
+        bool: True if should continue, False if should stop
+    """
+    log.error(f"[NET] Connection error in cycle {cycle_number}: {str(error)}")
+    
+    # Check if this is a LOGIN_URL specific error
+    is_login_error = False
+    if hasattr(error, 'response') and getattr(error, 'response', None) is not None:
+        # Check if the error occurred during authentication
+        if 'login' in str(error).lower() or 'authentication' in str(error).lower():
+            is_login_error = True
+    elif 'login' in str(error).lower() or 'authentication' in str(error).lower():
+        is_login_error = True
+    
+    update_execution_stats(False, 'connection')
+    
+    if is_login_error:
+        log.warning("[AUTH] Detected LOGIN_URL connection failure - implementing 15-minute retry period")
+        if not wait_with_progress(15, "Retrying after LOGIN_URL connection failure"):
+            return False
+    else:
+        log.warning("[NET] General connection error - implementing 5-minute retry period")
+        if not wait_with_progress(5, "Retrying after connection error"):
+            return False
+    
+    return True
+
+
+def run_continuous_operation(args):
+    """Run the ATM retrieval script continuously with enhanced error handling"""
+    global execution_stats
+    
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Initialize execution stats
+    execution_stats['start_time'] = datetime.now()
+    
+    log.info("[START] Starting continuous ATM data retrieval operation")
+    log.info(f"[TIME] Start time: {execution_stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"[CONFIG] Configuration: Demo={args.demo}, Save-to-DB={args.save_to_db}, Use-New-Tables={args.use_new_tables}")
+    log.info("[INFO] Running every 15 minutes. Press Ctrl+C for graceful shutdown.")
+    
+    # Create retriever instance
+    retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
+    cycle_number = 0
+    success = False  # Initialize success variable
+    
+    while not stop_flag.is_set():
+        cycle_number += 1
+        cycle_start_time = datetime.now()
         
         try:
-            # Get terminals using comprehensive search
-            all_terminals, status_counts = self.comprehensive_terminal_search()
+            log.info(f"\n{'='*20} CYCLE {cycle_number} - {cycle_start_time.strftime('%Y-%m-%d %H:%M:%S')} {'='*20}")
             
-            if not all_terminals:
-                log.error("❌ No terminals found")
-                return None
-            
-            # Fetch terminal details concurrently
-            max_workers = 4 if not self.demo_mode else 2
-            all_terminal_details = self.fetch_terminal_details_concurrent(all_terminals, max_workers=max_workers)
-            
-            log.info(f"✅ Successfully retrieved details for {len(all_terminal_details)} terminals")
-            return all_terminal_details
-            
-        finally:
-            # Logout
-            if not self.demo_mode:
-                self.logout()
-
-def main():
-    """Main CLI entry point for the combined ATM retrieval script"""
-    parser = argparse.ArgumentParser(
-        description="Combined ATM Data Retrieval Script",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python combined_atm_retrieval_script.py --demo
-  python combined_atm_retrieval_script.py --save-to-db --total-atms 14
-  python combined_atm_retrieval_script.py --demo --save-json
-  python combined_atm_retrieval_script.py --enable-db-logging --save-to-db
-  python combined_atm_retrieval_script.py --continuous --total-atms 14
-        """
-    )
-    
-    # Core options
-    parser.add_argument('--demo', action='store_true', 
-                        help='Run in demo mode (no actual network requests)')
-    parser.add_argument('--total-atms', type=int, default=14,
-                        help='Total number of ATMs for percentage calculations (default: 14)')
-    
-    # Database options
-    parser.add_argument('--save-to-db', action='store_true',
-                        help='Save retrieved data to database')
-    parser.add_argument('--enable-db-logging', action='store_true', default=True,
-                        help='Enable database logging for this execution (default: True)')
-    parser.add_argument('--disable-db-logging', action='store_true',
-                        help='Disable database logging for this execution')
-    
-    # Output options
-    parser.add_argument('--save-json', action='store_true',
-                        help='Save retrieved data to JSON file')
-    parser.add_argument('--continuous', action='store_true',
-                        help='Run continuously with interval')
-    parser.add_argument('--interval', type=int, default=30,
-                        help='Interval in minutes for continuous mode (default: 30)')
-    parser.add_argument('--use-new-tables', action='store_true',
-                        help='Use new database table structure')
-    
-    # Debugging options
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Enable verbose logging')
-    
-    args = parser.parse_args()
-    
-    # Handle logging level
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    
-    # Handle database logging flag
-    enable_db_logging = args.enable_db_logging and not args.disable_db_logging
-    
-    try:
-        # Initialize the retriever
-        retriever = CombinedATMRetriever(
-            demo_mode=args.demo,
-            total_atms=args.total_atms,
-            enable_db_logging=enable_db_logging
-        )
-        
-        if args.continuous:
-            log.info("🔄 Starting continuous operation mode...")
-            log.info(f"💡 Continuous mode: Running data retrieval every {args.interval} minutes")
-            log.info("💡 Press Ctrl+C to stop continuous operation")
-            
-            interval_seconds = args.interval * 60  # Convert minutes to seconds
-            execution_count = 0
-            
-            while True:
-                try:
-                    execution_count += 1
-                    log.info(f"� Starting execution #{execution_count} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                    
-                    # Execute comprehensive data retrieval
-                    success, all_data = retriever.retrieve_and_process_all_data(
-                        save_to_db=args.save_to_db,
-                        use_new_tables=args.use_new_tables
-                    )
-                    
-                    if success:
-                        log.info(f"✅ Execution #{execution_count} completed successfully")
-                        if args.save_json:
-                            json_filename = f"atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                            with open(json_filename, 'w', encoding='utf-8') as f:
-                                json.dump(all_data, f, indent=2, ensure_ascii=False, default=str)
-                            log.info(f"💾 Data saved to {json_filename}")
-                    else:
-                        log.error(f"❌ Execution #{execution_count} failed")
-                    
-                    # Wait for next execution
-                    log.info(f"⏰ Waiting {interval_seconds//60} minutes until next execution...")
-                    time.sleep(interval_seconds)
-                    
-                except KeyboardInterrupt:
-                    log.info(f"⏹️ Continuous operation stopped by user after {execution_count} executions")
-                    break
-                except Exception as e:
-                    log.error(f"❌ Error in continuous execution #{execution_count}: {e}")
-                    log.info(f"🔄 Continuing with next execution in {interval_seconds//60} minutes...")
-                    time.sleep(interval_seconds)
-        else:
-            # Single execution mode
-            log.info("🚀 Starting single ATM data retrieval...")
-            start_time = time.time()
-            
-            # Use comprehensive data retrieval method
+            # Execute the complete retrieval and processing flow
             success, all_data = retriever.retrieve_and_process_all_data(
                 save_to_db=args.save_to_db,
                 use_new_tables=args.use_new_tables
             )
             
-            if not success:
-                log.error("❌ Failed to retrieve ATM data")
-                return 1
+            if success:
+                log.info(f"[OK] Cycle {cycle_number} completed successfully")
+                
+                # Display brief results
+                summary = all_data.get("summary", {})
+                log.info(f"[RESULTS] Results: {summary.get('total_regions', 0)} regions, "
+                        f"{summary.get('total_terminals', 0)} terminals, "
+                        f"{summary.get('total_terminal_details', 0)} terminal details")
+                
+                # Save to JSON if requested or if we have data
+                if args.save_json or all_data.get("summary", {}).get("total_terminals", 0) > 0:
+                    json_filename = save_to_json(all_data)
+                    log.info(f"[FILE] Data saved to: {json_filename}")
+                
+                if args.save_to_db and DB_AVAILABLE:
+                    if args.use_new_tables:
+                        log.info("[DB] Data saved to new database tables (regional_data and terminal_details)")
+                    else:
+                        log.info("[DB] Regional data saved to database (regional_atm_counts table)")
+                
+                update_execution_stats(True)
+                
+            else:
+                log.error(f"[FAIL] Cycle {cycle_number} failed - unable to retrieve ATM data")
+                update_execution_stats(False, 'general')
+                
+        except requests.exceptions.ConnectionError as e:
+            if not handle_connection_error(e, cycle_number):
+                break
+            continue
             
-            # Save to JSON if requested
-            if args.save_json:
-                json_filename = f"atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                with open(json_filename, 'w', encoding='utf-8') as f:
-                    json.dump(all_data, f, indent=2, ensure_ascii=False, default=str)
-                log.info(f"💾 Data saved to {json_filename}")
+        except requests.exceptions.Timeout as e:
+            log.error(f"[TIMEOUT] Timeout error in cycle {cycle_number}: {str(e)}")
+            update_execution_stats(False, 'timeout')
             
-            # Show summary
-            execution_time = time.time() - start_time
-            log.info(f"✅ Execution completed in {execution_time:.2f} seconds")
+        except requests.exceptions.RequestException as e:
+            if not handle_connection_error(e, cycle_number):
+                break
+            continue
             
-            # Show detailed summary
-            summary = all_data.get('summary', {})
-            log.info(f"📊 Regional records: {summary.get('total_regions', 0)}")
-            log.info(f"📊 Terminal details: {summary.get('total_terminal_details', 0)}")
+        except Exception as e:
+            log.error(f"[ERROR] Unexpected error in cycle {cycle_number}: {str(e)}")
+            log.debug("Error details:", exc_info=True)
+            update_execution_stats(False, 'unexpected')
             
-            if 'status_counts' in summary:
-                log.info("📊 ATM Status Distribution:")
-                for status, count in summary['status_counts'].items():
-                    log.info(f"   {status}: {count} ATMs")
-            
-            if all_data.get('failover_mode'):
-                log.warning(f"⚠️ Failover mode was activated: {summary.get('failure_type', 'Unknown')}")
-            
-            database_saved = args.save_to_db and not args.demo
-            log.info(f"💾 Database save: {'✅ Enabled' if database_saved else '❌ Disabled/Demo'}")
-            log.info(f"�️ Table type: {'New tables' if args.use_new_tables else 'Legacy tables'}")
+            # For unexpected errors, wait a bit before continuing
+            if not wait_with_progress(2, "Recovering from unexpected error"):
+                break
         
+        # Print statistics every 10 cycles or if this was a failed cycle
+        if cycle_number % 10 == 0 or not success:
+            print_execution_stats()
+        
+        # Check for stop signal before waiting
+        if stop_flag.is_set():
+            break
+        
+        # Wait for next cycle (15 minutes)
+        log.info(f"[CYCLE] Cycle {cycle_number} completed. Next cycle in 15 minutes...")
+        if not wait_with_progress(15, "Next cycle"):
+            break
+    
+    # Final statistics and cleanup
+    log.info("\n[STOP] Continuous operation stopped")
+    print_execution_stats()
+    
+    end_time = datetime.now()
+    total_runtime = end_time - execution_stats['start_time']
+    log.info(f"[RUNTIME] Total runtime: {total_runtime}")
+    log.info(f"[SHUTDOWN] Shutdown completed at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def display_results(all_data: Dict[str, Any]) -> None:
+    """Display the processed results in a formatted way"""
+    print("\n" + "=" * 120)
+    print("COMBINED ATM DATA RETRIEVAL RESULTS")
+    print("=" * 120)
+    
+    # Summary
+    summary = all_data.get("summary", {})
+    status_counts = summary.get('status_counts', {})
+    total_terminals = sum(status_counts.values()) if status_counts else 0
+    
+    print(f"Retrieval Time: {all_data.get('retrieval_timestamp', 'Unknown')}")
+    print(f"Demo Mode: {all_data.get('demo_mode', False)}")
+    print(f"Total Regions: {summary.get('total_regions', 0)}")
+    print(f"Total Terminals: {total_terminals}")
+    print(f"Terminal Details Retrieved: {summary.get('total_terminal_details', 0)}")
+    
+    # Show collection note if available
+    collection_note = summary.get('collection_note')
+    if collection_note:
+        print(f"Note: {collection_note}")
+    
+    # Regional data
+    regional_data = all_data.get("regional_data", [])
+    if regional_data:
+        print("\n--- REGIONAL ATM COUNTS ---")
+        print(f"{'Region':<10} {'Available':<10} {'Warning':<8} {'Zombie':<8} {'Wounded':<8} {'Out/Svc':<8} {'Total':<6}")
+        print("-" * 70)
+        
+        for record in regional_data:
+            print(f"{record['region_code']:<10} "
+                  f"{record['count_available']:3d} ({record['percentage_available']*100:5.1f}%) "
+                  f"{record['count_warning']:3d}      "
+                  f"{record['count_zombie']:3d}      "
+                  f"{record['count_wounded']:3d}      "
+                  f"{record['count_out_of_service']:3d}      "
+                  f"{record['total_atms_in_region']:3d}")
+    
+    # Terminal status summary
+    if status_counts:
+        print("\n--- TERMINAL STATUS SUMMARY ---")
+        for status, count in status_counts.items():
+            percentage = (count / total_terminals * 100) if total_terminals > 0 else 0
+            print(f"{status}: {count} terminals ({percentage:.1f}%)")
+        print(f"Total: {total_terminals} terminals")
+    
+    # Terminal details summary
+    terminal_details = all_data.get("terminal_details_data", [])
+    if terminal_details:
+        print("\n--- TERMINAL DETAILS SUMMARY ---")
+        print(f"Terminal details with unique IDs: {summary.get('terminal_details_with_unique_ids', len(terminal_details))}")
+        
+        fault_types = {}
+        for detail in terminal_details:
+            error_desc = detail.get('agentErrorDescription', '')
+            if error_desc:
+                fault_types[error_desc] = fault_types.get(error_desc, 0) + 1
+        
+        print("Fault Summary:")
+        for error_type, count in sorted(fault_types.items(), key=lambda x: x[1], reverse=True):
+            if error_type:
+                print(f"  {error_type}: {count}")
+    
+    print("=" * 120)
+
+
+def save_to_json(all_data: Dict[str, Any], filename: Optional[str] = None) -> str:
+    """Save all retrieved data to JSON file"""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"combined_atm_data_{timestamp}.json"
+    
+    # Ensure the saved_data directory exists
+    save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_data")
+    os.makedirs(save_dir, exist_ok=True)
+    full_path = os.path.join(save_dir, filename)
+    
+    # Convert datetime objects to strings for JSON serialization
+    json_data = all_data.copy()
+    
+    # Convert regional data datetime objects
+    if "regional_data" in json_data:
+        for record in json_data["regional_data"]:
+            if 'date_creation' in record and hasattr(record['date_creation'], 'isoformat'):
+                record['date_creation'] = record['date_creation'].isoformat()
+    
+    with open(full_path, 'w', encoding='utf-8') as f:
+        json.dump(json_data, f, indent=2, ensure_ascii=False)
+    
+    log.info(f"All data saved to JSON file: {full_path}")
+    return full_path
+
+
+def main():
+    """Main execution function"""
+    parser = argparse.ArgumentParser(
+        description="Combined ATM Data Retrieval Script with Continuous Operation Support",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python combined_atm_retrieval_script.py                           # Live mode, display only
+  python combined_atm_retrieval_script.py --demo                    # Demo mode for testing
+  python combined_atm_retrieval_script.py --save-to-db              # Live mode with database save
+  python combined_atm_retrieval_script.py --save-json               # Live mode with JSON save
+  python combined_atm_retrieval_script.py --continuous              # Continuous mode (15-min intervals)
+  python combined_atm_retrieval_script.py --continuous --save-to-db --use-new-tables
+  python combined_atm_retrieval_script.py --demo --save-json --total-atms 20
+        """
+    )
+    
+    parser.add_argument('--demo', action='store_true', 
+                       help='Run in demo mode (no actual network requests)')
+    parser.add_argument('--save-to-db', action='store_true',
+                       help='Save processed data to database')
+    parser.add_argument('--use-new-tables', action='store_true',
+                       help='Use new database tables (regional_data and terminal_details) with JSONB support')
+    parser.add_argument('--save-json', action='store_true',
+                       help='Save all retrieved data to JSON file')
+    parser.add_argument('--continuous', action='store_true',
+                       help='Run continuously with 15-minute intervals (enhanced error handling)')
+    parser.add_argument('--total-atms', type=int, default=14,
+                       help='Total number of ATMs for percentage to count conversion (default: 14)')
+    parser.add_argument('--quiet', action='store_true',
+                       help='Reduce logging output (errors and warnings only)')
+    
+    args = parser.parse_args()
+    
+    # Adjust logging level if quiet mode
+    if args.quiet:
+        logging.getLogger().setLevel(logging.WARNING)
+    
+    # Check for continuous mode
+    if args.continuous:
+        log.info("[CONTINUOUS] Continuous mode enabled - script will run every 15 minutes")
+        run_continuous_operation(args)
         return 0
+    
+    # Single execution mode (original behavior)
+    # Create retriever instance
+    retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
+    
+    try:
+        # Execute the complete retrieval and processing flow
+        success, all_data = retriever.retrieve_and_process_all_data(
+            save_to_db=args.save_to_db, 
+            use_new_tables=args.use_new_tables
+        )
         
+        if success:
+            # Display results
+            display_results(all_data)
+            
+            # Save to JSON if requested or if we have data
+            if args.save_json or all_data.get("summary", {}).get("total_terminals", 0) > 0:
+                json_filename = save_to_json(all_data)
+                print(f"\n[FILE] All data saved to: {json_filename}")
+            
+            summary = all_data.get("summary", {})
+            print(f"\n[OK] SUCCESS: Retrieved data for {summary.get('total_regions', 0)} regions, "
+                  f"{summary.get('total_terminals', 0)} terminals, and "
+                  f"{summary.get('total_terminal_details', 0)} terminal details")
+            
+            if args.save_to_db and DB_AVAILABLE:
+                if args.use_new_tables:
+                    print("[OK] Data saved to new database tables (regional_data and terminal_details)")
+                else:
+                    print("[OK] Regional data saved to database (regional_atm_counts table)")
+            elif args.save_to_db and not DB_AVAILABLE:
+                print("WARNING: Database not available - data not saved to database")
+            
+            return 0
+        else:
+            print("\n[FAIL] FAILED: Unable to retrieve ATM data")
+            return 1
+            
     except KeyboardInterrupt:
-        log.info("⏹️ Execution interrupted by user")
+        print("\n[WARNING] Process interrupted by user")
         return 1
     except Exception as e:
-        log.error(f"❌ Unexpected error: {e}")
+        log.error(f"Unexpected error: {str(e)}")
+        log.debug("Error details:", exc_info=True)
         return 1
-    finally:
-        # Cleanup database logging
-        if db_log_handler:
-            try:
-                db_log_handler.close()
-            except:
-                pass
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+    sys.exit(exit_code)
