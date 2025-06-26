@@ -2584,6 +2584,8 @@ Examples:
                         help='Save retrieved data to JSON file')
     parser.add_argument('--continuous', action='store_true',
                         help='Run continuously with interval')
+    parser.add_argument('--interval', type=int, default=30,
+                        help='Interval in minutes for continuous mode (default: 30)')
     parser.add_argument('--use-new-tables', action='store_true',
                         help='Use new database table structure')
     
@@ -2610,57 +2612,86 @@ Examples:
         
         if args.continuous:
             log.info("🔄 Starting continuous operation mode...")
-            # Note: continuous mode implementation would go here
-            log.info("Continuous mode not yet implemented - running single execution")
-        
-        # Execute data retrieval
-        log.info("🚀 Starting ATM data retrieval...")
-        start_time = time.time()
-        
-        # Retrieve regional data
-        regional_data = retriever.retrieve_regional_data()
-        if not regional_data:
-            log.error("❌ Failed to retrieve regional data")
-            return 1
-        
-        # Retrieve terminal details
-        terminal_details = retriever.retrieve_terminal_details()
-        if not terminal_details:
-            log.error("❌ Failed to retrieve terminal details")
-            return 1
-        
-        # Combine data
-        combined_data = {
-            'regional_data': regional_data,
-            'terminal_details': terminal_details,
-            'metadata': {
-                'total_atms': args.total_atms,
-                'execution_time': time.time() - start_time,
-                'timestamp': datetime.now(pytz.timezone('Asia/Dili')).isoformat(),
-                'demo_mode': args.demo
-            }
-        }
-        
-        # Save to JSON if requested
-        if args.save_json:
-            json_filename = f"atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(combined_data, f, indent=2, ensure_ascii=False)
-            log.info(f"💾 Data saved to {json_filename}")
-        
-        # Save to database if requested
-        if args.save_to_db:
-            initialize_database_connector()
-            if DB_AVAILABLE and db_connector:
-                # Note: Database saving implementation would go here
-                log.info("💾 Database saving not yet implemented")
-            else:
-                log.warning("⚠️ Database not available for saving")
-        
-        # Show summary
-        execution_time = time.time() - start_time
-        log.info(f"✅ Execution completed in {execution_time:.2f} seconds")
-        log.info(f"📊 Retrieved data for {len(terminal_details)} terminals")
+            log.info(f"💡 Continuous mode: Running data retrieval every {args.interval} minutes")
+            log.info("💡 Press Ctrl+C to stop continuous operation")
+            
+            interval_seconds = args.interval * 60  # Convert minutes to seconds
+            execution_count = 0
+            
+            while True:
+                try:
+                    execution_count += 1
+                    log.info(f"� Starting execution #{execution_count} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    # Execute comprehensive data retrieval
+                    success, all_data = retriever.retrieve_and_process_all_data(
+                        save_to_db=args.save_to_db,
+                        use_new_tables=args.use_new_tables
+                    )
+                    
+                    if success:
+                        log.info(f"✅ Execution #{execution_count} completed successfully")
+                        if args.save_json:
+                            json_filename = f"atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                            with open(json_filename, 'w', encoding='utf-8') as f:
+                                json.dump(all_data, f, indent=2, ensure_ascii=False, default=str)
+                            log.info(f"💾 Data saved to {json_filename}")
+                    else:
+                        log.error(f"❌ Execution #{execution_count} failed")
+                    
+                    # Wait for next execution
+                    log.info(f"⏰ Waiting {interval_seconds//60} minutes until next execution...")
+                    time.sleep(interval_seconds)
+                    
+                except KeyboardInterrupt:
+                    log.info(f"⏹️ Continuous operation stopped by user after {execution_count} executions")
+                    break
+                except Exception as e:
+                    log.error(f"❌ Error in continuous execution #{execution_count}: {e}")
+                    log.info(f"🔄 Continuing with next execution in {interval_seconds//60} minutes...")
+                    time.sleep(interval_seconds)
+        else:
+            # Single execution mode
+            log.info("🚀 Starting single ATM data retrieval...")
+            start_time = time.time()
+            
+            # Use comprehensive data retrieval method
+            success, all_data = retriever.retrieve_and_process_all_data(
+                save_to_db=args.save_to_db,
+                use_new_tables=args.use_new_tables
+            )
+            
+            if not success:
+                log.error("❌ Failed to retrieve ATM data")
+                return 1
+            
+            # Save to JSON if requested
+            if args.save_json:
+                json_filename = f"atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                with open(json_filename, 'w', encoding='utf-8') as f:
+                    json.dump(all_data, f, indent=2, ensure_ascii=False, default=str)
+                log.info(f"💾 Data saved to {json_filename}")
+            
+            # Show summary
+            execution_time = time.time() - start_time
+            log.info(f"✅ Execution completed in {execution_time:.2f} seconds")
+            
+            # Show detailed summary
+            summary = all_data.get('summary', {})
+            log.info(f"📊 Regional records: {summary.get('total_regions', 0)}")
+            log.info(f"📊 Terminal details: {summary.get('total_terminal_details', 0)}")
+            
+            if 'status_counts' in summary:
+                log.info("📊 ATM Status Distribution:")
+                for status, count in summary['status_counts'].items():
+                    log.info(f"   {status}: {count} ATMs")
+            
+            if all_data.get('failover_mode'):
+                log.warning(f"⚠️ Failover mode was activated: {summary.get('failure_type', 'Unknown')}")
+            
+            database_saved = args.save_to_db and not args.demo
+            log.info(f"💾 Database save: {'✅ Enabled' if database_saved else '❌ Disabled/Demo'}")
+            log.info(f"�️ Table type: {'New tables' if args.use_new_tables else 'Legacy tables'}")
         
         return 0
         
