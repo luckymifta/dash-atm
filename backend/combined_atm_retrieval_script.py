@@ -75,20 +75,31 @@ execution_stats = {
     'cycle_history': deque(maxlen=50)  # Keep last 50 cycle results
 }
 
-# Try to import database connector if available
-try:
-    from db_connector_new import db_connector
-    DB_AVAILABLE = True
-    log.info("Database connector available")
-except ImportError:
+# Global variables for database connector - will be initialized on demand
+db_connector = None
+DB_AVAILABLE = False
+
+def initialize_database_connector():
+    """Initialize database connector only when needed"""
+    global db_connector, DB_AVAILABLE
+    
+    if DB_AVAILABLE:  # Already initialized
+        return
+    
+    # Try to import database connector if available
     try:
-        import db_connector
+        from db_connector_new import db_connector
         DB_AVAILABLE = True
-        log.info("Legacy database connector available")
+        log.info("Database connector available")
     except ImportError:
-        db_connector = None
-        DB_AVAILABLE = False
-        log.warning("Database connector not available - database operations will be skipped")
+        try:
+            import db_connector
+            DB_AVAILABLE = True
+            log.info("Legacy database connector available")
+        except ImportError:
+            db_connector = None
+            DB_AVAILABLE = False
+            log.warning("Database connector not available - database operations will be skipped")
 
 # Configuration
 LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"
@@ -145,20 +156,9 @@ class CombinedATMRetriever:
         
         # Initialize database logging if enabled
         if enable_db_logging:
-            execution_id = str(uuid.uuid4())
-            log_metrics.reset()
+            # Initialize database connector if needed
+            initialize_database_connector()
             
-            # Try to initialize database logging
-            try:
-                if not demo_mode and DB_AVAILABLE and db_connector:
-                    db_log_handler = DatabaseLogHandler(db_connector, execution_id, demo_mode)
-                    log.addHandler(db_log_handler)
-                    log.info(f"✅ Database logging enabled for execution: {execution_id}")
-                else:
-                    log.info("Database logging disabled (demo mode or DB unavailable)")
-            except Exception as e:
-                log.warning(f"Failed to initialize database logging: {e}")
-                db_log_handler = None
             execution_id = str(uuid.uuid4())
             log_metrics.reset()
             
@@ -858,9 +858,6 @@ class CombinedATMRetriever:
                 if retry_count >= max_retries:
                     log.error(f"All JSON parsing attempts failed for {param_value}. Skipping this parameter.")
                     return []
-                log.info(f"Retrying in 3 seconds...")
-                time.sleep(3)
-                continue
                 
         return terminals
     
@@ -2477,3 +2474,210 @@ class CombinedATMRetriever:
         except Exception as e:
             log.error(f"❌ Unexpected error for terminal {terminal_id}: {str(e)}")
             return None
+
+    def retrieve_regional_data(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        Retrieve only regional data
+        
+        Returns:
+            List of regional data or None if failed
+        """
+        log.info("🗺️ Retrieving regional data only...")
+        
+        if not self.demo_mode:
+            # Check connectivity first
+            if not self.check_connectivity():
+                log.error("❌ Connectivity check failed")
+                return None
+            
+            # Authenticate
+            if not self.authenticate():
+                log.error("❌ Authentication failed")
+                return None
+        
+        # Fetch and process regional data
+        try:
+            raw_regional_data = self.fetch_regional_data()
+            if raw_regional_data:
+                processed_regional_data = self.process_regional_data(raw_regional_data)
+                log.info(f"✅ Successfully retrieved regional data for {len(processed_regional_data)} regions")
+                return processed_regional_data
+            else:
+                log.error("❌ Failed to fetch regional data")
+                return None
+        finally:
+            # Logout
+            if not self.demo_mode:
+                self.logout()
+    
+    def retrieve_terminal_details(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        Retrieve only terminal details data
+        
+        Returns:
+            List of terminal details or None if failed
+        """
+        log.info("🏧 Retrieving terminal details only...")
+        
+        if not self.demo_mode:
+            # Check connectivity first
+            if not self.check_connectivity():
+                log.error("❌ Connectivity check failed")
+                return None
+            
+            # Authenticate
+            if not self.authenticate():
+                log.error("❌ Authentication failed")
+                return None
+        
+        try:
+            # Get terminals using comprehensive search
+            all_terminals, status_counts = self.comprehensive_terminal_search()
+            
+            if not all_terminals:
+                log.error("❌ No terminals found")
+                return None
+            
+            # Fetch terminal details concurrently
+            max_workers = 4 if not self.demo_mode else 2
+            all_terminal_details = self.fetch_terminal_details_concurrent(all_terminals, max_workers=max_workers)
+            
+            log.info(f"✅ Successfully retrieved details for {len(all_terminal_details)} terminals")
+            return all_terminal_details
+            
+        finally:
+            # Logout
+            if not self.demo_mode:
+                self.logout()
+
+def main():
+    """Main CLI entry point for the combined ATM retrieval script"""
+    parser = argparse.ArgumentParser(
+        description="Combined ATM Data Retrieval Script",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python combined_atm_retrieval_script.py --demo
+  python combined_atm_retrieval_script.py --save-to-db --total-atms 14
+  python combined_atm_retrieval_script.py --demo --save-json
+  python combined_atm_retrieval_script.py --enable-db-logging --save-to-db
+  python combined_atm_retrieval_script.py --continuous --total-atms 14
+        """
+    )
+    
+    # Core options
+    parser.add_argument('--demo', action='store_true', 
+                        help='Run in demo mode (no actual network requests)')
+    parser.add_argument('--total-atms', type=int, default=14,
+                        help='Total number of ATMs for percentage calculations (default: 14)')
+    
+    # Database options
+    parser.add_argument('--save-to-db', action='store_true',
+                        help='Save retrieved data to database')
+    parser.add_argument('--enable-db-logging', action='store_true', default=True,
+                        help='Enable database logging for this execution (default: True)')
+    parser.add_argument('--disable-db-logging', action='store_true',
+                        help='Disable database logging for this execution')
+    
+    # Output options
+    parser.add_argument('--save-json', action='store_true',
+                        help='Save retrieved data to JSON file')
+    parser.add_argument('--continuous', action='store_true',
+                        help='Run continuously with interval')
+    parser.add_argument('--use-new-tables', action='store_true',
+                        help='Use new database table structure')
+    
+    # Debugging options
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Enable verbose logging')
+    
+    args = parser.parse_args()
+    
+    # Handle logging level
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+    
+    # Handle database logging flag
+    enable_db_logging = args.enable_db_logging and not args.disable_db_logging
+    
+    try:
+        # Initialize the retriever
+        retriever = CombinedATMRetriever(
+            demo_mode=args.demo,
+            total_atms=args.total_atms,
+            enable_db_logging=enable_db_logging
+        )
+        
+        if args.continuous:
+            log.info("🔄 Starting continuous operation mode...")
+            # Note: continuous mode implementation would go here
+            log.info("Continuous mode not yet implemented - running single execution")
+        
+        # Execute data retrieval
+        log.info("🚀 Starting ATM data retrieval...")
+        start_time = time.time()
+        
+        # Retrieve regional data
+        regional_data = retriever.retrieve_regional_data()
+        if not regional_data:
+            log.error("❌ Failed to retrieve regional data")
+            return 1
+        
+        # Retrieve terminal details
+        terminal_details = retriever.retrieve_terminal_details()
+        if not terminal_details:
+            log.error("❌ Failed to retrieve terminal details")
+            return 1
+        
+        # Combine data
+        combined_data = {
+            'regional_data': regional_data,
+            'terminal_details': terminal_details,
+            'metadata': {
+                'total_atms': args.total_atms,
+                'execution_time': time.time() - start_time,
+                'timestamp': datetime.now(pytz.timezone('Asia/Dili')).isoformat(),
+                'demo_mode': args.demo
+            }
+        }
+        
+        # Save to JSON if requested
+        if args.save_json:
+            json_filename = f"atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(json_filename, 'w', encoding='utf-8') as f:
+                json.dump(combined_data, f, indent=2, ensure_ascii=False)
+            log.info(f"💾 Data saved to {json_filename}")
+        
+        # Save to database if requested
+        if args.save_to_db:
+            initialize_database_connector()
+            if DB_AVAILABLE and db_connector:
+                # Note: Database saving implementation would go here
+                log.info("💾 Database saving not yet implemented")
+            else:
+                log.warning("⚠️ Database not available for saving")
+        
+        # Show summary
+        execution_time = time.time() - start_time
+        log.info(f"✅ Execution completed in {execution_time:.2f} seconds")
+        log.info(f"📊 Retrieved data for {len(terminal_details)} terminals")
+        
+        return 0
+        
+    except KeyboardInterrupt:
+        log.info("⏹️ Execution interrupted by user")
+        return 1
+    except Exception as e:
+        log.error(f"❌ Unexpected error: {e}")
+        return 1
+    finally:
+        # Cleanup database logging
+        if db_log_handler:
+            try:
+                db_log_handler.close()
+            except:
+                pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())
