@@ -28,7 +28,12 @@ import hashlib
 import hmac
 
 # Load environment variables
-load_dotenv()
+# Get the directory where this script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, '.env')
+
+# Load .env file from the backend directory
+load_dotenv(env_path)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -420,7 +425,7 @@ async def send_password_reset_email(email: str, username: str, reset_token: str,
         
         # For frontend integration, use frontend URL
         # You may want to configure this in environment variables
-        frontend_base_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        frontend_base_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
         reset_link = f"{frontend_base_url}/auth/reset-password?token={reset_token}"
         
         # Send email using the email service
