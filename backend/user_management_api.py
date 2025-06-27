@@ -24,6 +24,8 @@ from dotenv import load_dotenv
 import os
 import pytz
 from typing import Union
+import hashlib
+import hmac
 
 # Load environment variables
 load_dotenv()
@@ -78,6 +80,10 @@ REFRESH_TOKEN_EXPIRE_DAYS = 30
 MAX_FAILED_ATTEMPTS = 5
 ACCOUNT_LOCKOUT_MINUTES = 15
 
+# Password reset configuration
+PASSWORD_RESET_TOKEN_EXPIRE_HOURS = 24
+PASSWORD_RESET_SECRET = "password-reset-secret-change-in-production"
+
 # Timezone configuration for Dili, East Timor (UTC+9)
 DILI_TIMEZONE = pytz.timezone('Asia/Dili')
 
@@ -112,6 +118,8 @@ class AuditAction(str, Enum):
     PASSWORD_CHANGE = "password_change"
     ACCOUNT_LOCK = "account_lock"
     ACCOUNT_UNLOCK = "account_unlock"
+    PASSWORD_RESET_REQUEST = "password_reset_request"
+    PASSWORD_RESET_COMPLETE = "password_reset_complete"
 
 # Pydantic Models
 class UserBase(BaseModel):
@@ -143,6 +151,20 @@ class UserLogin(BaseModel):
     username: str
     password: str
     remember_me: bool = False  # Added remember me functionality
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str = Field(..., min_length=8, max_length=128)
+
+    def validate_passwords_match(self):
+        """Validate that passwords match"""
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return True
 
 class UserResponse(UserBase):
     id: str
@@ -235,6 +257,36 @@ def create_refresh_token() -> str:
     """Create a secure refresh token"""
     return secrets.token_urlsafe(32)
 
+def create_password_reset_token(user_id: str, email: str) -> str:
+    """Create a secure password reset token"""
+    # Create payload with user info and expiration
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TOKEN_EXPIRE_HOURS),
+        "type": "password_reset"
+    }
+    
+    # Create token with different secret for password resets
+    token = jwt.encode(payload, PASSWORD_RESET_SECRET, algorithm=ALGORITHM)
+    return token
+
+def verify_password_reset_token(token: str) -> Optional[Dict[str, str]]:
+    """Verify and decode password reset token"""
+    try:
+        payload = jwt.decode(token, PASSWORD_RESET_SECRET, algorithms=[ALGORITHM])
+        
+        # Verify token type
+        if payload.get("type") != "password_reset":
+            return None
+            
+        return {
+            "user_id": payload.get("user_id"),
+            "email": payload.get("email")
+        }
+    except jwt.PyJWTError:
+        return None
+
 def get_client_ip(request: Request) -> str:
     """Get client IP address"""
     return request.client.host if request.client else "unknown"
@@ -281,6 +333,102 @@ def update_session_activity(user_id: str, session_token: str) -> None:
         execute_query(query, (user_id, session_token))
     except Exception as e:
         logger.error(f"Failed to update session activity: {e}")
+
+def store_password_reset_token(user_id: str, token: str, email: str) -> None:
+    """Store password reset token in database"""
+    try:
+        # First, invalidate any existing password reset tokens for this user
+        invalidate_query = """
+            UPDATE password_reset_tokens 
+            SET is_used = true, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s AND is_used = false AND expires_at > CURRENT_TIMESTAMP
+        """
+        execute_query(invalidate_query, (user_id,))
+        
+        # Insert new password reset token
+        insert_query = """
+            INSERT INTO password_reset_tokens (
+                id, user_id, token_hash, email, expires_at, is_used, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        token_id = str(uuid.uuid4())
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=PASSWORD_RESET_TOKEN_EXPIRE_HOURS)
+        now = datetime.now(timezone.utc)
+        
+        execute_query(insert_query, (
+            token_id, user_id, token_hash, email, expires_at, False, now, now
+        ))
+        
+        logger.info(f"Password reset token stored for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to store password reset token: {e}")
+        raise
+
+def verify_password_reset_token_db(token: str) -> Optional[Dict[str, Any]]:
+    """Verify password reset token against database"""
+    try:
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        
+        query = """
+            SELECT prt.*, u.username, u.email as user_email
+            FROM password_reset_tokens prt
+            JOIN users u ON prt.user_id = u.id
+            WHERE prt.token_hash = %s 
+                AND prt.is_used = false 
+                AND prt.expires_at > CURRENT_TIMESTAMP
+                AND u.is_deleted = false
+        """
+        
+        result = execute_query(query, (token_hash,), fetch="one")
+        
+        if result:
+            return dict(result)
+        return None
+        
+    except Exception as e:
+        logger.error(f"Failed to verify password reset token: {e}")
+        return None
+
+def mark_password_reset_token_used(token: str) -> None:
+    """Mark password reset token as used"""
+    try:
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        
+        query = """
+            UPDATE password_reset_tokens 
+            SET is_used = true, updated_at = CURRENT_TIMESTAMP
+            WHERE token_hash = %s AND is_used = false
+        """
+        
+        execute_query(query, (token_hash,))
+        logger.info("Password reset token marked as used")
+        
+    except Exception as e:
+        logger.error(f"Failed to mark password reset token as used: {e}")
+
+async def send_password_reset_email(email: str, username: str, reset_token: str, request: Request) -> bool:
+    """Send password reset email using Mailjet"""
+    try:
+        # Import email service
+        from email_service import email_service
+        
+        # Get the base URL from the request
+        base_url = f"{request.url.scheme}://{request.url.netloc}"
+        
+        # For frontend integration, use frontend URL
+        # You may want to configure this in environment variables
+        frontend_base_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        reset_link = f"{frontend_base_url}/auth/reset-password?token={reset_token}"
+        
+        # Send email using the email service
+        return await email_service.send_password_reset_email(email, username, reset_link)
+        
+    except Exception as e:
+        logger.error(f"Failed to send password reset email: {e}")
+        return False
 
 def log_audit_action(
     action: AuditAction,
@@ -691,6 +839,215 @@ async def refresh_session(request: Request, current_user: dict = Depends(get_cur
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to refresh session"
         )
+
+# ==================== PASSWORD RESET ENDPOINTS ====================
+
+@app.post("/auth/forgot-password")
+async def forgot_password(
+    forgot_request: ForgotPasswordRequest,
+    request: Request
+):
+    """Initiate password reset process"""
+    try:
+        # Find user by email
+        query = """
+            SELECT id, username, email, first_name, last_name, is_active 
+            FROM users 
+            WHERE email = %s AND is_deleted = false
+        """
+        user = execute_query(query, (forgot_request.email,), fetch="one")
+        
+        # Always return success message for security (don't reveal if user exists)
+        success_message = {
+            "message": "If a user with that email exists, a password reset email has been sent."
+        }
+        
+        if not user:
+            # Log the attempt for security monitoring
+            log_audit_action(
+                AuditAction.PASSWORD_RESET_REQUEST,
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                new_values={
+                    "email": forgot_request.email,
+                    "result": "user_not_found"
+                }
+            )
+            return success_message
+        
+        user_dict = dict(user)
+        
+        # Check if user account is active
+        if not user_dict["is_active"]:
+            log_audit_action(
+                AuditAction.PASSWORD_RESET_REQUEST,
+                user_id=user_dict["id"],
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                new_values={
+                    "username": user_dict["username"],
+                    "email": forgot_request.email,
+                    "result": "account_inactive"
+                }
+            )
+            return success_message
+        
+        # Generate password reset token
+        reset_token = create_password_reset_token(user_dict["id"], user_dict["email"])
+        
+        # Store token in database
+        store_password_reset_token(user_dict["id"], reset_token, user_dict["email"])
+        
+        # Send password reset email
+        email_sent = await send_password_reset_email(
+            user_dict["email"], 
+            user_dict["username"], 
+            reset_token,
+            request
+        )
+        
+        if email_sent:
+            # Log successful password reset request
+            log_audit_action(
+                AuditAction.PASSWORD_RESET_REQUEST,
+                user_id=user_dict["id"],
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                new_values={
+                    "username": user_dict["username"],
+                    "email": forgot_request.email,
+                    "result": "success"
+                }
+            )
+            
+            logger.info(f"Password reset email sent to {user_dict['email']} for user {user_dict['username']}")
+        else:
+            logger.error(f"Failed to send password reset email to {user_dict['email']}")
+        
+        return success_message
+        
+    except Exception as e:
+        logger.error(f"Password reset request error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process password reset request"
+        )
+
+@app.post("/auth/reset-password")
+async def reset_password(
+    reset_request: ResetPasswordRequest,
+    request: Request
+):
+    """Complete password reset process"""
+    try:
+        # Validate that passwords match
+        if reset_request.new_password != reset_request.confirm_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Passwords do not match"
+            )
+        
+        # Verify the reset token
+        token_data = verify_password_reset_token_db(reset_request.token)
+        
+        if not token_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        user_id = token_data["user_id"]
+        username = token_data["username"]
+        
+        # Hash the new password
+        new_password_hash = hash_password(reset_request.new_password)
+        now = datetime.now(timezone.utc)
+        
+        # Update user password
+        update_query = """
+            UPDATE users 
+            SET password_hash = %s, 
+                password_changed_at = %s,
+                failed_login_attempts = 0,
+                account_locked_until = NULL,
+                updated_at = %s
+            WHERE id = %s AND is_deleted = false
+        """
+        
+        rows_affected = execute_query(update_query, (new_password_hash, now, now, user_id))
+        
+        if rows_affected == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to reset password - user not found"
+            )
+        
+        # Mark the reset token as used
+        mark_password_reset_token_used(reset_request.token)
+        
+        # Invalidate all existing sessions for this user
+        invalidate_sessions_query = """
+            UPDATE user_sessions 
+            SET is_active = false
+            WHERE user_id = %s AND is_active = true
+        """
+        execute_query(invalidate_sessions_query, (user_id,))
+        
+        # Log the successful password reset
+        log_audit_action(
+            AuditAction.PASSWORD_RESET_COMPLETE,
+            user_id=user_id,
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            new_values={
+                "username": username,
+                "result": "success"
+            }
+        )
+        
+        logger.info(f"Password reset completed successfully for user {username}")
+        
+        return {
+            "message": "Password reset successful. You can now log in with your new password."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset completion error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset password"
+        )
+
+@app.get("/auth/verify-reset-token/{token}")
+async def verify_reset_token(token: str):
+    """Verify if a password reset token is valid"""
+    try:
+        token_data = verify_password_reset_token_db(token)
+        
+        if not token_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        return {
+            "valid": True,
+            "username": token_data["username"],
+            "email": token_data["user_email"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify reset token"
+        )
+
+# ==================== USER CRUD OPERATIONS ====================
 
 @app.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(
@@ -1321,8 +1678,40 @@ async def get_audit_log(
 
 # Initialize with default admin user
 def initialize_default_users():
-    """Create default admin user if it doesn't exist"""
+    """Create default admin user and required tables if they don't exist"""
     try:
+        # Create password_reset_tokens table if it doesn't exist
+        create_table_query = """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                is_used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_table_query)
+        
+        # Create index on token_hash for faster lookups
+        index_query = """
+            CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash 
+            ON password_reset_tokens(token_hash) 
+            WHERE is_used = false
+        """
+        execute_query(index_query)
+        
+        # Create index on user_id for faster cleanup
+        user_index_query = """
+            CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id 
+            ON password_reset_tokens(user_id)
+        """
+        execute_query(user_index_query)
+        
+        logger.info("Password reset tokens table initialized successfully")
+        
         # Check if any admin user exists
         query = "SELECT COUNT(*) FROM users WHERE role IN ('super_admin', 'admin') AND is_deleted = false"
         result = execute_query(query, fetch="one")
@@ -1340,7 +1729,7 @@ def initialize_default_users():
                 id, username, email, password_hash, first_name, last_name,
                 role, is_active, is_deleted, password_changed_at, 
                 failed_login_attempts, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
         now = datetime.now(timezone.utc)

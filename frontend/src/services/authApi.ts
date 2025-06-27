@@ -471,6 +471,117 @@ class AuthApiService {
       throw new Error('An unexpected error occurred while fetching audit logs');
     }
   }
+
+  // Password Reset API functions
+  
+  /**
+   * Request password reset - sends reset email to user
+   */
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/forgot-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to send password reset email';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {
+          // If we can't parse the error response, use the default message
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while requesting password reset');
+    }
+  }
+
+  /**
+   * Verify reset token validity
+   */
+  async verifyResetToken(token: string): Promise<{ 
+    valid: boolean; 
+    user_email?: string; 
+    expires_at?: string; 
+  }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/verify-reset-token/${token}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Invalid or expired reset token';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {
+          // If we can't parse the error response, use the default message
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while verifying reset token');
+    }
+  }
+
+  /**
+   * Reset password with token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          token, 
+          new_password: newPassword,
+          confirm_password: newPassword
+        }),
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to reset password';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {
+          // If we can't parse the error response, use the default message
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while resetting password');
+    }
+  }
 }
 
 export const authApi = new AuthApiService();

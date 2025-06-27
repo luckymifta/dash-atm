@@ -7,6 +7,7 @@ import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginRequest } from '@/services/authApi';
 import Image from 'next/image';
+import Link from 'next/link';
 
 interface LoginFormData {
   username: string;
@@ -127,12 +128,12 @@ export default function LoginForm() {
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   Password
                 </label>
-                <button
-                  type="button"
+                <Link
+                  href="/auth/forgot-password"
                   className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
                 >
                   Forgot Password?
-                </button>
+                </Link>
               </div>
               <div className="relative">
                 <input

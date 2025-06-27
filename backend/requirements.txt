@@ -33,6 +33,9 @@ schedule>=1.2.0
 # Data validation and modeling
 pydantic[email]>=2.5.0
 
+# Email services
+mailjet-rest>=1.3.4
+
 # Production server (alternative to uvicorn)
 gunicorn>=21.2.0
 
