@@ -294,6 +294,134 @@ class FaultHistoryReportResponse(BaseModel):
     terminal_count: int = Field(..., description="Number of terminals included")
     chart_data: Dict[str, Any] = Field(..., description="Chart configuration and data")
 
+# ========================
+# ATM MASTERS CRUD MODELS
+# ========================
+
+class ATMMasterBase(BaseModel):
+    """Base model for ATM Master data"""
+    terminal_id: str = Field(..., max_length=50, description="Unique terminal identifier")
+    terminal_name: Optional[str] = Field(None, max_length=255, description="Terminal name")
+    external_id: Optional[str] = Field(None, max_length=50, description="External system ID")
+    network_id: Optional[str] = Field(None, max_length=50, description="Network identifier")
+    business_id: Optional[str] = Field(None, max_length=100, description="Business identifier")
+    technical_code: Optional[str] = Field(None, max_length=100, description="Technical code")
+    
+    # Hardware Specifications
+    brand: str = Field(..., max_length=100, description="ATM brand (NCR, Nautilus Hyosun, Diebold, Wincor Nixdorf)")
+    model: str = Field(..., max_length=100, description="ATM model (SelfServ 22e, Monimax 5600, ProCash 2100xe, 4900)")
+    serial_number: Optional[str] = Field(None, max_length=100, description="Serial number")
+    
+    # Location Information
+    location: str = Field(..., max_length=500, description="Primary location description")
+    location_type: Optional[str] = Field(None, max_length=100, description="Location type (Gas Station, Financial Institution Office, etc.)")
+    address_line_1: Optional[str] = Field(None, max_length=255, description="Address line 1")
+    address_line_2: Optional[str] = Field(None, max_length=255, description="Address line 2")
+    city: Optional[str] = Field(None, max_length=100, description="City")
+    region: Optional[str] = Field(None, max_length=100, description="Region code (TL-DL, TL-AN, etc.)")
+    postal_code: Optional[str] = Field(None, max_length=20, description="Postal code")
+    country: Optional[str] = Field("Timor-Leste", max_length=50, description="Country")
+    
+    # Geographic Coordinates
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Latitude coordinate")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Longitude coordinate")
+    geo_location: Optional[str] = Field(None, max_length=50, description="Geographic location code")
+    
+    # Operational Information
+    is_active: bool = Field(True, description="Whether ATM is active")
+    installation_date: Optional[datetime] = Field(None, description="Installation date")
+    last_maintenance_date: Optional[datetime] = Field(None, description="Last maintenance date")
+    next_maintenance_date: Optional[datetime] = Field(None, description="Next scheduled maintenance")
+    service_period: Optional[str] = Field(None, max_length=100, description="Service period")
+    maintenance_period: Optional[str] = Field(None, max_length=100, description="Maintenance period")
+    
+    @validator('latitude', 'longitude')
+    def validate_coordinates(cls, v, values):
+        """Ensure both latitude and longitude are provided together or both are None"""
+        if 'latitude' in values and 'longitude' in values:
+            lat = values.get('latitude')
+            lng = v if 'longitude' in cls.__fields__ else values.get('longitude')
+            if (lat is None) != (lng is None):
+                raise ValueError('Both latitude and longitude must be provided together or both must be None')
+        return v
+
+class ATMMasterCreate(ATMMasterBase):
+    """Model for creating new ATM Master records"""
+    created_by: Optional[str] = Field(None, max_length=100, description="User who created the record")
+
+class ATMMasterUpdate(BaseModel):
+    """Model for updating ATM Master records - all fields optional"""
+    terminal_name: Optional[str] = Field(None, max_length=255, description="Terminal name")
+    external_id: Optional[str] = Field(None, max_length=50, description="External system ID")
+    network_id: Optional[str] = Field(None, max_length=50, description="Network identifier")
+    business_id: Optional[str] = Field(None, max_length=100, description="Business identifier")
+    technical_code: Optional[str] = Field(None, max_length=100, description="Technical code")
+    
+    # Hardware Specifications
+    brand: Optional[str] = Field(None, max_length=100, description="ATM brand")
+    model: Optional[str] = Field(None, max_length=100, description="ATM model")
+    serial_number: Optional[str] = Field(None, max_length=100, description="Serial number")
+    
+    # Location Information
+    location: Optional[str] = Field(None, max_length=500, description="Primary location description")
+    location_type: Optional[str] = Field(None, max_length=100, description="Location type")
+    address_line_1: Optional[str] = Field(None, max_length=255, description="Address line 1")
+    address_line_2: Optional[str] = Field(None, max_length=255, description="Address line 2")
+    city: Optional[str] = Field(None, max_length=100, description="City")
+    region: Optional[str] = Field(None, max_length=100, description="Region code")
+    postal_code: Optional[str] = Field(None, max_length=20, description="Postal code")
+    country: Optional[str] = Field(None, max_length=50, description="Country")
+    
+    # Geographic Coordinates
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Latitude coordinate")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Longitude coordinate")
+    geo_location: Optional[str] = Field(None, max_length=50, description="Geographic location code")
+    
+    # Operational Information
+    is_active: Optional[bool] = Field(None, description="Whether ATM is active")
+    installation_date: Optional[datetime] = Field(None, description="Installation date")
+    last_maintenance_date: Optional[datetime] = Field(None, description="Last maintenance date")
+    next_maintenance_date: Optional[datetime] = Field(None, description="Next scheduled maintenance")
+    service_period: Optional[str] = Field(None, max_length=100, description="Service period")
+    maintenance_period: Optional[str] = Field(None, max_length=100, description="Maintenance period")
+    
+    # Metadata
+    updated_by: Optional[str] = Field(None, max_length=100, description="User who updated the record")
+
+class ATMMasterResponse(ATMMasterBase):
+    """Model for ATM Master responses including metadata"""
+    id: int = Field(..., description="Primary key ID")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    created_by: Optional[str] = Field(None, description="User who created the record")
+    updated_by: Optional[str] = Field(None, description="User who last updated the record")
+
+class ATMMasterListResponse(BaseModel):
+    """Model for paginated ATM Master list responses"""
+    atms: List[ATMMasterResponse]
+    total_count: int = Field(..., ge=0, description="Total number of ATMs")
+    page: int = Field(..., ge=1, description="Current page number")
+    per_page: int = Field(..., ge=1, description="Items per page")
+    total_pages: int = Field(..., ge=0, description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there are more pages")
+    has_previous: bool = Field(..., description="Whether there are previous pages")
+
+class ATMMasterDeleteResponse(BaseModel):
+    """Model for ATM Master deletion responses"""
+    success: bool = Field(..., description="Whether deletion was successful")
+    message: str = Field(..., description="Deletion status message")
+    terminal_id: str = Field(..., description="Terminal ID that was deleted")
+    timestamp: datetime = Field(..., description="Deletion timestamp")
+
+class ATMMasterBulkResponse(BaseModel):
+    """Model for bulk operations responses"""
+    success: bool = Field(..., description="Whether operation was successful")
+    total_processed: int = Field(..., ge=0, description="Total number of records processed")
+    successful: int = Field(..., ge=0, description="Number of successful operations")
+    failed: int = Field(..., ge=0, description="Number of failed operations")
+    errors: List[str] = Field([], description="List of error messages")
+    timestamp: datetime = Field(..., description="Operation timestamp")
+
 # Global job tracking
 refresh_jobs: Dict[str, RefreshJobResponse] = {}
 job_executor = ThreadPoolExecutor(max_workers=2)  # Limit concurrent refresh jobs
@@ -1347,21 +1475,20 @@ async def get_atm_list(
         params = []
         
         if region_code:
-            # For simplicity, we'll check if location contains region info
-            conditions.append("location ILIKE $" + str(len(params) + 1))
-            params.append(f"%{region_code}%")
+            conditions.append("region = $1")
+            params.append(region_code)
         
         if status_filter:
             # Handle status mapping
             if status_filter == ATMStatusEnum.WOUNDED:
-                conditions.append("(fetched_status = $" + str(len(params) + 1) + " OR issue_state_name = 'HARD')")
+                conditions.append("(fetched_status = $2 OR issue_state_name = 'HARD')")
                 params.append('WOUNDED')
             elif status_filter == ATMStatusEnum.OUT_OF_SERVICE:
-                conditions.append("(fetched_status IN ($" + str(len(params) + 1) + ", $" + str(len(params) + 2) + ") OR issue_state_name IN ('CASH', 'UNAVAILABLE'))")
+                conditions.append("(fetched_status IN ($2, $3) OR issue_state_name IN ('CASH', 'UNAVAILABLE'))")
                 params.extend(['OUT_OF_SERVICE', 'UNAVAILABLE'])
             else:
-                conditions.append("(fetched_status = $" + str(len(params) + 1) + " OR issue_state_name = $" + str(len(params) + 2) + ")")
-                params.extend([status_filter.value, status_filter.value])
+                conditions.append("(fetched_status = $2 OR issue_state_name = $2)")
+                params.append(status_filter.value)
         
         if conditions:
             base_query += " WHERE " + " AND ".join(conditions)
@@ -2665,11 +2792,816 @@ async def get_fault_history_report(
     finally:
         await release_db_connection(conn)
 
-if __name__ == "__main__":
-    uvicorn.run(
-        "api_option_2_fastapi_fixed:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info"
-    )
+# ========================
+# ATM MASTERS CRUD ENDPOINTS
+# ========================
+
+@app.post("/api/v1/atm-masters", response_model=ATMMasterResponse, tags=["ATM Masters"])
+async def create_atm_master(
+    atm_data: ATMMasterCreate,
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Create a new ATM Master record
+    
+    Creates a new ATM in the masters table with all relevant information including
+    hardware specifications, location details, and operational information.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Check if terminal_id already exists
+        existing_query = "SELECT id FROM atm_masters WHERE terminal_id = $1"
+        existing = await conn.fetchrow(existing_query, atm_data.terminal_id)
+        if existing:
+            raise HTTPException(status_code=409, detail=f"ATM with terminal_id '{atm_data.terminal_id}' already exists")
+        
+        # Insert new ATM master record
+        insert_query = """
+            INSERT INTO atm_masters (
+                terminal_id, terminal_name, external_id, network_id, business_id, technical_code,
+                brand, model, serial_number, location, location_type, address_line_1, address_line_2,
+                city, region, postal_code, country, latitude, longitude, geo_location,
+                is_active, installation_date, last_maintenance_date, next_maintenance_date,
+                service_period, maintenance_period, created_by
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+            ) RETURNING *
+        """
+        
+        new_record = await conn.fetchrow(
+            insert_query,
+            atm_data.terminal_id, atm_data.terminal_name, atm_data.external_id,
+            atm_data.network_id, atm_data.business_id, atm_data.technical_code,
+            atm_data.brand, atm_data.model, atm_data.serial_number,
+            atm_data.location, atm_data.location_type, atm_data.address_line_1,
+            atm_data.address_line_2, atm_data.city, atm_data.region,
+            atm_data.postal_code, atm_data.country, atm_data.latitude,
+            atm_data.longitude, atm_data.geo_location, atm_data.is_active,
+            atm_data.installation_date, atm_data.last_maintenance_date,
+            atm_data.next_maintenance_date, atm_data.service_period,
+            atm_data.maintenance_period, atm_data.created_by
+        )
+        
+        if not new_record:
+            raise HTTPException(status_code=500, detail="Failed to create ATM master record")
+        
+        # Convert to response model
+        return ATMMasterResponse(
+            id=new_record['id'],
+            terminal_id=new_record['terminal_id'],
+            terminal_name=new_record['terminal_name'],
+            external_id=new_record['external_id'],
+            network_id=new_record['network_id'],
+            business_id=new_record['business_id'],
+            technical_code=new_record['technical_code'],
+            brand=new_record['brand'],
+            model=new_record['model'],
+            serial_number=new_record['serial_number'],
+            location=new_record['location'],
+            location_type=new_record['location_type'],
+            address_line_1=new_record['address_line_1'],
+            address_line_2=new_record['address_line_2'],
+            city=new_record['city'],
+            region=new_record['region'],
+            postal_code=new_record['postal_code'],
+            country=new_record['country'],
+            latitude=float(new_record['latitude']) if new_record['latitude'] else None,
+            longitude=float(new_record['longitude']) if new_record['longitude'] else None,
+            geo_location=new_record['geo_location'],
+            is_active=new_record['is_active'],
+            installation_date=new_record['installation_date'],
+            last_maintenance_date=new_record['last_maintenance_date'],
+            next_maintenance_date=new_record['next_maintenance_date'],
+            service_period=new_record['service_period'],
+            maintenance_period=new_record['maintenance_period'],
+            created_at=convert_to_dili_time(new_record['created_at']),
+            updated_at=convert_to_dili_time(new_record['updated_at']),
+            created_by=new_record['created_by'],
+            updated_by=new_record['updated_by']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating ATM master record: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create ATM master record")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm-masters", response_model=ATMMasterListResponse, tags=["ATM Masters"])
+async def list_atm_masters(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    region: Optional[str] = Query(None, description="Filter by region"),
+    brand: Optional[str] = Query(None, description="Filter by brand"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    location_search: Optional[str] = Query(None, description="Search in location field"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get paginated list of ATM Master records
+    
+    Supports filtering by region, brand, active status, and location search.
+    Returns paginated results with metadata.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Build WHERE clause based on filters
+        where_conditions = []
+        params = []
+        param_count = 0
+        
+        if region:
+            param_count += 1
+            where_conditions.append(f"region = ${param_count}")
+            params.append(region)
+        
+        if brand:
+            param_count += 1
+            where_conditions.append(f"brand ILIKE ${param_count}")
+            params.append(f"%{brand}%")
+        
+        if is_active is not None:
+            param_count += 1
+            where_conditions.append(f"is_active = ${param_count}")
+            params.append(is_active)
+        
+        if location_search:
+            param_count += 1
+            where_conditions.append(f"(location ILIKE ${param_count} OR terminal_name ILIKE ${param_count})")
+            params.append(f"%{location_search}%")
+        
+        where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM atm_masters{where_clause}"
+        total_count = await conn.fetchval(count_query, *params)
+        
+        if total_count is None:
+            total_count = 0
+        
+        # Calculate pagination
+        offset = (page - 1) * per_page
+        total_pages = (total_count + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_previous = page > 1
+        
+        # Get paginated data
+        data_query = f"""
+            SELECT * FROM atm_masters
+            {where_clause}
+            ORDER BY terminal_id
+            LIMIT ${param_count + 1} OFFSET ${param_count + 2}
+        """
+        params.extend([per_page, offset])
+        
+        rows = await conn.fetch(data_query, *params)
+        
+        # Convert to response models
+        atms = []
+        for row in rows:
+            atm = ATMMasterResponse(
+                id=row['id'],
+                terminal_id=row['terminal_id'],
+                terminal_name=row['terminal_name'],
+                external_id=row['external_id'],
+                network_id=row['network_id'],
+                business_id=row['business_id'],
+                technical_code=row['technical_code'],
+                brand=row['brand'],
+                model=row['model'],
+                serial_number=row['serial_number'],
+                location=row['location'],
+                location_type=row['location_type'],
+                address_line_1=row['address_line_1'],
+                address_line_2=row['address_line_2'],
+                city=row['city'],
+                region=row['region'],
+                postal_code=row['postal_code'],
+                country=row['country'],
+                latitude=float(row['latitude']) if row['latitude'] else None,
+                longitude=float(row['longitude']) if row['longitude'] else None,
+                geo_location=row['geo_location'],
+                is_active=row['is_active'],
+                installation_date=row['installation_date'],
+                last_maintenance_date=row['last_maintenance_date'],
+                next_maintenance_date=row['next_maintenance_date'],
+                service_period=row['service_period'],
+                maintenance_period=row['maintenance_period'],
+                created_at=convert_to_dili_time(row['created_at']),
+                updated_at=convert_to_dili_time(row['updated_at']),
+                created_by=row['created_by'],
+                updated_by=row['updated_by']
+            )
+            atms.append(atm)
+        
+        return ATMMasterListResponse(
+            atms=atms,
+            total_count=total_count,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_next=has_next,
+            has_previous=has_previous
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing ATM masters: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ATM masters")
+    finally:
+        await release_db_connection(conn)
+
+# ===================================================
+# Specialized Query Endpoints (must come before {terminal_id})
+# ===================================================
+
+@app.get("/api/v1/atm-masters/statistics", tags=["ATM Masters"])
+async def get_atm_masters_statistics(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get comprehensive statistics for ATM Masters database
+    
+    Returns statistics including counts by brand, region, active status,
+    and other useful metrics for fleet management.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection failed")
+    
+    try:
+        # Get fleet overview
+        fleet_stats = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) as total_atms,
+                COUNT(*) FILTER (WHERE is_active = true) as active_atms,
+                COUNT(*) FILTER (WHERE is_active = false) as inactive_atms
+            FROM atm_masters
+        """)
+        
+        total_atms = fleet_stats['total_atms'] if fleet_stats else 0
+        active_atms = fleet_stats['active_atms'] if fleet_stats else 0
+        inactive_atms = fleet_stats['inactive_atms'] if fleet_stats else 0
+        
+        # Get brand distribution
+        brand_stats = await conn.fetch("""
+            SELECT 
+                brand,
+                COUNT(*) as count,
+                COUNT(*) FILTER (WHERE is_active = true) as active_count
+            FROM atm_masters 
+            GROUP BY brand 
+            ORDER BY count DESC
+        """)
+        
+        # Get regional distribution
+        region_stats = await conn.fetch("""
+            SELECT 
+                region,
+                COUNT(*) as count,
+                COUNT(*) FILTER (WHERE is_active = true) as active_count
+            FROM atm_masters 
+            WHERE region IS NOT NULL
+            GROUP BY region 
+            ORDER BY count DESC
+        """)
+        
+        # Get location type distribution
+        location_type_stats = await conn.fetch("""
+            SELECT 
+                location_type,
+                COUNT(*) as count
+            FROM atm_masters 
+            WHERE location_type IS NOT NULL AND is_active = true
+            GROUP BY location_type 
+            ORDER BY count DESC
+        """)
+        
+        # Get maintenance statistics
+        maintenance_stats = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) FILTER (WHERE last_maintenance_date IS NOT NULL) as has_maintenance_date,
+                COUNT(*) FILTER (WHERE next_maintenance_date IS NOT NULL) as has_next_maintenance,
+                COUNT(*) FILTER (WHERE next_maintenance_date < CURRENT_DATE) as overdue_maintenance,
+                COUNT(*) FILTER (WHERE next_maintenance_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days') as due_soon
+            FROM atm_masters
+            WHERE is_active = true
+        """)
+        
+        # Get geographic coverage
+        geo_stats = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) FILTER (WHERE latitude IS NOT NULL AND longitude IS NOT NULL) as with_coordinates,
+                COUNT(DISTINCT city) as unique_cities,
+                COUNT(DISTINCT region) as unique_regions
+            FROM atm_masters
+        """)
+        
+        # Ensure stats are not None
+        if maintenance_stats is None:
+            maintenance_stats = {
+                'has_maintenance_date': 0,
+                'has_next_maintenance': 0,
+                'overdue_maintenance': 0,
+                'due_soon': 0
+            }
+        
+        if geo_stats is None:
+            geo_stats = {
+                'with_coordinates': 0,
+                'unique_cities': 0,
+                'unique_regions': 0
+            }
+        
+        return {
+            "fleet_overview": {
+                "total_atms": total_atms,
+                "active_atms": active_atms,
+                "inactive_atms": inactive_atms,
+                "active_percentage": round((active_atms / total_atms * 100), 2) if total_atms > 0 else 0
+            },
+            "brand_distribution": [
+                {
+                    "brand": row['brand'],
+                    "total_count": row['count'],
+                    "active_count": row['active_count'],
+                    "percentage": round((row['count'] / total_atms * 100), 2) if total_atms > 0 else 0
+                }
+                for row in brand_stats
+            ],
+            "regional_distribution": [
+                {
+                    "region": row['region'],
+                    "total_count": row['count'],
+                    "active_count": row['active_count'],
+                    "percentage": round((row['count'] / total_atms * 100), 2) if total_atms > 0 else 0
+                }
+                for row in region_stats
+            ],
+            "location_type_distribution": [
+                {
+                    "location_type": row['location_type'],
+                    "count": row['count'],
+                    "percentage": round((row['count'] / total_atms * 100), 2) if total_atms > 0 else 0
+                }
+                for row in location_type_stats
+            ],
+            "maintenance_overview": {
+                "atms_with_maintenance_history": maintenance_stats['has_maintenance_date'],
+                "atms_with_scheduled_maintenance": maintenance_stats['has_next_maintenance'],
+                "overdue_maintenance": maintenance_stats['overdue_maintenance'],
+                "maintenance_due_soon_30_days": maintenance_stats['due_soon']
+            },
+            "geographic_coverage": {
+                "atms_with_coordinates": geo_stats['with_coordinates'],
+                "unique_cities": geo_stats['unique_cities'],
+                "unique_regions": geo_stats['unique_regions'],
+                "coordinate_coverage_percentage": round((geo_stats['with_coordinates'] / total_atms * 100), 2) if total_atms > 0 else 0
+            },
+            "generated_at": convert_to_dili_time(datetime.utcnow()).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating ATM masters statistics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate statistics")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm-masters/{terminal_id}", response_model=ATMMasterResponse, tags=["ATM Masters"])
+async def get_atm_master(
+    terminal_id: str = Path(..., description="Terminal ID to retrieve"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get a specific ATM Master record by terminal ID
+    
+    Returns complete ATM master information including hardware specs,
+    location details, and operational information.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        query = "SELECT * FROM atm_masters WHERE terminal_id = $1"
+        row = await conn.fetchrow(query, terminal_id)
+        
+        if not row:
+            raise HTTPException(status_code=404, detail=f"ATM with terminal_id '{terminal_id}' not found")
+        
+        return ATMMasterResponse(
+            id=row['id'],
+            terminal_id=row['terminal_id'],
+            terminal_name=row['terminal_name'],
+            external_id=row['external_id'],
+            network_id=row['network_id'],
+            business_id=row['business_id'],
+            technical_code=row['technical_code'],
+            brand=row['brand'],
+            model=row['model'],
+            serial_number=row['serial_number'],
+            location=row['location'],
+            location_type=row['location_type'],
+            address_line_1=row['address_line_1'],
+            address_line_2=row['address_line_2'],
+            city=row['city'],
+            region=row['region'],
+            postal_code=row['postal_code'],
+            country=row['country'],
+            latitude=float(row['latitude']) if row['latitude'] else None,
+            longitude=float(row['longitude']) if row['longitude'] else None,
+            geo_location=row['geo_location'],
+            is_active=row['is_active'],
+            installation_date=row['installation_date'],
+            last_maintenance_date=row['last_maintenance_date'],
+            next_maintenance_date=row['next_maintenance_date'],
+            service_period=row['service_period'],
+            maintenance_period=row['maintenance_period'],
+            created_at=convert_to_dili_time(row['created_at']),
+            updated_at=convert_to_dili_time(row['updated_at']),
+            created_by=row['created_by'],
+            updated_by=row['updated_by']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching ATM master {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ATM master")
+    finally:
+        await release_db_connection(conn)
+
+@app.put("/api/v1/atm-masters/{terminal_id}", response_model=ATMMasterResponse, tags=["ATM Masters"])
+async def update_atm_master(
+    atm_data: ATMMasterUpdate,
+    terminal_id: str = Path(..., description="Terminal ID to update"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Update an existing ATM Master record
+    
+    Updates the specified ATM master record with the provided data.
+    Only provided fields will be updated (partial updates supported).
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Check if record exists
+        exists_query = "SELECT id FROM atm_masters WHERE terminal_id = $1"
+        existing = await conn.fetchrow(exists_query, terminal_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"ATM with terminal_id '{terminal_id}' not found")
+        
+        # Build dynamic update query based on provided fields
+        update_fields = []
+        params = [terminal_id]  # $1 for WHERE clause
+        param_count = 1
+        
+        # Only include fields that are not None in the update
+        field_map = {
+            'terminal_name': atm_data.terminal_name,
+            'external_id': atm_data.external_id,
+            'network_id': atm_data.network_id,
+            'business_id': atm_data.business_id,
+            'technical_code': atm_data.technical_code,
+            'brand': atm_data.brand,
+            'model': atm_data.model,
+            'serial_number': atm_data.serial_number,
+            'location': atm_data.location,
+            'location_type': atm_data.location_type,
+            'address_line_1': atm_data.address_line_1,
+            'address_line_2': atm_data.address_line_2,
+            'city': atm_data.city,
+            'region': atm_data.region,
+            'postal_code': atm_data.postal_code,
+            'country': atm_data.country,
+            'latitude': atm_data.latitude,
+            'longitude': atm_data.longitude,
+            'geo_location': atm_data.geo_location,
+            'is_active': atm_data.is_active,
+            'installation_date': atm_data.installation_date,
+            'last_maintenance_date': atm_data.last_maintenance_date,
+            'next_maintenance_date': atm_data.next_maintenance_date,
+            'service_period': atm_data.service_period,
+            'maintenance_period': atm_data.maintenance_period,
+            'updated_by': atm_data.updated_by
+        }
+        
+        for field_name, field_value in field_map.items():
+            if field_value is not None:
+                param_count += 1
+                update_fields.append(f"{field_name} = ${param_count}")
+                params.append(field_value)
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields provided for update")
+        
+        # Add updated_at timestamp
+        param_count += 1
+        update_fields.append(f"updated_at = CURRENT_TIMESTAMP AT TIME ZONE '+09:00'")
+        
+        # Execute update
+        update_query = f"""
+            UPDATE atm_masters 
+            SET {', '.join(update_fields)}
+            WHERE terminal_id = $1
+            RETURNING *
+        """
+        
+        updated_record = await conn.fetchrow(update_query, *params)
+        
+        if not updated_record:
+            raise HTTPException(status_code=500, detail="Failed to update ATM master record")
+        
+        return ATMMasterResponse(
+            id=updated_record['id'],
+            terminal_id=updated_record['terminal_id'],
+            terminal_name=updated_record['terminal_name'],
+            external_id=updated_record['external_id'],
+            network_id=updated_record['network_id'],
+            business_id=updated_record['business_id'],
+            technical_code=updated_record['technical_code'],
+            brand=updated_record['brand'],
+            model=updated_record['model'],
+            serial_number=updated_record['serial_number'],
+            location=updated_record['location'],
+            location_type=updated_record['location_type'],
+            address_line_1=updated_record['address_line_1'],
+            address_line_2=updated_record['address_line_2'],
+            city=updated_record['city'],
+            region=updated_record['region'],
+            postal_code=updated_record['postal_code'],
+            country=updated_record['country'],
+            latitude=float(updated_record['latitude']) if updated_record['latitude'] else None,
+            longitude=float(updated_record['longitude']) if updated_record['longitude'] else None,
+            geo_location=updated_record['geo_location'],
+            is_active=updated_record['is_active'],
+            installation_date=updated_record['installation_date'],
+            last_maintenance_date=updated_record['last_maintenance_date'],
+            next_maintenance_date=updated_record['next_maintenance_date'],
+            service_period=updated_record['service_period'],
+            maintenance_period=updated_record['maintenance_period'],
+            created_at=convert_to_dili_time(updated_record['created_at']),
+            updated_at=convert_to_dili_time(updated_record['updated_at']),
+            created_by=updated_record['created_by'],
+            updated_by=updated_record['updated_by']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating ATM master {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update ATM master")
+    finally:
+        await release_db_connection(conn)
+
+@app.delete("/api/v1/atm-masters/{terminal_id}", response_model=ATMMasterDeleteResponse, tags=["ATM Masters"])
+async def delete_atm_master(
+    terminal_id: str = Path(..., description="Terminal ID to delete"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Delete an ATM Master record
+    
+    Permanently removes the specified ATM master record from the database.
+    This action cannot be undone.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Check if record exists
+        exists_query = "SELECT id FROM atm_masters WHERE terminal_id = $1"
+        existing = await conn.fetchrow(exists_query, terminal_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"ATM with terminal_id '{terminal_id}' not found")
+        
+        # Delete the record
+        delete_query = "DELETE FROM atm_masters WHERE terminal_id = $1"
+        result = await conn.execute(delete_query, terminal_id)
+        
+        # Check if deletion was successful
+        if result == "DELETE 1":
+            return ATMMasterDeleteResponse(
+                success=True,
+                message=f"ATM master record for terminal '{terminal_id}' deleted successfully",
+                terminal_id=terminal_id,
+                timestamp=convert_to_dili_time(datetime.utcnow())
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete ATM master record")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting ATM master {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete ATM master")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm-masters/by-region/{region_code}", response_model=ATMMasterListResponse, tags=["ATM Masters"])
+async def get_atm_masters_by_region(
+    region_code: str = Path(..., description="Region code to filter by"),
+    include_inactive: bool = Query(False, description="Include inactive ATMs"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get all ATM Master records for a specific region
+    
+    Returns all ATMs in the specified region, optionally including inactive ones.
+    Useful for regional management and reporting.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Build query based on parameters
+        where_clause = "WHERE region = $1"
+        params = [region_code]
+        
+        if not include_inactive:
+            where_clause += " AND is_active = true"
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM atm_masters {where_clause}"
+        total_count = await conn.fetchval(count_query, *params)
+        
+        if total_count is None:
+            total_count = 0
+        
+        # Get all data for the region
+        data_query = f"""
+            SELECT * FROM atm_masters
+            {where_clause}
+            ORDER BY terminal_id
+        """
+        
+        rows = await conn.fetch(data_query, *params)
+        
+        # Convert to response models
+        atms = []
+        for row in rows:
+            atm = ATMMasterResponse(
+                id=row['id'],
+                terminal_id=row['terminal_id'],
+                terminal_name=row['terminal_name'],
+                external_id=row['external_id'],
+                network_id=row['network_id'],
+                business_id=row['business_id'],
+                technical_code=row['technical_code'],
+                brand=row['brand'],
+                model=row['model'],
+                serial_number=row['serial_number'],
+                location=row['location'],
+                location_type=row['location_type'],
+                address_line_1=row['address_line_1'],
+                address_line_2=row['address_line_2'],
+                city=row['city'],
+                region=row['region'],
+                postal_code=row['postal_code'],
+                country=row['country'],
+                latitude=float(row['latitude']) if row['latitude'] else None,
+                longitude=float(row['longitude']) if row['longitude'] else None,
+                geo_location=row['geo_location'],
+                is_active=row['is_active'],
+                installation_date=row['installation_date'],
+                last_maintenance_date=row['last_maintenance_date'],
+                next_maintenance_date=row['next_maintenance_date'],
+                service_period=row['service_period'],
+                maintenance_period=row['maintenance_period'],
+                created_at=convert_to_dili_time(row['created_at']),
+                updated_at=convert_to_dili_time(row['updated_at']),
+                created_by=row['created_by'],
+                updated_by=row['updated_by']
+            )
+            atms.append(atm)
+        
+        return ATMMasterListResponse(
+            atms=atms,
+            total_count=total_count,
+            page=1,
+            per_page=total_count if total_count > 0 else 1,
+            total_pages=1,
+            has_next=False,
+            has_previous=False
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching ATM masters for region {region_code}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ATM masters for region")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm-masters/by-brand/{brand}", response_model=ATMMasterListResponse, tags=["ATM Masters"])
+async def get_atm_masters_by_brand(
+    brand: str = Path(..., description="Brand to filter by"),
+    include_inactive: bool = Query(False, description="Include inactive ATMs"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get all ATM Master records for a specific brand
+    
+    Returns all ATMs of the specified brand, useful for hardware inventory
+    and maintenance planning.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Build query based on parameters
+        where_clause = "WHERE brand ILIKE $1"
+        params = [f"%{brand}%"]
+        
+        if not include_inactive:
+            where_clause += " AND is_active = true"
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM atm_masters {where_clause}"
+        total_count = await conn.fetchval(count_query, *params)
+        
+        if total_count is None:
+            total_count = 0
+        
+        # Get all data for the brand
+        data_query = f"""
+            SELECT * FROM atm_masters
+            {where_clause}
+            ORDER BY brand, model, terminal_id
+        """
+        
+        rows = await conn.fetch(data_query, *params)
+        
+        # Convert to response models
+        atms = []
+        for row in rows:
+            atm = ATMMasterResponse(
+                id=row['id'],
+                terminal_id=row['terminal_id'],
+                terminal_name=row['terminal_name'],
+                external_id=row['external_id'],
+                network_id=row['network_id'],
+                business_id=row['business_id'],
+                technical_code=row['technical_code'],
+                brand=row['brand'],
+                model=row['model'],
+                serial_number=row['serial_number'],
+                location=row['location'],
+                location_type=row['location_type'],
+                address_line_1=row['address_line_1'],
+                address_line_2=row['address_line_2'],
+                city=row['city'],
+                region=row['region'],
+                postal_code=row['postal_code'],
+                country=row['country'],
+                latitude=float(row['latitude']) if row['latitude'] else None,
+                longitude=float(row['longitude']) if row['longitude'] else None,
+                geo_location=row['geo_location'],
+                is_active=row['is_active'],
+                installation_date=row['installation_date'],
+                last_maintenance_date=row['last_maintenance_date'],
+                next_maintenance_date=row['next_maintenance_date'],
+                service_period=row['service_period'],
+                maintenance_period=row['maintenance_period'],
+                created_at=convert_to_dili_time(row['created_at']),
+                updated_at=convert_to_dili_time(row['updated_at']),
+                created_by=row['created_by'],
+                updated_by=row['updated_by']
+            )
+            atms.append(atm)
+        
+        return ATMMasterListResponse(
+            atms=atms,
+            total_count=total_count,
+            page=1,
+            per_page=total_count if total_count > 0 else 1,
+            total_pages=1,
+            has_next=False,
+            has_previous=False
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching ATM masters for brand {brand}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ATM masters for brand")
+    finally:
+        await release_db_connection(conn)
+
