@@ -19,6 +19,7 @@ Endpoints:
 - GET /api/v1/atm/status/summary - Overall ATM status summary
 - GET /api/v1/atm/status/regional - Regional breakdown with filters
 - GET /api/v1/atm/status/trends/{region_code} - Regional trends
+- GET /api/v1/atm/status/trends/overall - Overall ATM availability trends (real ATM data)
 - GET /api/v1/atm/status/latest - Latest data with optional table selection
 - GET /api/v1/atm/{terminal_id}/history - Individual ATM historical status data
 - GET /api/v1/atm/list - List of ATMs available for historical analysis
@@ -731,6 +732,206 @@ async def get_regional_data(
     except Exception as e:
         logger.error(f"Error fetching regional data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch regional data")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/status/trends/overall", response_model=TrendResponse, tags=["ATM Status"])
+async def get_overall_atm_trends(
+    hours: int = Query(24, ge=1, le=720, description="Number of hours to look back (1-720)"),
+    interval_minutes: int = Query(60, ge=15, le=360, description="Data aggregation interval in minutes (15-360)"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get historical trends for overall ATM availability using real ATM data
+    
+    Returns time-series data showing aggregated ATM status changes over time from all individual ATMs.
+    This endpoint uses terminal_details table (real ATM data) instead of regional aggregates,
+    ensuring consistency with the dashboard summary that uses the same data source.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Query terminal_details table to get time-series data for all ATMs
+        # Group by time intervals to aggregate the data points
+        query = """
+            WITH time_intervals AS (
+                SELECT generate_series(
+                    date_trunc('hour', NOW() - INTERVAL '%s hours'),
+                    date_trunc('hour', NOW()),
+                    INTERVAL '%s minutes'
+                ) AS interval_start
+            ),
+            atm_status_at_intervals AS (
+                SELECT 
+                    ti.interval_start,
+                    td.terminal_id,
+                    td.fetched_status,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ti.interval_start, td.terminal_id 
+                        ORDER BY td.retrieved_date DESC
+                    ) as rn
+                FROM time_intervals ti
+                LEFT JOIN terminal_details td ON 
+                    td.retrieved_date >= ti.interval_start 
+                    AND td.retrieved_date < ti.interval_start + INTERVAL '%s minutes'
+                WHERE td.retrieved_date >= NOW() - INTERVAL '%s hours'
+            ),
+            latest_status_per_interval AS (
+                SELECT 
+                    interval_start,
+                    terminal_id,
+                    COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
+                FROM atm_status_at_intervals 
+                WHERE rn = 1 OR fetched_status IS NULL
+            )
+            SELECT 
+                interval_start,
+                COUNT(*) as total_atms,
+                COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
+                COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
+                COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
+                COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
+                COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
+            FROM latest_status_per_interval
+            GROUP BY interval_start
+            HAVING COUNT(*) > 0
+            ORDER BY interval_start ASC
+        """ % (hours, interval_minutes, interval_minutes, hours)
+        
+        rows = await conn.fetch(query)
+        
+        # Enhanced fallback logic: if no data found for requested period, try shorter periods
+        actual_hours_used = hours
+        fallback_message = None
+        
+        if not rows:
+            # Define fallback periods to try in descending order (shorter periods)
+            fallback_periods = [12, 6, 3, 1]  # 12h, 6h, 3h, 1h
+            fallback_periods = [period for period in fallback_periods if period < hours]
+            
+            logger.info(f"No data found for {hours}h period in overall trends, trying shorter fallback periods: {fallback_periods}")
+            
+            for fallback_hours in fallback_periods:
+                fallback_query = """
+                    WITH time_intervals AS (
+                        SELECT generate_series(
+                            date_trunc('hour', NOW() - INTERVAL '%s hours'),
+                            date_trunc('hour', NOW()),
+                            INTERVAL '%s minutes'
+                        ) AS interval_start
+                    ),
+                    atm_status_at_intervals AS (
+                        SELECT 
+                            ti.interval_start,
+                            td.terminal_id,
+                            td.fetched_status,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY ti.interval_start, td.terminal_id 
+                                ORDER BY td.retrieved_date DESC
+                            ) as rn
+                        FROM time_intervals ti
+                        LEFT JOIN terminal_details td ON 
+                            td.retrieved_date >= ti.interval_start 
+                            AND td.retrieved_date < ti.interval_start + INTERVAL '%s minutes'
+                        WHERE td.retrieved_date >= NOW() - INTERVAL '%s hours'
+                    ),
+                    latest_status_per_interval AS (
+                        SELECT 
+                            interval_start,
+                            terminal_id,
+                            COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
+                        FROM atm_status_at_intervals 
+                        WHERE rn = 1 OR fetched_status IS NULL
+                    )
+                    SELECT 
+                        interval_start,
+                        COUNT(*) as total_atms,
+                        COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
+                        COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
+                        COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
+                        COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
+                        COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
+                    FROM latest_status_per_interval
+                    GROUP BY interval_start
+                    HAVING COUNT(*) > 0
+                    ORDER BY interval_start ASC
+                """ % (fallback_hours, interval_minutes, interval_minutes, fallback_hours)
+                
+                rows = await conn.fetch(fallback_query)
+                if rows:
+                    actual_hours_used = fallback_hours
+                    fallback_message = f"Requested {hours}h data unavailable, showing available {fallback_hours}h data instead"
+                    logger.info(f"Found {len(rows)} data points for {fallback_hours}h fallback period")
+                    break
+            
+            # If still no data found, raise 404
+            if not rows:
+                raise HTTPException(status_code=404, detail=f"No overall trend data found in any time period")
+        
+        trends = []
+        availability_values = []
+        
+        for row in rows:
+            available = row['count_available'] or 0
+            warning = row['count_warning'] or 0
+            zombie = row['count_zombie'] or 0
+            wounded = row['count_wounded'] or 0
+            out_of_service = row['count_out_of_service'] or 0
+            total = row['total_atms'] or 0
+            
+            # Calculate availability including both AVAILABLE and WARNING ATMs
+            operational_atms = available + warning
+            availability_pct = (operational_atms / total * 100) if total > 0 else 0
+            availability_values.append(availability_pct)
+            
+            status_counts = ATMStatusCounts(
+                available=available,
+                warning=warning,
+                zombie=zombie,
+                wounded=wounded,
+                out_of_service=out_of_service,
+                total=total
+            )
+            
+            trends.append(TrendPoint(
+                timestamp=convert_to_dili_time(row['interval_start']),
+                status_counts=status_counts,
+                availability_percentage=round(availability_pct, 2)
+            ))
+        
+        # Calculate summary statistics
+        summary_stats = {
+            'data_points': len(trends),
+            'time_range_hours': actual_hours_used,
+            'requested_hours': hours,
+            'interval_minutes': interval_minutes,
+            'avg_availability': round(sum(availability_values) / len(availability_values), 2) if availability_values else 0,
+            'min_availability': round(min(availability_values), 2) if availability_values else 0,
+            'max_availability': round(max(availability_values), 2) if availability_values else 0,
+            'first_reading': trends[0].timestamp.isoformat() if trends else None,
+            'last_reading': trends[-1].timestamp.isoformat() if trends else None,
+            'data_source': 'terminal_details',
+            'total_atms_tracked': trends[-1].status_counts.total if trends else 0
+        }
+        
+        # Add fallback message if applicable
+        if fallback_message:
+            summary_stats['fallback_message'] = fallback_message
+        
+        return TrendResponse(
+            region_code="OVERALL", 
+            time_period=f"{actual_hours_used} hours" + (f" (requested {hours}h)" if actual_hours_used != hours else ""),
+            trends=trends,
+            summary_stats=summary_stats
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching overall ATM trends: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch overall trend data")
     finally:
         await release_db_connection(conn)
 
@@ -2317,7 +2518,7 @@ async def get_predictive_analytics_summary(
                                     fault_data = json.loads(fault_data)
                                 except json.JSONDecodeError:
                                     continue
-                            
+                    
                             if isinstance(fault_data, dict):
                                 fault_history.append(fault_data)
                         except:

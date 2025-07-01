@@ -372,6 +372,21 @@ class ATMApiService {
     }
   }
 
+  async getOverallTrends(
+    hours: number = 24,
+    intervalMinutes: number = 60
+  ): Promise<TrendResponse> {
+    try {
+      return await this.fetchApi<TrendResponse>(
+        `/v1/atm/status/trends/overall?hours=${hours}&interval_minutes=${intervalMinutes}`
+      );
+    } catch (error) {
+      console.warn(`Failed to fetch overall trends from API, using mock data:`, error);
+      // Return mock trend data when API is unavailable
+      return generateMockTrends('OVERALL', hours) as TrendResponse;
+    }
+  }
+
   async getLatestData(
     tableType: 'legacy' | 'new' | 'both' = 'both',
     includeTerminalDetails: boolean = false

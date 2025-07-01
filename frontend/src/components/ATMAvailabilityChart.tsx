@@ -87,7 +87,8 @@ const generateCSVContent = (data: AvailabilityDataPoint[], selectedPeriod: TimeP
     `# Time Period: ${selectedPeriod.toUpperCase()}`,
     `# Data Period: ${actualDataPeriod}`,
     `# Total Data Points: ${data.length}`,
-    `# Region: TL-DL`,
+    `# Data Source: Overall ATM Data (terminal_details)`,
+    `# Total ATMs: All operational ATMs`,
     `# Timezone: Asia/Dili (UTC+9)`,
     `# Note: Formatted Time column shows times in Dili local time`,
     ''
@@ -120,14 +121,22 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
   const [actualDataPeriod, setActualDataPeriod] = useState<string>('');
   const [fallbackMessage, setFallbackMessage] = useState<string>('');
 
+  // Add debugging state to show data source information
+  const [debugInfo, setDebugInfo] = useState<{
+    totalATMs: number;
+    dataSource: string;
+    lastDataPoint?: AvailabilityDataPoint;
+  } | null>(null);
+
   useEffect(() => {
     const fetchAvailabilityData = async () => {
       try {
         setLoading(true);
         const currentPeriod = TIME_PERIODS.find(p => p.value === selectedPeriod)!;
         
-        // Get trends for TL-DL region (main region with most data)
-        const response = await atmApiService.getRegionalTrends('TL-DL', currentPeriod.hours, 'new');
+        // Get trends for overall ATM availability using real ATM data (terminal_details table)
+        // This ensures consistency with the dashboard summary that uses the same data source
+        const response = await atmApiService.getOverallTrends(currentPeriod.hours, 60);
         
         if (response.fallback_message) {
           setFallbackMessage(response.fallback_message);
@@ -157,11 +166,21 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
               `${Math.round(actualHours / (24 * 7))} weeks`;
           
           setActualDataPeriod(`${actualPeriodText} (${stats.data_points} data points)`);
+          
+          // Set debug info
+          const lastDataPoint = chartData[chartData.length - 1];
+          const lastTrendPoint = response.trends[response.trends.length - 1];
+          setDebugInfo({
+            totalATMs: lastTrendPoint?.status_counts?.total || 0,
+            dataSource: 'terminal_details (real ATM data)',
+            lastDataPoint: lastDataPoint
+          });
         } else {
           // No data available
           setData([]);
           setIsUsingRealData(false);
           setActualDataPeriod('No data available');
+          setDebugInfo(null);
         }
         
       } catch (error) {
@@ -170,6 +189,7 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
         setIsUsingRealData(false);
         setActualDataPeriod('Failed to load data');
         setFallbackMessage('');
+        setDebugInfo(null);
       } finally {
         setLoading(false);
       }
@@ -226,11 +246,17 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
                 ? 'bg-green-100 text-green-800' 
                 : 'bg-yellow-100 text-yellow-800'
             }`}>
-              {isUsingRealData ? 'Live Data' : 'No Data'}
+              {isUsingRealData ? 'Real ATM Data' : 'No Data'}
             </div>
             {fallbackMessage && (
               <div className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
                 {fallbackMessage}
+              </div>
+            )}
+            {/* Debug info display */}
+            {debugInfo && (
+              <div className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                {debugInfo.totalATMs} ATMs ({debugInfo.dataSource})
               </div>
             )}
           </div>
@@ -356,6 +382,23 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
               </div>
               <div className="text-xs text-gray-500">Lowest</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug Info (for development purposes) */}
+      {debugInfo && (
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+          <div className="font-medium text-gray-800 mb-2">Debug Information</div>
+          <div className="flex flex-col space-y-1">
+            <div><span className="font-semibold">Data Source:</span> {debugInfo.dataSource}</div>
+            <div><span className="font-semibold">Total ATMs:</span> {debugInfo.totalATMs}</div>
+            <div><span className="font-semibold">Chart Type:</span> Overall Availability History (Real ATM Data)</div>
+            {debugInfo.lastDataPoint && (
+              <div>
+                <span className="font-semibold">Last Data Point:</span> {JSON.stringify(debugInfo.lastDataPoint)}
+              </div>
+            )}
           </div>
         </div>
       )}
