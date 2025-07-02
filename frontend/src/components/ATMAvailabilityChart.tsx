@@ -40,6 +40,7 @@ const TIME_PERIODS: TimePeriodOption[] = [
 ];
 
 // Format time based on the selected period (converts to Dili timezone UTC+9)
+// Enhanced to show more granular timestamps for better alignment with event-based Individual ATM Chart
 const formatTimeForPeriod = (date: Date, hours: number): string => {
   if (hours <= 24) {
     return date.toLocaleTimeString('en-US', { 
@@ -49,6 +50,7 @@ const formatTimeForPeriod = (date: Date, hours: number): string => {
       timeZone: 'Asia/Dili'
     });
   } else if (hours <= 168) {
+    // For 7-day view, show both date and time for better granularity
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric',
@@ -87,7 +89,8 @@ const generateCSVContent = (data: AvailabilityDataPoint[], selectedPeriod: TimeP
     `# Time Period: ${selectedPeriod.toUpperCase()}`,
     `# Data Period: ${actualDataPeriod}`,
     `# Total Data Points: ${data.length}`,
-    `# Data Source: Overall ATM Data (terminal_details)`,
+    `# Data Source: Overall ATM Event Data (terminal_details)`,
+    `# Data Type: Event-based status changes (same as Individual ATM Chart)`,
     `# Total ATMs: All operational ATMs`,
     `# Timezone: Asia/Dili (UTC+9)`,
     `# Note: Formatted Time column shows times in Dili local time`,
@@ -117,16 +120,9 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
   const [data, setData] = useState<AvailabilityDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUsingRealData, setIsUsingRealData] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('24h');
+  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('7d');
   const [actualDataPeriod, setActualDataPeriod] = useState<string>('');
   const [fallbackMessage, setFallbackMessage] = useState<string>('');
-
-  // Add debugging state to show data source information
-  const [debugInfo, setDebugInfo] = useState<{
-    totalATMs: number;
-    dataSource: string;
-    lastDataPoint?: AvailabilityDataPoint;
-  } | null>(null);
 
   useEffect(() => {
     const fetchAvailabilityData = async () => {
@@ -134,9 +130,10 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
         setLoading(true);
         const currentPeriod = TIME_PERIODS.find(p => p.value === selectedPeriod)!;
         
-        // Get trends for overall ATM availability using real ATM data (terminal_details table)
-        // This ensures consistency with the dashboard summary that uses the same data source
-        const response = await atmApiService.getOverallTrends(currentPeriod.hours, 60);
+        // Get trends for overall ATM availability using event-based status changes (terminal_details table)
+        // This ensures consistency with Individual ATM Chart by using actual event timestamps instead of aggregated intervals
+        // Event-based approach provides the same x-axis time data as Individual ATM Chart
+        const response = await atmApiService.getOverallTrendsEvents(currentPeriod.hours);
         
         if (response.fallback_message) {
           setFallbackMessage(response.fallback_message);
@@ -166,21 +163,11 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
               `${Math.round(actualHours / (24 * 7))} weeks`;
           
           setActualDataPeriod(`${actualPeriodText} (${stats.data_points} data points)`);
-          
-          // Set debug info
-          const lastDataPoint = chartData[chartData.length - 1];
-          const lastTrendPoint = response.trends[response.trends.length - 1];
-          setDebugInfo({
-            totalATMs: lastTrendPoint?.status_counts?.total || 0,
-            dataSource: 'terminal_details (real ATM data)',
-            lastDataPoint: lastDataPoint
-          });
         } else {
           // No data available
           setData([]);
           setIsUsingRealData(false);
           setActualDataPeriod('No data available');
-          setDebugInfo(null);
         }
         
       } catch (error) {
@@ -189,7 +176,6 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
         setIsUsingRealData(false);
         setActualDataPeriod('Failed to load data');
         setFallbackMessage('');
-        setDebugInfo(null);
       } finally {
         setLoading(false);
       }
@@ -253,12 +239,6 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
                 {fallbackMessage}
               </div>
             )}
-            {/* Debug info display */}
-            {debugInfo && (
-              <div className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                {debugInfo.totalATMs} ATMs ({debugInfo.dataSource})
-              </div>
-            )}
           </div>
         </div>
         <div className="flex items-center space-x-4">
@@ -308,24 +288,22 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
       </div>
 
       {/* Chart */}
-      <div className="h-64">
+      <div className="h-80">
         {data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis 
                 dataKey="formattedTime"
                 stroke="#6b7280"
                 fontSize={12}
-                tickLine={false}
-                axisLine={false}
+                tick={{ fontSize: 12 }}
               />
               <YAxis 
                 domain={[50, 100]}
                 stroke="#6b7280"
                 fontSize={12}
-                tickLine={false}
-                axisLine={false}
+                tick={{ fontSize: 12 }}
                 tickFormatter={(value) => `${value}%`}
               />
               <Tooltip
@@ -382,23 +360,6 @@ export default function ATMAvailabilityChart({ className = '' }: ATMAvailability
               </div>
               <div className="text-xs text-gray-500">Lowest</div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Debug Info (for development purposes) */}
-      {debugInfo && (
-        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm">
-          <div className="font-medium text-gray-800 mb-2">Debug Information</div>
-          <div className="flex flex-col space-y-1">
-            <div><span className="font-semibold">Data Source:</span> {debugInfo.dataSource}</div>
-            <div><span className="font-semibold">Total ATMs:</span> {debugInfo.totalATMs}</div>
-            <div><span className="font-semibold">Chart Type:</span> Overall Availability History (Real ATM Data)</div>
-            {debugInfo.lastDataPoint && (
-              <div>
-                <span className="font-semibold">Last Data Point:</span> {JSON.stringify(debugInfo.lastDataPoint)}
-              </div>
-            )}
           </div>
         </div>
       )}

@@ -387,6 +387,20 @@ class ATMApiService {
     }
   }
 
+  async getOverallTrendsEvents(
+    hours: number = 168
+  ): Promise<TrendResponse> {
+    try {
+      return await this.fetchApi<TrendResponse>(
+        `/v1/atm/status/trends/overall/events?hours=${hours}`
+      );
+    } catch (error) {
+      console.warn(`Failed to fetch overall event trends from API, using mock data:`, error);
+      // Return mock trend data when API is unavailable
+      return generateMockTrends('OVERALL', hours) as TrendResponse;
+    }
+  }
+
   async getLatestData(
     tableType: 'legacy' | 'new' | 'both' = 'both',
     includeTerminalDetails: boolean = false
