@@ -1291,9 +1291,14 @@ class CombinedATMRetriever:
                     continue
                 
                 # Fetch cash information for this terminal with error handling
+                log.debug(f"Processing cash info for terminal {terminal_id}")
                 cash_data = self.fetch_terminal_cash_info(terminal_id)
                 
-                if cash_data and cash_data.get('body'):
+                # Debug log to track what we got back
+                log.debug(f"Cash data for terminal {terminal_id}: {'Found' if cash_data else 'None'}")
+                
+                # Safety check to ensure cash_data is not None before calling .get()
+                if cash_data is not None and isinstance(cash_data, dict) and cash_data.get('body'):
                     terminal_body = cash_data.get('body', [])
                     
                     if isinstance(terminal_body, list) and terminal_body:
@@ -1356,7 +1361,7 @@ class CombinedATMRetriever:
                         log.warning(f"Invalid cash data structure for terminal {terminal_id}")
                         failed_retrievals += 1
                 else:
-                    log.warning(f"Failed to retrieve cash information for terminal {terminal_id}")
+                    log.warning(f"Failed to retrieve cash information for terminal {terminal_id} - cash_data is: {type(cash_data).__name__ if cash_data is not None else 'None'}")
                     failed_retrievals += 1
                 
                 # Add delay between requests to avoid overwhelming the server
@@ -1366,8 +1371,19 @@ class CombinedATMRetriever:
             except Exception as e:
                 # Critical error handling - log but continue processing
                 critical_errors += 1
-                log.error(f"Critical error processing cash info for terminal {terminal.get('terminalId', 'UNKNOWN') if isinstance(terminal, dict) else 'INVALID'}: {str(e)}")
+                
+                # Safe way to get terminal ID for error logging
+                terminal_id_for_error = "UNKNOWN"
+                if isinstance(terminal, dict) and terminal is not None:
+                    terminal_id_for_error = terminal.get('terminalId', 'UNKNOWN')
+                elif terminal is None:
+                    terminal_id_for_error = "None_Terminal"
+                else:
+                    terminal_id_for_error = f"INVALID_TYPE_{type(terminal).__name__}"
+                
+                log.error(f"Critical error processing cash info for terminal {terminal_id_for_error}: {str(e)}")
                 log.error(f"Error type: {type(e).__name__}")
+                log.debug(f"Full error details:", exc_info=True)
                 # Continue with next terminal instead of failing completely
                 continue
         
