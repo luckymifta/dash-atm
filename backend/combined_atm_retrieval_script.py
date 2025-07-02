@@ -1179,15 +1179,18 @@ class CombinedATMRetriever:
         
         return cash_data
 
-    def process_terminal_cash_info(self, all_terminals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def process_terminal_cash_info(self, all_terminals: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool]:
         """
         Process cash information for all terminals and prepare data for database storage
+        Enhanced with error handling - continues process even if cash info retrieval fails
         
         Args:
             all_terminals: List of terminal data from comprehensive_terminal_search
             
         Returns:
-            List[Dict[str, Any]]: Processed cash information records for database storage
+            Tuple[List[Dict[str, Any]], bool]: (Processed cash information records, success_flag)
+                - Records list may be empty if all cash info retrieval failed
+                - success_flag indicates if cash info retrieval was successful overall
         """
         log.info("\n--- CASH INFORMATION RETRIEVAL PHASE ---")
         log.info(f"Processing cash information for {len(all_terminals)} terminals...")
@@ -1195,84 +1198,132 @@ class CombinedATMRetriever:
         cash_info_records = []
         current_retrieval_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency
         
+        # Error tracking
+        successful_retrievals = 0
+        failed_retrievals = 0
+        critical_errors = 0
+        
         for terminal in tqdm(all_terminals, desc="Fetching cash information", unit="terminal"):
-            terminal_id = terminal.get('terminalId')
-            
-            if not terminal_id:
-                log.warning(f"Skipping terminal with missing ID: {terminal}")
-                continue
-            
-            # Fetch cash information for this terminal
-            cash_data = self.fetch_terminal_cash_info(terminal_id)
-            
-            if cash_data and cash_data.get('body'):
-                terminal_body = cash_data.get('body', [])
+            try:
+                # Add safety check for None terminals
+                if terminal is None:
+                    log.warning("Skipping None terminal in cash information processing")
+                    failed_retrievals += 1
+                    continue
+                    
+                # Safety check for dictionary type
+                if not isinstance(terminal, dict):
+                    log.warning(f"Skipping invalid terminal type: {type(terminal)} - {terminal}")
+                    failed_retrievals += 1
+                    continue
+                    
+                terminal_id = terminal.get('terminalId')
                 
-                if isinstance(terminal_body, list) and terminal_body:
-                    terminal_info = terminal_body[0]
+                if not terminal_id:
+                    log.warning(f"Skipping terminal with missing ID: {terminal}")
+                    failed_retrievals += 1
+                    continue
+                
+                # Fetch cash information for this terminal with error handling
+                cash_data = self.fetch_terminal_cash_info(terminal_id)
+                
+                if cash_data and cash_data.get('body'):
+                    terminal_body = cash_data.get('body', [])
                     
-                    # Extract basic terminal information
-                    terminal_cash_info = terminal_info.get('terminalCashInfo', {})
-                    
-                    # Calculate total from cassettes if not provided
-                    total_amount = terminal_cash_info.get('total', 0)
-                    if not total_amount and 'cashInfo' in terminal_cash_info:
-                        # Calculate total from individual cassettes
-                        total_amount = sum(
-                            cassette.get('cassTotal', 0) 
-                            for cassette in terminal_cash_info.get('cashInfo', [])
-                            if cassette.get('cassTypeValue') == 'DISPENSE'
-                        )
-                    
-                    # Prepare the cash information record according to requirements
-                    cash_record = {
-                        'unique_request_id': str(uuid.uuid4()),
-                        'terminal_id': terminal_info.get('terminalId', terminal_id),
-                        'external_id': terminal_info.get('externalId', ''),
-                        'technical_code': terminal_info.get('technicalCode', ''),
-                        'location': terminal_info.get('location', ''),
-                        'cash_total': total_amount,
-                        'currency': 'USD',  # Default currency based on sample data
-                        'retrieval_timestamp': current_retrieval_time,
-                        'raw_cash_data': terminal_cash_info,  # Store full cash info as JSONB
-                        'raw_terminal_data': terminal_info,   # Store full terminal response as JSONB
-                        'metadata': {
-                            'retrieval_timestamp': current_retrieval_time.isoformat(),
-                            'demo_mode': self.demo_mode,
-                            'has_cash_info': bool(terminal_cash_info),
-                            'cassette_count': len(terminal_cash_info.get('cashInfo', [])) if terminal_cash_info else 0,
-                            'fetched_status': terminal.get('fetched_status', 'UNKNOWN'),
-                            'processing_info': {
-                                'total_cassettes': len(terminal_cash_info.get('cashInfo', [])) if terminal_cash_info else 0,
-                                'dispense_cassettes': len([
-                                    c for c in terminal_cash_info.get('cashInfo', []) 
-                                    if c.get('cassTypeValue') == 'DISPENSE'
-                                ]) if terminal_cash_info else 0,
-                                'calculated_total': total_amount
+                    if isinstance(terminal_body, list) and terminal_body:
+                        terminal_info = terminal_body[0]
+                        
+                        # Extract basic terminal information
+                        terminal_cash_info = terminal_info.get('terminalCashInfo', {})
+                        
+                        # Calculate total from cassettes if not provided
+                        total_amount = terminal_cash_info.get('total', 0)
+                        if not total_amount and 'cashInfo' in terminal_cash_info:
+                            # Calculate total from individual cassettes
+                            total_amount = sum(
+                                cassette.get('cassTotal', 0) 
+                                for cassette in terminal_cash_info.get('cashInfo', [])
+                                if cassette.get('cassTypeValue') == 'DISPENSE'
+                            )
+                        
+                        # Prepare the cash information record according to requirements
+                        cash_record = {
+                            'unique_request_id': str(uuid.uuid4()),
+                            'terminal_id': terminal_info.get('terminalId', terminal_id),
+                            'external_id': terminal_info.get('externalId', ''),
+                            'technical_code': terminal_info.get('technicalCode', ''),
+                            'location': terminal_info.get('location', ''),
+                            'cash_total': total_amount,
+                            'currency': 'USD',  # Default currency based on sample data
+                            'retrieval_timestamp': current_retrieval_time,
+                            'raw_cash_data': terminal_cash_info,  # Store full cash info as JSONB
+                            'raw_terminal_data': terminal_info,   # Store full terminal response as JSONB
+                            'metadata': {
+                                'retrieval_timestamp': current_retrieval_time.isoformat(),
+                                'demo_mode': self.demo_mode,
+                                'has_cash_info': bool(terminal_cash_info),
+                                'cassette_count': len(terminal_cash_info.get('cashInfo', [])) if terminal_cash_info else 0,
+                                'fetched_status': terminal.get('fetched_status', 'UNKNOWN'),
+                                'processing_info': {
+                                    'total_cassettes': len(terminal_cash_info.get('cashInfo', [])) if terminal_cash_info else 0,
+                                    'dispense_cassettes': len([
+                                        c for c in terminal_cash_info.get('cashInfo', []) 
+                                        if c.get('cassTypeValue') == 'DISPENSE'
+                                    ]) if terminal_cash_info else 0,
+                                    'calculated_total': total_amount
+                                }
                             }
                         }
-                    }
-                    
-                    cash_info_records.append(cash_record)
-                    
-                    # Log cash summary
-                    if terminal_cash_info:
-                        cassette_count = len(terminal_cash_info.get('cashInfo', []))
-                        currency = cash_record['currency']
-                        log.info(f"Terminal {terminal_id}: {total_amount:,} {currency} across {cassette_count} cassettes")
-                    else:
-                        log.warning(f"Terminal {terminal_id}: No cash information available")
                         
+                        cash_info_records.append(cash_record)
+                        successful_retrievals += 1
+                        
+                        # Log cash summary
+                        if terminal_cash_info:
+                            cassette_count = len(terminal_cash_info.get('cashInfo', []))
+                            currency = cash_record['currency']
+                            log.info(f"Terminal {terminal_id}: {total_amount:,} {currency} across {cassette_count} cassettes")
+                        else:
+                            log.warning(f"Terminal {terminal_id}: No cash information available")
+                            
+                    else:
+                        log.warning(f"Invalid cash data structure for terminal {terminal_id}")
+                        failed_retrievals += 1
                 else:
-                    log.warning(f"Invalid cash data structure for terminal {terminal_id}")
-            else:
-                log.warning(f"Failed to retrieve cash information for terminal {terminal_id}")
-            
-            # Add delay between requests to avoid overwhelming the server
-            if not self.demo_mode:
-                time.sleep(1)
+                    log.warning(f"Failed to retrieve cash information for terminal {terminal_id}")
+                    failed_retrievals += 1
+                
+                # Add delay between requests to avoid overwhelming the server
+                if not self.demo_mode:
+                    time.sleep(1)
+                    
+            except Exception as e:
+                # Critical error handling - log but continue processing
+                critical_errors += 1
+                log.error(f"Critical error processing cash info for terminal {terminal.get('terminalId', 'UNKNOWN') if isinstance(terminal, dict) else 'INVALID'}: {str(e)}")
+                log.error(f"Error type: {type(e).__name__}")
+                # Continue with next terminal instead of failing completely
+                continue
         
-        log.info(f"Successfully processed cash information for {len(cash_info_records)} terminals")
+        # Determine overall success based on retrieval statistics
+        total_terminals = len(all_terminals)
+        success_rate = (successful_retrievals / total_terminals) if total_terminals > 0 else 0
+        cash_retrieval_success = success_rate >= 0.5 and critical_errors == 0  # At least 50% success and no critical errors
+        
+        # Enhanced logging with error statistics
+        log.info(f"Cash information retrieval completed:")
+        log.info(f"  Total terminals: {total_terminals}")
+        log.info(f"  Successful retrievals: {successful_retrievals}")
+        log.info(f"  Failed retrievals: {failed_retrievals}")
+        log.info(f"  Critical errors: {critical_errors}")
+        log.info(f"  Success rate: {success_rate:.1%}")
+        log.info(f"  Cash retrieval deemed: {'SUCCESSFUL' if cash_retrieval_success else 'FAILED'}")
+        
+        if not cash_retrieval_success:
+            if critical_errors > 0:
+                log.warning(f"⚠️  Cash information retrieval had {critical_errors} critical errors - will skip cash info database save")
+            else:
+                log.warning(f"⚠️  Cash information retrieval success rate too low ({success_rate:.1%}) - will skip cash info database save")
         
         # Summary reporting
         if cash_info_records:
@@ -1286,8 +1337,10 @@ class CombinedATMRetriever:
             log.info(f"ATMs with cash data: {len(cash_info_records)}")
             log.info(f"Currencies found: {', '.join(sorted(currencies))}")
             log.info("=" * 35)
+        else:
+            log.warning("No cash information records were successfully retrieved")
         
-        return cash_info_records
+        return cash_info_records, cash_retrieval_success
 
     def save_terminal_cash_info_to_database(self, cash_info_records: List[Dict[str, Any]]) -> bool:
         """
@@ -1788,11 +1841,17 @@ class CombinedATMRetriever:
         
         log.info(f"[OK] Terminal details processing completed: {len(all_terminal_details)} details retrieved")
         
-        # Step 6: NEW - Fetch cash information for all terminals
+        # Step 6: NEW - Fetch cash information for all terminals with enhanced error handling
         log.info("\n--- PHASE 4: Retrieving Terminal Cash Information ---")
-        cash_info_records = self.process_terminal_cash_info(all_terminals)
+        cash_info_records, cash_retrieval_success = self.process_terminal_cash_info(all_terminals)
         all_data["terminal_cash_info_data"] = cash_info_records
-        log.info(f"[OK] Cash information processing completed: {len(cash_info_records)} cash records retrieved")
+        
+        # Log cash retrieval results
+        if cash_retrieval_success:
+            log.info(f"[OK] Cash information processing completed successfully: {len(cash_info_records)} cash records retrieved")
+        else:
+            log.warning(f"[WARNING] Cash information processing had errors: {len(cash_info_records)} records retrieved but with issues")
+            log.warning("Cash information will not be saved to database due to retrieval errors")
         
         # Map parameter values to proper status names for summary
         status_name_mapping = {
@@ -1820,14 +1879,17 @@ class CombinedATMRetriever:
             if proper_status in summary_status_counts:
                 summary_status_counts[proper_status] += count
         
-        # Create summary including cash information
+        # Create summary including cash information and error status
         all_data["summary"] = {
             "total_regions": len(all_data["regional_data"]),
             "total_terminal_details": len(all_data["terminal_details_data"]),
             "total_cash_info_records": len(all_data["terminal_cash_info_data"]),
             "terminal_details_with_unique_ids": len(all_terminal_details),
             "status_counts": summary_status_counts,
-            "collection_note": "Enhanced retrieval: regional data, terminal details, and cash information collected"
+            "cash_retrieval_successful": cash_retrieval_success,
+            "cash_retrieval_status": "SUCCESS" if cash_retrieval_success else "FAILED_WITH_ERRORS",
+            "collection_note": "Enhanced retrieval: regional data, terminal details, and cash information collected" + 
+                             ("" if cash_retrieval_success else " (cash info had errors)")
         }
         
         log.info(f"[OK] Terminal details processing completed: {len(all_terminal_details)} details retrieved")
@@ -1862,8 +1924,8 @@ class CombinedATMRetriever:
                 else:
                     log.info("No terminal details data to save")
                 
-                # Save cash information to new table
-                if all_data["terminal_cash_info_data"]:
+                # Save cash information to new table - only if retrieval was successful
+                if all_data["terminal_cash_info_data"] and cash_retrieval_success:
                     cash_save_success = self.save_terminal_cash_info_to_database(
                         all_data["terminal_cash_info_data"]
                     )
@@ -1871,6 +1933,9 @@ class CombinedATMRetriever:
                         log.info("[OK] Cash information successfully saved to terminal_cash_information table")
                     else:
                         log.warning("WARNING: Cash information save to new table failed")
+                elif all_data["terminal_cash_info_data"] and not cash_retrieval_success:
+                    log.warning("SKIPPING cash information database save due to retrieval errors")
+                    log.info(f"Retrieved {len(all_data['terminal_cash_info_data'])} records but with errors - not saving to database")
                 else:
                     log.info("No cash information data to save")
             else:
@@ -1953,21 +2018,27 @@ class CombinedATMRetriever:
                 log.error("Failed to save terminal details data")
                 success = False
         
-        # Save cash information data
+        # Save cash information data - only if it was successfully retrieved
         if all_data.get("terminal_cash_info_data"):
-            log.info("Saving cash information data to database...")
-            if use_new_tables:
-                cash_success = self.save_terminal_cash_info_to_database(
-                    all_data["terminal_cash_info_data"]
-                )
-                
-                if cash_success:
-                    log.info("Cash information data saved successfully")
+            cash_retrieval_successful = all_data.get("summary", {}).get("cash_retrieval_successful", False)
+            
+            if cash_retrieval_successful:
+                log.info("Saving cash information data to database...")
+                if use_new_tables:
+                    cash_success = self.save_terminal_cash_info_to_database(
+                        all_data["terminal_cash_info_data"]
+                    )
+                    
+                    if cash_success:
+                        log.info("Cash information data saved successfully")
+                    else:
+                        log.error("Failed to save cash information data")
+                        success = False
                 else:
-                    log.error("Failed to save cash information data")
-                    success = False
+                    log.info("Cash information saving to old database tables not implemented")
             else:
-                log.info("Cash information saving to old database tables not implemented")
+                log.warning("Skipping cash information database save due to retrieval errors")
+                log.info(f"Found {len(all_data['terminal_cash_info_data'])} cash records but errors occurred during retrieval")
         
         return success
 
