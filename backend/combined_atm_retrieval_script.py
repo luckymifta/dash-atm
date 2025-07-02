@@ -44,16 +44,85 @@ from collections import defaultdict, deque
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Configure logging with enhanced formatting for continuous operation
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(funcName)s:%(lineno)d]: %(message)s",
-    handlers=[
-        logging.FileHandler("combined_atm_retrieval.log", encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-log = logging.getLogger("CombinedATMRetrieval")
+# Enhanced logging setup with rotation and better error handling
+def setup_enhanced_logging():
+    """Setup enhanced logging with rotation and comprehensive coverage"""
+    from logging.handlers import RotatingFileHandler
+    
+    # Create logs directory if it doesn't exist
+    logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Generate timestamped log filename for easier identification
+    current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"combined_atm_retrieval_{current_timestamp}.log"
+    log_filepath = os.path.join(logs_dir, log_filename)
+    
+    # Create separate error log file for critical issues
+    error_log_filename = f"combined_atm_retrieval_errors_{current_timestamp}.log"
+    error_log_filepath = os.path.join(logs_dir, error_log_filename)
+    
+    # Clear any existing logging configuration
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s [%(name)s:%(funcName)s:%(lineno)d]: %(message)s",
+        handlers=[
+            # Main log file with rotation (max 10MB, keep 5 files)
+            RotatingFileHandler(
+                log_filepath, 
+                maxBytes=10*1024*1024,  # 10MB
+                backupCount=5,
+                encoding='utf-8'
+            ),
+            # Console output with INFO level
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    
+    # Create specialized logger for this script
+    log = logging.getLogger("CombinedATMRetrieval")
+    log.setLevel(logging.INFO)
+    
+    # Add separate error file handler for ERROR and CRITICAL levels only
+    error_handler = RotatingFileHandler(
+        error_log_filepath,
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8'
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s:%(funcName)s:%(lineno)d]: %(message)s")
+    )
+    log.addHandler(error_handler)
+    
+    # Set console handler to INFO level (reduce noise)
+    for handler in logging.root.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            handler.setLevel(logging.INFO)
+    
+    # Log setup information
+    log.info("=" * 80)
+    log.info("� COMBINED ATM RETRIEVAL SCRIPT STARTED")
+    log.info("=" * 80)
+    log.info(f"�📝 Main log file: {log_filepath}")
+    log.info(f"🚨 Error log file: {error_log_filepath}")
+    log.info(f"📁 Logs directory: {logs_dir}")
+    log.info(f"⚙️  Log rotation enabled: 10MB max size, 5 backup files")
+    log.info(f"🔧 Python version: {sys.version}")
+    log.info(f"💻 Platform: {platform.system()} {platform.release()}")
+    log.info(f"📍 Script location: {os.path.abspath(__file__)}")
+    log.info(f"📍 Working directory: {os.getcwd()}")
+    log.info("=" * 80)
+    
+    return log, logs_dir, log_filepath, error_log_filepath
+
+# Initialize enhanced logging
+log, logs_dir, log_filepath, error_log_filepath = setup_enhanced_logging()
 
 # Global variables for continuous operation
 stop_flag = threading.Event()
@@ -807,9 +876,6 @@ class CombinedATMRetriever:
                 if retry_count >= max_retries:
                     log.error(f"All JSON parsing attempts failed for {param_value}. Skipping this parameter.")
                     return []
-                log.info(f"Retrying in 3 seconds...")
-                time.sleep(3)
-                continue
         
         return terminals
     
@@ -1580,8 +1646,18 @@ class CombinedATMRetriever:
             Tuple of (success: bool, all_data: Dict containing all retrieved data)
         """
         log.info("=" * 80)
-        log.info("STARTING COMBINED ATM DATA RETRIEVAL WITH CASH INFORMATION")
+        log.info("🚀 STARTING COMBINED ATM DATA RETRIEVAL WITH CASH INFORMATION")
         log.info("=" * 80)
+        log.info(f"📊 Retrieval mode: {'DEMO' if self.demo_mode else 'LIVE'}")
+        log.info(f"💾 Database save: {'Enabled' if save_to_db else 'Disabled'}")
+        log.info(f"🆕 New tables: {'Enabled' if use_new_tables else 'Disabled'}")
+        log.info(f"🏧 Total ATMs configured: {self.total_atms}")
+        log.info(f"⏰ Retrieval timestamp: {datetime.now(self.dili_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        log.info("=" * 80)
+        
+        # Initialize performance tracking
+        start_time = time.time()
+        phase_times = {}
         
         all_data = {
             "retrieval_timestamp": datetime.now(self.dili_tz).isoformat(),  # Store Dili timestamp for consistency
@@ -1590,15 +1666,19 @@ class CombinedATMRetriever:
             "terminal_details_data": [],  # Only terminal details, no terminal status data
             "terminal_cash_info_data": [],  # New: Cash information data
             "summary": {},
-            "failover_mode": False
+            "failover_mode": False,
+            "performance_metrics": {}
         }
         
         # Step 1: Check connectivity to 172.31.1.46 using ping (skip for demo mode)
+        log.info("📡 Phase 1: Network connectivity check...")
+        phase_start = time.time()
+        
         if not self.demo_mode:
             connectivity_ok = self.check_connectivity()
             if not connectivity_ok:
                 log.error("❌ Ping failed to 172.31.1.46 - Activating connection failure mode")
-                log.info("Generating OUT_OF_SERVICE status for all ATMs due to network connectivity failure")
+                log.info("🔄 Generating OUT_OF_SERVICE status for all ATMs due to network connectivity failure")
                 
                 # Generate OUT_OF_SERVICE data for all ATMs due to connection failure
                 regional_data, terminal_details_data = self.generate_out_of_service_data()
@@ -1621,22 +1701,36 @@ class CombinedATMRetriever:
                     "failure_type": "NETWORK_CONNECTIVITY_FAILURE"
                 }
                 
+                phase_times["connectivity_check"] = time.time() - phase_start
+                phase_times["total_execution"] = time.time() - start_time
+                all_data["performance_metrics"] = phase_times
+                
+                log.warning(f"⚡ Failover mode completed in {phase_times['total_execution']:.2f} seconds")
+                
                 # Save to database if requested
                 if save_to_db and DB_AVAILABLE:
+                    log.info("💾 Saving connection failure data to database...")
                     success = self.save_data_to_database(all_data, use_new_tables)
                     if success:
-                        log.info("Connection failure data saved to database successfully")
+                        log.info("✅ Connection failure data saved to database successfully")
                     else:
                         log.error("Failed to save connection failure data to database")
                 
                 log.warning("Connection failure mode completed - all ATMs marked as OUT_OF_SERVICE due to ping failure")
                 return True, all_data  # Return success=True as failover worked as intended
             else:
-                log.info("✅ Ping successful to 172.31.1.46 - proceeding with authentication")
+                phase_times["connectivity_check"] = time.time() - phase_start
+                log.info(f"✅ Connectivity check passed in {phase_times['connectivity_check']:.2f} seconds")
+        else:
+            phase_times["connectivity_check"] = 0.0  # Demo mode skips connectivity check
+            log.info("🎭 Demo mode: Skipping connectivity check")
         
-        # Step 2: Normal operation - Authenticate
+        # Step 2: Authentication Phase
+        log.info("🔐 Phase 2: Authentication...")
+        phase_start = time.time()
+        
         if not self.authenticate():
-            log.error("Authentication failed after connectivity was confirmed - Activating authentication failure mode")
+            log.error("❌ Authentication failed after connectivity was confirmed - Activating authentication failure mode")
             
             # Generate AUTH_FAILURE data for authentication failure (ping succeeded but login failed)
             regional_data, terminal_details_data = self.generate_auth_failure_data()
@@ -1659,73 +1753,59 @@ class CombinedATMRetriever:
                 "failure_type": "AUTHENTICATION_FAILURE"
             }
             
+            phase_times["authentication"] = time.time() - phase_start
+            phase_times["total_execution"] = time.time() - start_time
+            all_data["performance_metrics"] = phase_times
+            
+            log.warning(f"⚡ Authentication failure mode completed in {phase_times['total_execution']:.2f} seconds")
+            
             # Save to database if requested
             if save_to_db and DB_AVAILABLE:
+                log.info("💾 Saving authentication failure data to database...")
                 success = self.save_data_to_database(all_data, use_new_tables)
                 if success:
-                    log.info("AUTH_FAILURE data saved to database successfully")
+                    log.info("✅ AUTH_FAILURE data saved to database successfully")
                 else:
-                    log.error("Failed to save AUTH_FAILURE data to database")
+                    log.error("❌ Failed to save AUTH_FAILURE data to database")
             
-            log.warning("Authentication failure mode completed - all ATMs marked as OUT_OF_SERVICE due to login failure")
+            log.warning("🔄 Authentication failure mode completed - all ATMs marked as OUT_OF_SERVICE due to login failure")
             return True, all_data  # Return success=True as failover worked as intended
         
-        # Step 3: Fetch regional data
+        phase_times["authentication"] = time.time() - phase_start
+        log.info(f"✅ Authentication successful in {phase_times['authentication']:.2f} seconds")
+        
+        # Step 3: Regional Data Retrieval Phase
         log.info("\n--- PHASE 1: Retrieving Regional ATM Data ---")
+        log.info("📊 Phase 3: Regional data retrieval...")
+        phase_start = time.time()
+        
         raw_regional_data = self.fetch_regional_data()
         if raw_regional_data:
             processed_regional_data = self.process_regional_data(raw_regional_data)
             all_data["regional_data"] = processed_regional_data
-            log.info(f"[OK] Regional data processing completed: {len(processed_regional_data)} regions")
+            phase_times["regional_data"] = time.time() - phase_start
+            log.info(f"✅ Regional data processing completed: {len(processed_regional_data)} regions in {phase_times['regional_data']:.2f} seconds")
         else:
-            log.warning("WARNING: Regional data retrieval failed")
-        
-        # Step 4: Fetch terminal status data for all parameter values - DISABLED
-        # log.info("\n--- PHASE 2: Retrieving Terminal Status Data ---")
-        # all_terminals = []
-        # status_counts = {}
-        # 
-        # for param_value in tqdm(PARAMETER_VALUES, desc="Fetching terminal status", unit="status"):
-        #     terminals = self.get_terminals_by_status(param_value)
-        #     
-        #     if terminals:
-        #         # Add each terminal to our combined list
-        #         for terminal in terminals:
-        #             # Add the status we searched for
-        #             terminal['fetched_status'] = param_value
-        #             all_terminals.append(terminal)
-        #         
-        #         # Track how many terminals we found for each status
-        #         status_counts[param_value] = len(terminals)
-        #         log.info(f"Added {len(terminals)} terminals with status {param_value}")
-        #     else:
-        #         log.warning(f"No terminals found with status {param_value}")
-        #         status_counts[param_value] = 0
-        # 
-        # all_data["terminal_status_data"] = all_terminals
-        # 
-        # # Phase 2 Reporting
-        # log.info("\n=== Terminal Status Summary ===")
-        # total_terminals = sum(status_counts.values())
-        # for status, count in status_counts.items():
-        #     percentage = (count / total_terminals * 100) if total_terminals > 0 else 0
-        #     log.info(f"{status}: {count} terminals ({percentage:.1f}%)")
-        # log.info(f"Total: {total_terminals} terminals")
-        # log.info("=========================")
+            phase_times["regional_data"] = time.time()
+            log.warning(f"⚠️ Regional data retrieval failed after {phase_times['regional_data']:.2f} seconds")
         
         # Skip terminal status data retrieval - focus only on terminal details
-        log.info("\n--- PHASE 2: Preparing for Terminal Details Retrieval ---")
+        log.info("📋 Phase 4: Preparing for terminal details retrieval...")
         log.info("Skipping terminal status data collection as requested")
         all_terminals = []
         status_counts = {}
         
         # Enhanced Comprehensive Terminal Search Strategy
-        log.info("Implementing comprehensive terminal search for all 14 ATMs...")
+        phase_start = time.time()
+        log.info("🔍 Implementing comprehensive terminal search for all 14 ATMs...")
         all_terminals, status_counts = self.comprehensive_terminal_search()
+        phase_times["terminal_search"] = time.time() - phase_start
+        log.info(f"✅ Terminal search completed: Found {len(all_terminals)} terminals in {phase_times['terminal_search']:.2f} seconds")
         
         # Step 5: Fetch detailed information for ALL terminals
-        log.info("\n--- PHASE 3: Retrieving Terminal Details ---")
-        log.info(f"Found {len(all_terminals)} terminals to process for details")
+        log.info("🔧 Phase 5: Retrieving terminal details...")
+        phase_start = time.time()
+        log.info(f"Processing {len(all_terminals)} terminals for detailed information...")
         
         all_terminal_details = []
         current_retrieval_time = datetime.now(self.dili_tz)  # Use Dili time for database consistency
@@ -1827,30 +1907,32 @@ class CombinedATMRetriever:
                         
                         log.debug(f"Processed item {items_processed} for terminal {terminal_id} with unique_request_id: {unique_request_id}")
                         
-                    log.info(f"Added {items_processed} detail record(s) for terminal {terminal_id}")
+                    log.info(f"✅ Added {items_processed} detail record(s) for terminal {terminal_id}")
                 else:
-                    log.warning(f"No details found in body for terminal {terminal_id}")
+                    log.warning(f"⚠️ No details found in body for terminal {terminal_id}")
             else:
-                log.warning(f"Failed to fetch details for terminal {terminal_id}")
+                log.warning(f"❌ Failed to fetch details for terminal {terminal_id}")
             
             # Add a small delay between requests to avoid overwhelming the server
             if not self.demo_mode:
                 time.sleep(1)
         
         all_data["terminal_details_data"] = all_terminal_details
-        
-        log.info(f"[OK] Terminal details processing completed: {len(all_terminal_details)} details retrieved")
+        phase_times["terminal_details"] = time.time() - phase_start
+        log.info(f"✅ Terminal details processing completed: {len(all_terminal_details)} details retrieved in {phase_times['terminal_details']:.2f} seconds")
         
         # Step 6: NEW - Fetch cash information for all terminals with enhanced error handling
-        log.info("\n--- PHASE 4: Retrieving Terminal Cash Information ---")
+        log.info("💰 Phase 6: Retrieving terminal cash information...")
+        phase_start = time.time()
         cash_info_records, cash_retrieval_success = self.process_terminal_cash_info(all_terminals)
         all_data["terminal_cash_info_data"] = cash_info_records
+        phase_times["cash_information"] = time.time() - phase_start
         
         # Log cash retrieval results
         if cash_retrieval_success:
-            log.info(f"[OK] Cash information processing completed successfully: {len(cash_info_records)} cash records retrieved")
+            log.info(f"✅ Cash information processing completed successfully: {len(cash_info_records)} cash records retrieved in {phase_times['cash_information']:.2f} seconds")
         else:
-            log.warning(f"[WARNING] Cash information processing had errors: {len(cash_info_records)} records retrieved but with issues")
+            log.warning(f"⚠️ Cash information processing had errors: {len(cash_info_records)} records retrieved in {phase_times['cash_information']:.2f} seconds")
             log.warning("Cash information will not be saved to database due to retrieval errors")
         
         # Map parameter values to proper status names for summary
@@ -1892,11 +1974,14 @@ class CombinedATMRetriever:
                              ("" if cash_retrieval_success else " (cash info had errors)")
         }
         
-        log.info(f"[OK] Terminal details processing completed: {len(all_terminal_details)} details retrieved")
+        # Terminal details phase completion
+        phase_times["terminal_details"] = time.time() - phase_start
+        log.info(f"✅ Terminal details processing completed: {len(all_terminal_details)} details retrieved in {phase_times['terminal_details']:.2f} seconds")
         
         # Step 7: Save to database if requested
         if save_to_db and all_data["regional_data"]:
-            log.info("\n--- PHASE 5: Saving to Database ---")
+            log.info("💾 Phase 7: Saving to database...")
+            phase_start = time.time()
             
             if use_new_tables:
                 # Use new database tables with JSONB support
@@ -1942,20 +2027,60 @@ class CombinedATMRetriever:
                 # Use original database table
                 save_success = self.save_regional_to_database(all_data["regional_data"])
                 if save_success:
-                    log.info("[OK] Regional data successfully saved to database")
+                    log.info("✅ Regional data successfully saved to database")
                 else:
-                    log.warning("WARNING: Database save failed, but processed data is still available")
+                    log.warning("⚠️ Database save failed, but processed data is still available")
+            
+            phase_times["database_save"] = time.time() - phase_start
+            log.info(f"✅ Database save phase completed in {phase_times['database_save']:.2f} seconds")
+        else:
+            phase_times["database_save"] = 0.0
+            if save_to_db and not all_data["regional_data"]:
+                log.warning("⚠️ Database save requested but no regional data available")
+            elif save_to_db and not DB_AVAILABLE:
+                log.warning("⚠️ Database save requested but database not available")
+            else:
+                log.info("ℹ️ Database save not requested")
         
         # Step 8: Logout to prevent session lockouts
-        log.info("\n--- PHASE 6: Logout ---")
+        # Step 6: Logout Phase
+        log.info("🚪 Phase 6: Logout...")
+        phase_start = time.time()
         logout_success = self.logout()
+        phase_times["logout"] = time.time() - phase_start
+        
         if logout_success:
-            log.info("[OK] Successfully logged out from ATM monitoring system")
+            log.info(f"✅ Successfully logged out in {phase_times['logout']:.2f} seconds")
         else:
-            log.warning("WARNING: Logout failed, but data retrieval completed successfully")
+            log.warning(f"⚠️ Logout failed after {phase_times['logout']:.2f} seconds, but data retrieval completed successfully")
+        
+        # Final Performance Summary
+        phase_times["total_execution"] = time.time() - start_time
+        all_data["performance_metrics"] = phase_times
         
         log.info("=" * 80)
-        log.info("COMBINED ATM DATA RETRIEVAL WITH CASH INFORMATION COMPLETED SUCCESSFULLY")
+        log.info("🎉 COMBINED ATM DATA RETRIEVAL COMPLETED SUCCESSFULLY")
+        log.info("=" * 80)
+        log.info("📊 PERFORMANCE METRICS:")
+        log.info(f"   • Total execution time: {phase_times['total_execution']:.2f} seconds")
+        log.info(f"   • Connectivity check: {phase_times.get('connectivity_check', 0):.2f} seconds")
+        log.info(f"   • Authentication: {phase_times.get('authentication', 0):.2f} seconds")
+        log.info(f"   • Regional data: {phase_times.get('regional_data', 0):.2f} seconds")
+        log.info(f"   • Terminal search: {phase_times.get('terminal_search', 0):.2f} seconds")
+        log.info(f"   • Terminal details: {phase_times.get('terminal_details', 0):.2f} seconds")
+        log.info(f"   • Cash information: {phase_times.get('cash_information', 0):.2f} seconds")
+        log.info(f"   • Database save: {phase_times.get('database_save', 0):.2f} seconds")
+        log.info(f"   • Logout: {phase_times.get('logout', 0):.2f} seconds")
+        
+        # Data Summary
+        summary = all_data.get("summary", {})
+        log.info("📈 DATA SUMMARY:")
+        log.info(f"   • Regions processed: {summary.get('total_regions', 0)}")
+        log.info(f"   • Terminals found: {summary.get('total_terminals', 0)}")
+        log.info(f"   • Terminal details: {summary.get('total_terminal_details', 0)}")
+        log.info(f"   • Cash info records: {summary.get('total_cash_info_records', 0)}")
+        if summary.get('failover_activated'):
+            log.info(f"   • Failover mode: {summary.get('failure_type', 'UNKNOWN')}")
         log.info("=" * 80)
         
         return True, all_data
@@ -2654,6 +2779,9 @@ class CombinedATMRetriever:
             if final_new_terminals:
                 log.info(f"💾 Saved {len(final_new_terminals)} newly discovered terminals to persistent storage")
         
+            if final_new_terminals:
+                log.info(f"💾 Saved {len(final_new_terminals)} newly discovered terminals to persistent storage")
+        
         # Windows production environment final validation
         if os.name == 'nt':  # Windows
             log.info("🪟 WINDOWS PRODUCTION ENVIRONMENT - Final Validation:")
@@ -3104,6 +3232,63 @@ def save_to_json(all_data: Dict[str, Any], filename: Optional[str] = None) -> st
     return full_path
 
 
+def log_execution_summary(all_data: Dict[str, Any], success: bool) -> None:
+    """
+    Log a comprehensive summary of the execution results
+    
+    Args:
+        all_data: Dictionary containing all retrieved data
+        success: Whether the execution was successful
+    """
+    log.info("=" * 80)
+    log.info("📊 EXECUTION SUMMARY")
+    log.info("=" * 80)
+    
+    # Basic execution info
+    log.info(f"🚀 Execution Status: {'SUCCESS' if success else 'FAILED'}")
+    log.info(f"🎭 Demo Mode: {'Enabled' if all_data.get('demo_mode', False) else 'Disabled'}")
+    log.info(f"🔄 Failover Mode: {'Activated' if all_data.get('failover_mode', False) else 'Normal Operation'}")
+    log.info(f"⏰ Timestamp: {all_data.get('retrieval_timestamp', 'N/A')}")
+    
+    # Performance metrics
+    performance = all_data.get('performance_metrics', {})
+    if performance:
+        log.info("⚡ PERFORMANCE BREAKDOWN:")
+        total_time = performance.get('total_execution', 0)
+        log.info(f"   • Total Execution: {total_time:.2f}s")
+        
+        if total_time > 0:
+            for phase, time_taken in performance.items():
+                if phase != 'total_execution' and time_taken > 0:
+                    percentage = (time_taken / total_time) * 100
+                    log.info(f"   • {phase.replace('_', ' ').title()}: {time_taken:.2f}s ({percentage:.1f}%)")
+    
+    # Data summary
+    summary = all_data.get('summary', {})
+    log.info("📈 DATA COLLECTION RESULTS:")
+    log.info(f"   • Regions: {summary.get('total_regions', 0)}")
+    log.info(f"   • Terminals: {summary.get('total_terminals', 0)}")
+    log.info(f"   • Terminal Details: {summary.get('total_terminal_details', 0)}")
+    log.info(f"   • Cash Info Records: {summary.get('total_cash_info_records', 0)}")
+    
+    # Status breakdown if available
+    status_counts = summary.get('status_counts', {})
+    if status_counts:
+        log.info("🏧 TERMINAL STATUS BREAKDOWN:")
+        for status, count in status_counts.items():
+            log.info(f"   • {status}: {count}")
+    
+    # Failure information if applicable
+    if all_data.get('failover_mode'):
+        failure_type = summary.get('failure_type', 'UNKNOWN')
+        connection_status = summary.get('connection_status', 'UNKNOWN')
+        log.info("🚨 FAILOVER INFORMATION:")
+        log.info(f"   • Failure Type: {failure_type}")
+        log.info(f"   • Connection Status: {connection_status}")
+    
+    log.info("=" * 80)
+
+
 def main():
     """Main execution function"""
     parser = argparse.ArgumentParser(
@@ -3168,6 +3353,9 @@ Examples:
                 json_filename = save_to_json(all_data)
                 print(f"\n[FILE] All data saved to: {json_filename}")
             
+            # Log comprehensive execution summary
+            log_execution_summary(all_data, success)
+            
             summary = all_data.get("summary", {})
             print(f"\n[OK] SUCCESS: Retrieved data for {summary.get('total_regions', 0)} regions, "
                   f"{summary.get('total_terminals', 0)} terminals, and "
@@ -3183,18 +3371,27 @@ Examples:
             
             return 0
         else:
+            # Log summary for failed execution
+            log_execution_summary(all_data if 'all_data' in locals() else {}, False)
             print("\n[FAIL] FAILED: Unable to retrieve ATM data")
             return 1
             
     except KeyboardInterrupt:
+        log.warning("⚠️ Process interrupted by user")
         print("\n[WARNING] Process interrupted by user")
         return 1
     except Exception as e:
-        log.error(f"Unexpected error: {str(e)}")
-        log.debug("Error details:", exc_info=True)
+        log.error(f"💥 Unexpected error in main execution: {str(e)}")
+        log.error("Full error details:", exc_info=True)
+        print(f"\n[ERROR] Unexpected error: {str(e)}")
         return 1
+    finally:
+        # Log final cleanup
+        log.info("🏁 Script execution completed")
+        log.info(f"📁 Log files available in: {logs_dir}")
 
 
 if __name__ == "__main__":
     exit_code = main()
+    log.info(f"🏁 Process exiting with code: {exit_code}")
     sys.exit(exit_code)
