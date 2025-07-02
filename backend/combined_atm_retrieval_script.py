@@ -1270,6 +1270,7 @@ class CombinedATMRetriever:
         critical_errors = 0
         
         for terminal in tqdm(all_terminals, desc="Fetching cash information", unit="terminal"):
+            terminal_id = None  # Initialize terminal_id for safe error handling
             try:
                 # Add safety check for None terminals
                 if terminal is None:
@@ -1372,14 +1373,8 @@ class CombinedATMRetriever:
                 # Critical error handling - log but continue processing
                 critical_errors += 1
                 
-                # Safe way to get terminal ID for error logging
-                terminal_id_for_error = "UNKNOWN"
-                if isinstance(terminal, dict) and terminal is not None:
-                    terminal_id_for_error = terminal.get('terminalId', 'UNKNOWN')
-                elif terminal is None:
-                    terminal_id_for_error = "None_Terminal"
-                else:
-                    terminal_id_for_error = f"INVALID_TYPE_{type(terminal).__name__}"
+                # Safe way to get terminal ID for error logging - use the safely initialized terminal_id
+                terminal_id_for_error = terminal_id if terminal_id else "UNKNOWN_TERMINAL"
                 
                 log.error(f"Critical error processing cash info for terminal {terminal_id_for_error}: {str(e)}")
                 log.error(f"Error type: {type(e).__name__}")
