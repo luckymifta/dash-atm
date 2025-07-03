@@ -39,7 +39,15 @@ import os
 from tqdm import tqdm
 import signal
 import threading
-from collections import defaultdict, deque
+from collections import deque
+
+try:
+    from dotenv import load_dotenv
+    # Load environment variables from .env file
+    load_dotenv()
+    logging.info("Environment variables loaded from .env file")
+except ImportError:
+    logging.warning("python-dotenv not installed. Environment variables will not be loaded from .env file.")
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -138,14 +146,16 @@ execution_stats = {
 
 # Try to import database connector if available
 try:
-    from db_connector_new import db_connector
+    # First try to use the original db_connector which uses environment variables properly
+    import db_connector
     DB_AVAILABLE = True
-    log.info("Database connector available")
+    log.info("Legacy database connector available (using environment variables)")
 except ImportError:
     try:
-        import db_connector
+        # Fall back to db_connector_new only if original not available
+        from db_connector_new import db_connector
         DB_AVAILABLE = True
-        log.info("Legacy database connector available")
+        log.warning("Using new database connector with hardcoded credentials - consider switching to environment variables")
     except ImportError:
         db_connector = None
         DB_AVAILABLE = False
@@ -1785,12 +1795,16 @@ class CombinedATMRetriever:
             raw_data_map = {}
             if raw_data:
                 for raw_item in raw_data:
-                    region_code = raw_item.get("hc-key", "UNKNOWN")
-                    raw_data_map[region_code] = raw_item
+                    region_code = raw_item.get('regionCode')
+                    if region_code:
+                        raw_data_map[region_code] = raw_item
             
-            # Insert records
+            # Generate a unique request ID for this batch
+            batch_request_id = str(uuid.uuid4())
+            
+            # Insert processed data for each region
             for record in processed_data:
-                region_code = record['region_code']
+                region_code = record.get('region_code', 'UNKNOWN')
                 raw_json_data = raw_data_map.get(region_code, {})
                 
                 cursor.execute("""
@@ -1807,14 +1821,14 @@ class CombinedATMRetriever:
                         raw_regional_data
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    record['unique_request_id'],
+                    record.get('unique_request_id', batch_request_id),  # Use record's ID or batch ID
                     region_code,
-                    record['count_available'],
-                    record['count_warning'],
-                    record['count_zombie'],
-                    record['count_wounded'],
-                    record['count_out_of_service'],
-                    record['total_atms_in_region'],
+                    record.get('count_available', 0),
+                    record.get('count_warning', 0),
+                    record.get('count_zombie', 0),
+                    record.get('count_wounded', 0),
+                    record.get('count_out_of_service', 0),
+                    record.get('total_atms_in_region', 0),
                     datetime.now(self.dili_tz),  # Use Dili time for consistency
                     json.dumps(raw_json_data)
                 ))
@@ -2346,24 +2360,34 @@ class CombinedATMRetriever:
             return False
         
         try:
-            import psycopg2
-            
-            # Get database connection parameters
-            db_config = {
-                "host": os.environ.get("DB_HOST", "localhost"),
-                "port": os.environ.get("DB_PORT", "5432"),
-                "database": os.environ.get("DB_NAME", "atm_monitor"),
-                "user": os.environ.get("DB_USER", "postgres"),
-                "password": os.environ.get("DB_PASSWORD", "")
-            }
-            
-            conn = psycopg2.connect(
-                host=db_config["host"],
-                port=db_config["port"],
-                dbname=db_config["database"],
-                user=db_config["user"],
-                password=db_config["password"]
-            )
+            # Use the db_connector module that handles environment variables properly
+            if db_connector:
+                conn = db_connector.get_db_connection()
+                if not conn:
+                    log.error("Failed to get database connection from db_connector")
+                    return False
+            else:
+                import psycopg2
+                
+                # Get database connection parameters from environment variables
+                db_config = {
+                    "host": os.environ.get("DB_HOST", "localhost"),
+                    "port": os.environ.get("DB_PORT", "5432"),
+                    "database": os.environ.get("DB_NAME", "atm_monitor"),
+                    "user": os.environ.get("DB_USER", "postgres"),
+                    "password": os.environ.get("DB_PASSWORD", "")
+                }
+                
+                # Log the actual host being used
+                log.info(f"Connecting to database at {db_config['host']}:{db_config['port']} for cash information storage")
+                
+                conn = psycopg2.connect(
+                    host=db_config["host"],
+                    port=db_config["port"],
+                    dbname=db_config["database"],
+                    user=db_config["user"],
+                    password=db_config["password"]
+                )
             
             cursor = conn.cursor()
             
