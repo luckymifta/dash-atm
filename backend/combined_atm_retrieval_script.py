@@ -2529,37 +2529,107 @@ if __name__ == "__main__":
     parser.add_argument("--use-new-tables", action="store_true", help="Use new database tables with JSONB support")
     parser.add_argument("--total-atms", type=int, default=14, help="Total number of ATMs for percentage calculation")
     parser.add_argument("--include-cash-info", action="store_true", help="Include cash information retrieval")
+    parser.add_argument("--continuous", action="store_true", help="Run in continuous operation mode")
+    parser.add_argument("--interval", type=int, default=300, help="Interval between runs in seconds (default: 300)")
+    parser.add_argument("--output-dir", type=str, default="./cash_output", help="Directory for JSON output files")
     args = parser.parse_args()
     
+    # Ensure output directory exists if saving JSON
+    if args.save_json:
+        os.makedirs(args.output_dir, exist_ok=True)
+        
+    # Run counter and shutdown flag for continuous mode
+    run_count = 0
+    
+    # Use a list to allow modification inside the signal handler
+    # (Avoids nonlocal variables issue)
+    running_state = [True]
+    
+    # Set up signal handlers for graceful shutdown
+    def signal_handler(sig, frame):
+        log.warning("\n⚠️ Received shutdown signal, completing current run and exiting...")
+        running_state[0] = False
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     try:
-        # Initialize retriever with command line arguments
-        retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
-        
-        # Run the combined data retrieval process
-        success, data = retriever.retrieve_and_process_all_data(
-            save_to_db=args.save_to_db,
-            use_new_tables=args.use_new_tables,
-            include_cash_info=args.include_cash_info
-        )
-        
-        # Save JSON output if requested
-        if args.save_json:
-            output_filename = f"combined_atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            try:
-                with open(output_filename, "w") as f:
-                    json.dump(data, f, default=str, indent=2)
-                log.info(f"✅ Data saved to {output_filename}")
-            except Exception as e:
-                log.error(f"❌ Error saving JSON output: {str(e)}")
-        
-        if success:
-            log.info("🎉 Script completed successfully!")
-            sys.exit(0)
-        else:
-            log.error("⚠️ Script completed with errors.")
-            sys.exit(1)
+        while running_state[0]:
+            run_start_time = time.time()
+            if args.continuous:
+                run_count += 1
+                log.info("=" * 80)
+                log.info(f"🔄 CONTINUOUS MODE: Starting run #{run_count}")
+                log.info(f"⏰ Run start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                log.info("=" * 80)
+            
+            # Initialize retriever with command line arguments
+            retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
+            
+            # Run the combined data retrieval process
+            success, data = retriever.retrieve_and_process_all_data(
+                save_to_db=args.save_to_db,
+                use_new_tables=args.use_new_tables,
+                include_cash_info=args.include_cash_info
+            )
+            
+            # Save JSON output if requested
+            if args.save_json:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename_prefix = "combined_atm_data"
+                if args.include_cash_info:
+                    filename_prefix = "combined_atm_cash_data"
+                
+                output_filename = f"{args.output_dir}/{filename_prefix}_{timestamp}.json"
+                try:
+                    with open(output_filename, "w") as f:
+                        json.dump(data, f, default=str, indent=2)
+                    log.info(f"✅ Data saved to {output_filename}")
+                except Exception as e:
+                    log.error(f"❌ Error saving JSON output: {str(e)}")
+            
+            if success:
+                if args.continuous:
+                    run_duration = time.time() - run_start_time
+                    log.info(f"✅ Run #{run_count} completed successfully in {run_duration:.2f} seconds")
+                else:
+                    log.info("🎉 Script completed successfully!")
+                    sys.exit(0)
+            else:
+                if args.continuous:
+                    log.warning(f"⚠️ Run #{run_count} completed with errors")
+                else:
+                    log.error("⚠️ Script completed with errors.")
+                    sys.exit(1)
+            
+            # If not in continuous mode or shutdown requested, exit the loop
+            if not args.continuous or not running_state[0]:
+                break
+                
+            # Calculate sleep time for next run
+            run_duration = time.time() - run_start_time
+            sleep_time = max(0, args.interval - run_duration)
+            
+            if sleep_time > 0:
+                log.info(f"💤 Sleeping for {sleep_time:.2f} seconds until next run...")
+                # Use a smaller sleep increment to allow for faster response to signals
+                sleep_increment = 1.0
+                sleep_count = 0
+                while sleep_count < sleep_time and running_state[0]:
+                    time.sleep(min(sleep_increment, sleep_time - sleep_count))
+                    sleep_count += sleep_increment
+            else:
+                log.warning(f"⚠️ Run took longer ({run_duration:.2f}s) than the requested interval ({args.interval}s), starting next run immediately")
+                
+        # Final message for continuous mode when exiting
+        if args.continuous:
+            log.info("=" * 80)
+            log.info(f"👋 Continuous operation completed after {run_count} runs")
+            log.info("=" * 80)
             
     except KeyboardInterrupt:
+        # This should be caught by signal handler now
         log.warning("\n⚠️ Script interrupted by user")
         sys.exit(130)  # Standard SIGINT exit code
     except Exception as e:
