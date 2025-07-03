@@ -3,7 +3,7 @@
 # This script runs the ATM data retrieval with cash information at regular intervals
 
 # Configuration
-INTERVAL=300  # Time between runs in seconds (5 minutes)
+INTERVAL=900  # Time between runs in seconds (15 minutes)
 OUTPUT_DIR="./cash_output"
 TOTAL_ATMS=14
 LOG_FILE="atm_continuous_monitor.log"

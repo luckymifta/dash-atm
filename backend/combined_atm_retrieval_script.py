@@ -2530,7 +2530,7 @@ if __name__ == "__main__":
     parser.add_argument("--total-atms", type=int, default=14, help="Total number of ATMs for percentage calculation")
     parser.add_argument("--include-cash-info", action="store_true", help="Include cash information retrieval")
     parser.add_argument("--continuous", action="store_true", help="Run in continuous operation mode")
-    parser.add_argument("--interval", type=int, default=300, help="Interval between runs in seconds (default: 300)")
+    parser.add_argument("--interval", type=int, default=900, help="Interval between runs in seconds (default: 900 / 15 minutes)")
     parser.add_argument("--output-dir", type=str, default="./cash_output", help="Directory for JSON output files")
     args = parser.parse_args()
     

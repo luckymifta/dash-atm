@@ -8,7 +8,7 @@ The combined ATM retrieval script now supports continuous operation, allowing it
 
 - **Continuous Execution**: Script will run repeatedly at specified intervals
 - **Graceful Shutdown**: Properly handles termination signals to complete the current run before exiting
-- **Configurable Interval**: Set your own time interval between runs (default: 300 seconds)
+- **Configurable Interval**: Set your own time interval between runs (default: 900 seconds / 15 minutes)
 - **Run Tracking**: Logs each run with sequential run numbers and timestamps
 - **Custom Output Directory**: Direct JSON output files to a specific location
 
@@ -35,7 +35,7 @@ This will run the script every 10 minutes (600 seconds) and save data to the dat
 #### Continuous Cash Information Monitoring with JSON Output
 
 ```bash
-python combined_atm_retrieval_script.py --continuous --interval 300 --include-cash-info --save-json --output-dir ./cash_data
+python combined_atm_retrieval_script.py --continuous --interval 900 --include-cash-info --save-json --output-dir ./cash_data
 ```
 
 This will:
@@ -52,7 +52,7 @@ We've included a helper script for common continuous operation scenarios:
 ```
 
 This script:
-1. Sets up a 5-minute interval monitoring cycle
+1. Sets up a 15-minute interval monitoring cycle
 2. Includes cash information retrieval
 3. Saves output to both the database and JSON files
 4. Creates a log file of all operations
