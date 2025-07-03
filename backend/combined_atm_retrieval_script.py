@@ -156,6 +156,7 @@ LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"
 LOGOUT_URL = "https://172.31.1.46/sigit/user/logout"
 REPORTS_URL = "https://172.31.1.46/sigit/reports/dashboards?terminal_type=ATM&status_filter=Status"
 DASHBOARD_URL = "https://172.31.1.46/sigit/terminal/searchTerminalDashBoard?number_of_occurrences=30&terminal_type=ATM"
+CASH_INFO_URL = "https://172.31.1.46/sigit/terminal/searchTerminal"
 
 LOGIN_PAYLOAD = {
     "user_name": "Lucky.Saputra",
@@ -1143,7 +1144,7 @@ class CombinedATMRetriever:
         log.info(f"Successfully processed {len(processed_records)} regional records")
         return processed_records
     
-    def retrieve_and_process_all_data(self, save_to_db: bool = False, use_new_tables: bool = False) -> Tuple[bool, Dict[str, Any]]:
+    def retrieve_and_process_all_data(self, save_to_db: bool = False, use_new_tables: bool = False, include_cash_info: bool = False) -> Tuple[bool, Dict[str, Any]]:
         """
         Complete flow: authenticate, retrieve regional data and terminal details
         With failover capability for connection failures
@@ -1151,6 +1152,7 @@ class CombinedATMRetriever:
         Args:
             save_to_db: Whether to save processed data to database (original tables)
             use_new_tables: Whether to use new database tables (regional_data and terminal_details)
+            include_cash_info: Whether to also retrieve cash information for all terminals
             
         Returns:
             Tuple of (success: bool, all_data: Dict containing all retrieved data)
@@ -1161,6 +1163,7 @@ class CombinedATMRetriever:
         log.info(f"📊 Retrieval mode: {'DEMO' if self.demo_mode else 'LIVE'}")
         log.info(f"💾 Database save: {'Enabled' if save_to_db else 'Disabled'}")
         log.info(f"🆕 New tables: {'Enabled' if use_new_tables else 'Disabled'}")
+        log.info(f"💰 Cash info retrieval: {'Enabled' if include_cash_info else 'Disabled'}")
         log.info(f"🏧 Total ATMs configured: {self.total_atms}")
         log.info(f"⏰ Retrieval timestamp: {datetime.now(self.dili_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}")
         log.info("=" * 80)
@@ -1174,6 +1177,7 @@ class CombinedATMRetriever:
             "demo_mode": self.demo_mode,
             "regional_data": [],
             "terminal_details_data": [],  # Only terminal details, no terminal status data
+            "cash_information_data": [],  # Cash information for terminals
             "summary": {},
             "failover_mode": False,
             "performance_metrics": {}
@@ -1463,58 +1467,68 @@ class CombinedATMRetriever:
         phase_times["terminal_details"] = time.time() - phase_start
         log.info(f"✅ Terminal details processing completed: {len(all_terminal_details)} details retrieved in {phase_times['terminal_details']:.2f} seconds")
         
-        # Step 7: Save to database if requested
-        if save_to_db and all_data["regional_data"]:
-            log.info("💾 Phase 7: Saving to database...")
+        # Step 6: Logout to prevent session lockouts
+        # Retrieve cash information if requested
+        if include_cash_info:
+            log.info("\n--- PHASE 8: Retrieving Cash Information ---")
+            log.info("💰 Phase 8: Cash information retrieval...")
             phase_start = time.time()
             
-            if use_new_tables:
-                # Use new database tables with JSONB support
-                log.info("Using new database tables (regional_data and terminal_details)")
+            # Only retrieve cash information if we've successfully retrieved terminals
+            if all_terminals:
+                cash_records = []
+                log.info(f"Retrieving cash information for {len(all_terminals)} terminals...")
                 
-                # Save regional data to new table
-                regional_save_success = self.save_regional_to_new_table(
-                    all_data["regional_data"], 
-                    raw_regional_data or []
-                )
-                if regional_save_success:
-                    log.info("[OK] Regional data successfully saved to regional_data table")
-                else:
-                    log.warning("WARNING: Regional data save to new table failed")
-                
-                # Save terminal details to new table
-                if all_data["terminal_details_data"]:
-                    terminal_save_success = self.save_terminal_details_to_new_table(
-                        all_data["terminal_details_data"]
-                    )
-                    if terminal_save_success:
-                        log.info("[OK] Terminal details successfully saved to terminal_details table")
+                # Use a progress bar for cash information retrieval
+                for terminal in tqdm(all_terminals, desc="Fetching cash information", unit="terminal"):
+                    terminal_id = terminal.get('terminalId')
+                    
+                    if not terminal_id:
+                        log.warning(f"Skipping cash info for terminal with missing ID: {terminal}")
+                        continue
+                    
+                    # Fetch cash information for this terminal
+                    cash_data = self.fetch_cash_information(terminal_id)
+                    
+                    if cash_data:
+                        # Process the cash data into our structured format
+                        processed_cash_record = self.process_cash_information(terminal_id, cash_data)
+                        if processed_cash_record:
+                            cash_records.append(processed_cash_record)
                     else:
-                        log.warning("WARNING: Terminal details save to new table failed")
-                else:
-                    log.info("No terminal details data to save")
+                        # Create a null record for terminals without cash data
+                        current_time = datetime.now(self.dili_tz)
+                        null_record = self._create_null_cash_record(
+                            terminal_id, current_time, {}, "Failed to fetch cash information"
+                        )
+                        cash_records.append(null_record)
+                    
+                    # Add a small delay between requests
+                    if not self.demo_mode:
+                        time.sleep(0.5)
+                
+                # Add cash records to the all_data dictionary
+                all_data["cash_information_data"] = cash_records
+                
+                log.info(f"✅ Cash information retrieved for {len(cash_records)} terminals")
+                
+                # Save cash information to database if requested
+                if save_to_db and DB_AVAILABLE and cash_records:
+                    log.info("💾 Saving cash information to database...")
+                    cash_save_success = self.save_cash_information_to_database(cash_records)
+                    if cash_save_success:
+                        log.info("✅ Cash information saved to database successfully")
+                    else:
+                        log.warning("⚠️ Failed to save cash information to database")
             else:
-                # Use original database table
-                save_success = self.save_regional_to_database(all_data["regional_data"])
-                if save_success:
-                    log.info("✅ Regional data successfully saved to database")
-                else:
-                    log.warning("⚠️ Database save failed, but processed data is still available")
+                log.warning("⚠️ No terminals available for cash information retrieval")
+                all_data["cash_information_data"] = []
             
-            phase_times["database_save"] = time.time() - phase_start
-            log.info(f"✅ Database save phase completed in {phase_times['database_save']:.2f} seconds")
-        else:
-            phase_times["database_save"] = 0.0
-            if save_to_db and not all_data["regional_data"]:
-                log.warning("⚠️ Database save requested but no regional data available")
-            elif save_to_db and not DB_AVAILABLE:
-                log.warning("⚠️ Database save requested but database not available")
-            else:
-                log.info("ℹ️ Database save not requested")
+            phase_times["cash_information"] = time.time() - phase_start
+            log.info(f"Cash information phase completed in {phase_times['cash_information']:.2f} seconds")
         
-        # Step 8: Logout to prevent session lockouts
-        # Step 6: Logout Phase
-        log.info("🚪 Phase 6: Logout...")
+        # Step 9: Logout Phase
+        log.info("🚪 Phase 9: Logout...")
         phase_start = time.time()
         logout_success = self.logout()
         phase_times["logout"] = time.time() - phase_start
@@ -1538,6 +1552,8 @@ class CombinedATMRetriever:
         log.info(f"   • Regional data: {phase_times.get('regional_data', 0):.2f} seconds")
         log.info(f"   • Terminal search: {phase_times.get('terminal_search', 0):.2f} seconds")
         log.info(f"   • Terminal details: {phase_times.get('terminal_details', 0):.2f} seconds")
+        if include_cash_info:
+            log.info(f"   • Cash information: {phase_times.get('cash_information', 0):.2f} seconds")
         log.info(f"   • Database save: {phase_times.get('database_save', 0):.2f} seconds")
         log.info(f"   • Logout: {phase_times.get('logout', 0):.2f} seconds")
         
@@ -1547,6 +1563,8 @@ class CombinedATMRetriever:
         log.info(f"   • Regions processed: {summary.get('total_regions', 0)}")
         log.info(f"   • Terminals found: {summary.get('total_terminals', 0)}")
         log.info(f"   • Terminal details: {summary.get('total_terminal_details', 0)}")
+        if include_cash_info:
+            log.info(f"   • Cash records: {len(all_data.get('cash_information_data', []))}")
         if summary.get('failover_activated'):
             log.info(f"   • Failover mode: {summary.get('failure_type', 'UNKNOWN')}")
         log.info("=" * 80)
@@ -1609,6 +1627,16 @@ class CombinedATMRetriever:
                 log.info("Terminal details data saved successfully")
             else:
                 log.error("Failed to save terminal details data")
+                success = False
+        
+        # Save cash information data if available
+        if all_data.get("cash_information_data"):
+            log.info("Saving cash information data to database...")
+            cash_success = self.save_cash_information_to_database(all_data["cash_information_data"])
+            if cash_success:
+                log.info("Cash information data saved successfully")
+            else:
+                log.error("Failed to save cash information data")
                 success = False
         
         # Save data - only if it was successfully retrieved
@@ -1986,859 +2014,554 @@ class CombinedATMRetriever:
             return True
             
         except Exception as e:
-            conn.rollback()
+            # Safe rollback if connection exists
+            conn_var = locals().get('conn')
+            if conn_var is not None:
+                try:
+                    conn_var.rollback()
+                except Exception:
+                    pass
             log.error(f"Database error while saving to terminal_details table: {str(e)}")
             return False
         finally:
-            cursor.close()
-            conn.close()
+            # Safe resource cleanup
+            cursor_var = locals().get('cursor')
+            if cursor_var is not None:
+                try:
+                    cursor_var.close()
+                except Exception:
+                    pass
+                    
+            conn_var = locals().get('conn')
+            if conn_var is not None:
+                try:
+                    conn_var.close()
+                except Exception:
+                    pass
+
+    def fetch_cash_information(self, terminal_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch cash information for a specific terminal (adapted from terminal_cash_information_retrieval.py)
+        
+        Args:
+            terminal_id: Terminal ID to fetch cash information for
+            
+        Returns:
+            Cash information data or None if failed
+        """
+        if self.demo_mode:
+            log.info(f"DEMO MODE: Generating sample cash data for terminal {terminal_id}")
+            
+            # Generate realistic demo cash data
+            demo_cassettes = [
+                {
+                    "cassId": "PCU00",
+                    "cassLogicNbr": "01",
+                    "cassPhysNbr": "00",
+                    "cassTypeValue": "REJECT",
+                    "cassTypeDescription": "Cassette of Rejected Notes",
+                    "cassStatusValue": "OK",
+                    "cassStatusDescription": "Cassete OK",
+                    "cassStatusColor": "#3cd179",
+                    "currency": None,
+                    "notesVal": None,
+                    "nbrNotes": 14,
+                    "cassTotal": 0,
+                    "percentage": 0.0
+                },
+                {
+                    "cassId": "PCU01",
+                    "cassLogicNbr": "02",
+                    "cassPhysNbr": "01",
+                    "cassTypeValue": "DISPENSE",
+                    "cassTypeDescription": "Dispensing Cassette",
+                    "cassStatusValue": "LOW",
+                    "cassStatusDescription": "Cassette almost empty",
+                    "cassStatusColor": "#90EE90",
+                    "currency": "USD",
+                    "notesVal": 20,
+                    "nbrNotes": 542,
+                    "cassTotal": 10840,
+                    "percentage": 0.0
+                }
+            ]
+            
+            return {
+                "header": {"result_code": "000", "result_description": "Success."},
+                "body": [{
+                    "terminalId": terminal_id,
+                    "businessId": "00610",
+                    "technicalCode": "00600610",
+                    "externalId": "45210",
+                    "terminalCashInfo": {
+                        "cashInfo": demo_cassettes,
+                        "total": 10840
+                    }
+                }]
+            }
+        
+        if not self.user_token:
+            log.error("No authentication token available for cash information retrieval")
+            return None
+        
+        # Construct cash information URL with parameters
+        cash_url = f"{CASH_INFO_URL}?number_of_occurrences=30&terminal_type=ATM&terminal_id={terminal_id}&language=EN"
+        
+        cash_payload = {
+            "header": {
+                "logged_user": LOGIN_PAYLOAD["user_name"],
+                "user_token": self.user_token
+            },
+            "body": {}
+        }
+        
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                log.debug(f"Fetching cash information for terminal {terminal_id} (attempt {retry_count + 1})")
+                
+                response = self.session.put(
+                    cash_url,
+                    json=cash_payload,
+                    headers=COMMON_HEADERS,
+                    verify=False,
+                    timeout=self.default_timeout
+                )
+                response.raise_for_status()
+                
+                cash_data = response.json()
+                
+                # Check if the response has the expected structure
+                if not isinstance(cash_data, dict):
+                    log.warning(f"Unexpected response type for terminal {terminal_id}: {type(cash_data)}")
+                    return None
+                
+                # Check for success in header
+                header = cash_data.get('header', {})
+                if header.get('result_code') != '000':
+                    log.warning(f"API returned error for terminal {terminal_id}: {header.get('result_description', 'Unknown error')}")
+                    return None
+                
+                # Update token if a new one was returned
+                if "user_token" in header:
+                    self.user_token = header["user_token"]
+                
+                log.debug(f"✅ Successfully fetched cash information for terminal {terminal_id}")
+                return cash_data
+                
+            except requests.exceptions.RequestException as ex:
+                log.warning(f"Request failed for terminal {terminal_id} (Attempt {retry_count + 1}): {str(ex)}")
+                
+                # Check if this might be a token expiration issue
+                if hasattr(ex, 'response') and ex.response is not None and ex.response.status_code == 401:
+                    log.warning("Token may have expired, attempting to refresh...")
+                    if self.authenticate():
+                        log.info("Token refreshed successfully, retrying...")
+                        continue
+                    else:
+                        log.error("Failed to refresh token")
+                        return None
+                
+                retry_count += 1
+                if retry_count >= max_retries:
+                    log.error(f"❌ Failed to fetch cash info for terminal {terminal_id} after {max_retries} attempts")
+                    return None
+                
+                time.sleep(2)  # Wait before retry
+                
+            except json.JSONDecodeError as ex:
+                log.error(f"❌ Cash info response for terminal {terminal_id} not valid JSON: {str(ex)}")
+                return None
+                
+            except Exception as ex:
+                log.error(f"❌ Unexpected error fetching cash info for terminal {terminal_id}: {str(ex)}")
+                return None
+        
+        return None
+    
+    def process_cash_information(self, terminal_id: str, cash_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Process raw cash information data into database format (adapted from terminal_cash_information_retrieval.py)
+        
+        Args:
+            terminal_id: Terminal ID
+            cash_data: Raw cash data from API
+            
+        Returns:
+            Processed cash information record or None if failed
+        """
+        try:
+            current_time = datetime.now(self.dili_tz)
+            body = cash_data.get('body', [])
+            
+            if not body or not isinstance(body, list):
+                log.warning(f"No body data found for terminal {terminal_id} - returning null record")
+                return self._create_null_cash_record(terminal_id, current_time, cash_data, "No body data")
+            
+            terminal_info = body[0]  # Get first (and usually only) terminal info
+            cash_info = terminal_info.get('terminalCashInfo', {})
+            
+            if not cash_info:
+                log.warning(f"No terminalCashInfo found for terminal {terminal_id} - returning null record")
+                return self._create_null_cash_record(terminal_id, current_time, cash_data, "No cash info", terminal_info)
+            
+            # Extract cash information
+            cassettes_raw = cash_info.get('cashInfo', [])
+            total_cash = cash_info.get('total', 0)
+            
+            # Check if cassettes data is empty or null
+            if not cassettes_raw or not isinstance(cassettes_raw, list):
+                log.warning(f"No cassette data found for terminal {terminal_id} - returning null record")
+                return self._create_null_cash_record(terminal_id, current_time, cash_data, "No cassette data", terminal_info)
+            
+            # Process cassettes data
+            processed_cassettes = []
+            cassette_count = len(cassettes_raw)
+            has_low_cash_warning = False
+            has_cash_errors = False
+            
+            for cassette in cassettes_raw:
+                # Skip cassettes with no meaningful data
+                if not isinstance(cassette, dict):
+                    log.debug(f"Skipping invalid cassette data for terminal {terminal_id}")
+                    continue
+                    
+                processed_cassette = {
+                    "cassette_id": cassette.get('cassId', ''),
+                    "logical_number": cassette.get('cassLogicNbr', ''),
+                    "physical_number": cassette.get('cassPhysNbr', ''),
+                    "type": cassette.get('cassTypeValue', ''),
+                    "type_description": cassette.get('cassTypeDescription', ''),
+                    "status": cassette.get('cassStatusValue', ''),
+                    "status_description": cassette.get('cassStatusDescription', ''),
+                    "status_color": cassette.get('cassStatusColor', ''),
+                    "currency": cassette.get('currency'),
+                    "denomination": int(cassette.get('notesVal', 0)) if cassette.get('notesVal') else None,
+                    "note_count": int(cassette.get('nbrNotes', 0)) if cassette.get('nbrNotes') else 0,
+                    "total_value": cassette.get('cassTotal', 0),
+                    "percentage": cassette.get('percentage', 0.0),
+                    "instance_id": cassette.get('instanceId', '')
+                }
+                processed_cassettes.append(processed_cassette)
+                
+                # Check for warnings and errors
+                status = cassette.get('cassStatusValue', '').upper()
+                if status == 'LOW':
+                    has_low_cash_warning = True
+                elif status in ['ERROR', 'FAULT', 'FAILED']:
+                    has_cash_errors = True
+            
+            # If all cassettes were invalid, return null record
+            if not processed_cassettes:
+                log.warning(f"All cassette data invalid for terminal {terminal_id} - returning null record")
+                return self._create_null_cash_record(terminal_id, current_time, cash_data, "Invalid cassette data", terminal_info)
+            
+            # Create final record
+            record = {
+                'unique_request_id': str(uuid.uuid4()),
+                'terminal_id': str(terminal_id),
+                'business_code': terminal_info.get('businessId', ''),
+                'technical_code': terminal_info.get('technicalCode', ''),
+                'external_id': terminal_info.get('externalId', ''),
+                'retrieval_timestamp': current_time,
+                'event_date': datetime.fromtimestamp(cassettes_raw[0].get('eventDate', 0) / 1000, tz=self.dili_tz) if cassettes_raw and cassettes_raw[0].get('eventDate') else current_time,
+                'total_cash_amount': float(total_cash) if total_cash is not None else 0.0,
+                'total_currency': 'USD',  # Default currency
+                'cassettes_data': processed_cassettes,
+                'raw_cash_data': cash_data,
+                'cassette_count': len(processed_cassettes),  # Use actual processed count
+                'has_low_cash_warning': has_low_cash_warning,
+                'has_cash_errors': has_cash_errors,
+                'is_null_record': False,    # This is a valid record
+                'null_reason': None         # No null reason
+            }
+            
+            log.debug(f"Processed cash info for terminal {terminal_id}: ${total_cash:,} ({len(processed_cassettes)} cassettes)")
+            return record
+            
+        except Exception as e:
+            log.error(f"❌ Error processing cash information for terminal {terminal_id}: {str(e)}")
+            current_time = datetime.now(self.dili_tz)
+            return self._create_null_cash_record(terminal_id, current_time, cash_data, f"Processing error: {str(e)}")
+    
+    def _create_null_cash_record(self, terminal_id: str, current_time: datetime, 
+                                cash_data: Dict[str, Any], reason: str, 
+                                terminal_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Create a null cash record for terminals with missing or invalid cash information
+        
+        Args:
+            terminal_id: Terminal ID
+            current_time: Current timestamp
+            cash_data: Raw cash data (for debugging)
+            reason: Reason why cash info is null
+            terminal_info: Optional terminal info from API response
+            
+        Returns:
+            Null cash record with metadata
+        """
+        log.info(f"📭 Creating null cash record for terminal {terminal_id}: {reason}")
+        
+        return {
+            'unique_request_id': str(uuid.uuid4()),
+            'terminal_id': str(terminal_id),
+            'business_code': terminal_info.get('businessId', '') if terminal_info else '',
+            'technical_code': terminal_info.get('technicalCode', '') if terminal_info else '',
+            'external_id': terminal_info.get('externalId', '') if terminal_info else '',
+            'retrieval_timestamp': current_time,
+            'event_date': current_time,  # Use current time as fallback
+            'total_cash_amount': None,  # Explicitly null
+            'total_currency': None,     # Explicitly null
+            'cassettes_data': [],       # Empty array
+            'raw_cash_data': cash_data, # Keep raw data for debugging
+            'cassette_count': 0,
+            'has_low_cash_warning': False,
+            'has_cash_errors': False,
+            'is_null_record': True,     # Flag to identify null records
+            'null_reason': reason       # Reason for null record
+        }
+    
+    def save_cash_information_to_database(self, cash_records: List[Dict[str, Any]]) -> bool:
+        """
+        Save cash information records to the database
+        
+        Args:
+            cash_records: List of processed cash information records
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if self.demo_mode:
+            log.info("Demo mode: Skipping database save for cash information")
+            return True
+        
+        if not cash_records:
+            log.warning("No cash records to save")
+            return False
+        
+        if not DB_AVAILABLE:
+            log.error("Database not available for cash information save")
+            return False
+        
+        try:
+            import psycopg2
+            
+            # Get database connection parameters
+            db_config = {
+                "host": os.environ.get("DB_HOST", "localhost"),
+                "port": os.environ.get("DB_PORT", "5432"),
+                "database": os.environ.get("DB_NAME", "atm_monitor"),
+                "user": os.environ.get("DB_USER", "postgres"),
+                "password": os.environ.get("DB_PASSWORD", "")
+            }
+            
+            conn = psycopg2.connect(
+                host=db_config["host"],
+                port=db_config["port"],
+                dbname=db_config["database"],
+                user=db_config["user"],
+                password=db_config["password"]
+            )
+            
+            cursor = conn.cursor()
+            
+            # Ensure the terminal_cash_information table exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS terminal_cash_information (
+                    id SERIAL PRIMARY KEY,
+                    unique_request_id UUID NOT NULL,
+                    terminal_id VARCHAR(50) NOT NULL,
+                    business_code VARCHAR(50),
+                    technical_code VARCHAR(50),
+                    external_id VARCHAR(50),
+                    retrieval_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+                    event_date TIMESTAMP WITH TIME ZONE,
+                    total_cash_amount DECIMAL(15, 2),
+                    total_currency VARCHAR(10),
+                    cassettes_data JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    raw_cash_data JSONB,
+                    cassette_count INTEGER DEFAULT 0,
+                    has_low_cash_warning BOOLEAN DEFAULT FALSE,
+                    has_cash_errors BOOLEAN DEFAULT FALSE,
+                    is_null_record BOOLEAN DEFAULT FALSE,
+                    null_reason TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create indexes for better performance
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_terminal_cash_terminal_id 
+                ON terminal_cash_information(terminal_id)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_terminal_cash_timestamp 
+                ON terminal_cash_information(retrieval_timestamp DESC)
+            """)
+            
+            log.info(f"💾 Saving {len(cash_records)} cash information records to database...")
+            
+            for record in cash_records:
+                cursor.execute("""
+                    INSERT INTO terminal_cash_information (
+                        unique_request_id,
+                        terminal_id,
+                        business_code,
+                        technical_code,
+                        external_id,
+                        retrieval_timestamp,
+                        event_date,
+                        total_cash_amount,
+                        total_currency,
+                        cassettes_data,
+                        raw_cash_data,
+                        cassette_count,
+                        has_low_cash_warning,
+                        has_cash_errors
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    record['unique_request_id'],
+                    record['terminal_id'],
+                    record['business_code'],
+                    record['technical_code'],
+                    record['external_id'],
+                    record['retrieval_timestamp'],
+                    record['event_date'],
+                    record['total_cash_amount'],
+                    record['total_currency'],
+                    json.dumps(record['cassettes_data']),
+                    json.dumps(record['raw_cash_data']),
+                    record['cassette_count'],
+                    record['has_low_cash_warning'],
+                    record['has_cash_errors']
+                ))
+            
+            conn.commit()
+            log.info(f"✅ Successfully saved {len(cash_records)} cash information records to database")
+            return True
+            
+        except Exception as e:
+            # Safe rollback if connection exists
+            conn_var = locals().get('conn')
+            if conn_var is not None:
+                try:
+                    conn_var.rollback()
+                except Exception:
+                    pass
+            log.error(f"❌ Database error while saving cash information: {str(e)}")
+            return False
+        finally:
+            # Safe resource cleanup
+            cursor_var = locals().get('cursor')
+            if cursor_var is not None:
+                try:
+                    cursor_var.close()
+                except Exception:
+                    pass
+                    
+            conn_var = locals().get('conn')
+            if conn_var is not None:
+                try:
+                    conn_var.close()
+                except Exception:
+                    pass
 
     def comprehensive_terminal_search(self) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
         """
-        Comprehensive terminal search strategy that finds all terminals and handles new discoveries.
-        
-        This method implements a multi-phase search strategy:
-        1. Search each status systematically to discover all terminals
-        2. Collect all terminals while avoiding duplicates
-        3. Handle discovery of new terminals beyond expected set
-        4. Implement fallback search for any missing expected terminals
-        5. Ensure proper data schema for database insertion
+        Discover all terminals using comprehensive search strategy
         
         Returns:
-            Tuple of (all_terminals_list, status_counts_dict)
+            Tuple of (all discovered terminals, status counts)
         """
-        log.info("Starting comprehensive terminal search across all ATM statuses...")
-        
-        # Expected terminal IDs based on historical requirements (baseline)
-        expected_terminal_ids = ['83', '2603', '88', '147', '87', '169', '2605', '2604', '93', '49', '86', '89', '85', '90']
-        
-        # Load adaptive terminal list (includes previously discovered terminals)
-        known_terminal_ids = self.get_adaptive_terminal_list()
-        
-        log.info(f"Search configuration:")
-        log.info(f"  Expected terminals (baseline): {len(expected_terminal_ids)}")
-        log.info(f"  Total known terminals: {len(known_terminal_ids)}")
+        log.info("🔍 Starting comprehensive terminal search...")
         
         all_terminals = []
-        status_counts = {}
         found_terminal_ids = set()
-        terminal_to_status_map = {}  # Track which status each terminal was found in
-        new_terminals_discovered = set()  # Track newly discovered terminals
-        
-        # Phase 1: Systematic discovery search across all status values
-        log.info("Phase 1: Comprehensive discovery search across all statuses...")
+        status_counts = {}  # Track terminal counts by status
         
         for param_value in tqdm(PARAMETER_VALUES, desc="Searching statuses", unit="status"):
             try:
                 terminals = self.get_terminals_by_status(param_value)
+                
+                # Track status count
                 status_counts[param_value] = len(terminals)
                 
                 if terminals:
                     log.info(f"Found {len(terminals)} terminals with status {param_value}")
                     
-                    # Process each terminal found for this status
                     for terminal in terminals:
+                        # Mark the status we retrieved this terminal from
+                        terminal['fetched_status'] = param_value
+                        
                         terminal_id = terminal.get('terminalId')
                         
                         if terminal_id and terminal_id not in found_terminal_ids:
-                            # Add the status we searched for
-                            terminal['fetched_status'] = param_value
                             all_terminals.append(terminal)
                             found_terminal_ids.add(terminal_id)
-                            terminal_to_status_map[terminal_id] = param_value
-                            
-                            # Check if this is a new terminal beyond known set
-                            if terminal_id not in known_terminal_ids:
-                                new_terminals_discovered.add(terminal_id)
-                                log.info(f"🆕 NEW TERMINAL DISCOVERED: {terminal_id} (status: {param_value})")
-                            elif terminal_id not in expected_terminal_ids:
-                                log.debug(f"Previously discovered terminal found: {terminal_id} (status: {param_value})")
-                            
                             log.debug(f"Added terminal {terminal_id} from status {param_value}")
                         elif terminal_id:
-                            log.debug(f"Terminal {terminal_id} already found in status {terminal_to_status_map.get(terminal_id)}, skipping duplicate from {param_value}")
+                            log.debug(f"Terminal {terminal_id} already found, skipping duplicate")
                 else:
                     log.info(f"No terminals found with status {param_value}")
                     
             except Exception as e:
-                # Windows-specific error handling with detailed diagnostics
-                error_msg = str(e)
-                log.error(f"❌ Error searching status {param_value}: {error_msg}")
-                
-                # Identify Windows-specific network issues
-                if "WinError" in error_msg or "ConnectionError" in error_msg:
-                    log.warning(f"🔌 Windows network error detected for status {param_value}")
-                    log.warning("💡 This may be due to Windows firewall or network configuration")
-                elif "timeout" in error_msg.lower():
-                    log.warning(f"⏱️ Timeout error for status {param_value} - Windows may need longer timeouts")
-                elif "SSL" in error_msg or "certificate" in error_msg.lower():
-                    log.warning(f"🔒 SSL/Certificate error for status {param_value} - Windows certificate store issue")
-                
-                status_counts[param_value] = 0
-                
-                # Continue with next status instead of failing completely
-                log.info(f"↩️ Continuing search with remaining statuses...")
+                log.error(f"❌ Error searching status {param_value}: {str(e)}")
                 continue
         
-        # Phase 2: Analyze discovery results
-        log.info(f"Phase 1 Discovery Results:")
-        log.info(f"  Total terminals found: {len(found_terminal_ids)}")
-        log.info(f"  Expected terminals found: {len(set(expected_terminal_ids) & found_terminal_ids)}")
-        log.info(f"  New terminals discovered: {len(new_terminals_discovered)}")
+        log.info(f"✅ Terminal search completed: Found {len(found_terminal_ids)} unique terminals")
+        log.info(f"Terminal IDs: {sorted(found_terminal_ids)}")
         
-        if new_terminals_discovered:
-            log.info(f"🎉 NEW TERMINALS DISCOVERED: {sorted(new_terminals_discovered)}")
-            log.info("These new terminals will be included in the retrieval process!")
-        
-        # Create updated complete terminal set
-        complete_terminal_set = set(known_terminal_ids) | new_terminals_discovered
-        missing_terminal_ids = complete_terminal_set - found_terminal_ids
-        
-        log.info(f"Found terminal IDs: {sorted(found_terminal_ids)}")
-        
-        # Phase 3: Fallback search for any missing terminals
-        if missing_terminal_ids:
-            log.warning(f"Missing {len(missing_terminal_ids)} terminals: {sorted(missing_terminal_ids)}")
-            log.info("Phase 3: Implementing fallback search for missing terminals...")
-            
-            # Fallback: Search for missing terminals individually across all statuses
-            for missing_id in missing_terminal_ids:
-                log.info(f"Searching for missing terminal {missing_id} across all statuses...")
-                
-                terminal_found = False
-                for param_value in PARAMETER_VALUES:
-                    if terminal_found:
-                        break
-                        
-                    try:
-                        # Search this status again to look for the specific terminal
-                        terminals = self.get_terminals_by_status(param_value)
-                        
-                        for terminal in terminals:
-                            if terminal.get('terminalId') == missing_id:
-                                # Found the missing terminal!
-                                terminal['fetched_status'] = param_value
-                                all_terminals.append(terminal)
-                                found_terminal_ids.add(missing_id)
-                                terminal_to_status_map[missing_id] = param_value
-                                
-                                log.info(f"✅ Found missing terminal {missing_id} in status {param_value}")
-                                terminal_found = True
-                                break
-                                
-                    except Exception as e:
-                        log.error(f"Error in fallback search for terminal {missing_id} in status {param_value}: {str(e)}")
-                        continue
-                
-                if not terminal_found:
-                    log.error(f"❌ Could not find terminal {missing_id} in any status")
-        else:
-            log.info("✅ All terminals found in Phase 1!")
-        
-        # Phase 4: Final validation and comprehensive reporting
-        final_terminal_ids = [t.get('terminalId') for t in all_terminals if t.get('terminalId')]
-        final_missing_expected = set(expected_terminal_ids) - set(final_terminal_ids)
-        final_new_terminals = set(final_terminal_ids) - set(expected_terminal_ids)
-        
-        log.info("\n=== COMPREHENSIVE SEARCH RESULTS ===")
-        log.info(f"Total terminals found: {len(all_terminals)}")
-        log.info(f"Unique terminal IDs: {len(set(final_terminal_ids))}")
-        log.info(f"Expected terminals found: {len(set(expected_terminal_ids) & set(final_terminal_ids))}/14")
-        log.info(f"New terminals discovered: {len(final_new_terminals)}")
-        
-        log.info(f"\nAll terminal IDs: {sorted(final_terminal_ids)}")
-        
-        if final_new_terminals:
-            log.info(f"🆕 NEW TERMINALS: {sorted(final_new_terminals)}")
-            # Update the complete set for future runs
-            log.info("Consider updating the expected_terminal_ids list to include these new terminals")
-        
-        if final_missing_expected:
-            log.error(f"❌ Missing expected terminals: {sorted(final_missing_expected)}")
-            log.error("These terminals may be offline or in an unmapped status")
-        else:
-            log.info("✅ All 14 expected terminals found!")
-        
-        # Enhanced status distribution summary
-        log.info("\n=== STATUS DISTRIBUTION ===")
+        # Terminal count by status
         for status, count in status_counts.items():
-            if count > 0:
-                terminals_in_status = [tid for tid, stat in terminal_to_status_map.items() if stat == status]
-                new_in_status = [tid for tid in terminals_in_status if tid in final_new_terminals]
-                expected_in_status = [tid for tid in terminals_in_status if tid in expected_terminal_ids]
-                
-                status_info = f"{status}: {count} terminals -> {sorted(terminals_in_status)}"
-                if new_in_status:
-                    status_info += f" [NEW: {sorted(new_in_status)}]"
-                if expected_in_status:
-                    status_info += f" [EXPECTED: {sorted(expected_in_status)}]"
-                
-                log.info(status_info)
+            log.info(f"Status {status}: {count} terminals")
         
-        # Phase 5: Ensure proper data schema for database insertion
-        log.info("Phase 5: Validating data schema for database insertion...")
-        
-        validated_terminals = []
-        for terminal in all_terminals:
-            # Ensure required fields are present
-            if not terminal.get('terminalId'):
-                log.warning(f"Skipping terminal with missing terminalId: {terminal}")
-                continue
-            
-            # Ensure fetched_status is set
-            if not terminal.get('fetched_status'):
-                terminal['fetched_status'] = 'UNKNOWN'
-                log.warning(f"Set fetched_status to UNKNOWN for terminal {terminal.get('terminalId')}")
-            
-            # Ensure issueStateCode is set (needed for terminal details fetching)
-            if not terminal.get('issueStateCode'):
-                # Map common status names to issue state codes
-                status_to_code_map = {
-                    'AVAILABLE': 'AVAILABLE',
-                    'WARNING': 'WARNING', 
-                    'WOUNDED': 'HARD',
-                    'HARD': 'HARD',
-                    'CASH': 'CASH',
-                    'ZOMBIE': 'HARD',
-                    'UNAVAILABLE': 'HARD'
-                }
-                terminal['issueStateCode'] = status_to_code_map.get(terminal.get('fetched_status', 'UNKNOWN'), 'HARD')
-                log.debug(f"Set issueStateCode to {terminal['issueStateCode']} for terminal {terminal.get('terminalId')}")
-            
-            # Add discovery metadata for tracking
-            terminal['is_newly_discovered'] = terminal.get('terminalId') in final_new_terminals
-            terminal['discovery_timestamp'] = datetime.now().isoformat()
-            
-            validated_terminals.append(terminal)
-        
-        log.info(f"Validated {len(validated_terminals)} terminals for terminal details processing")
-        
-        # Final summary
-        summary_msg = f"DISCOVERY COMPLETE: {len(validated_terminals)} total terminals"
-        if final_new_terminals:
-            summary_msg += f" (including {len(final_new_terminals)} newly discovered)"
-        log.info(summary_msg)
-        
-        # Save discovered terminals to persistent storage
-        if final_new_terminals or not self.demo_mode:
-            all_discovered_terminals = set(final_terminal_ids)
-            self.save_discovered_terminals(all_discovered_terminals)
-            
-            if final_new_terminals:
-                log.info(f"💾 Saved {len(final_new_terminals)} newly discovered terminals to persistent storage")
-        
-            if final_new_terminals:
-                log.info(f"💾 Saved {len(final_new_terminals)} newly discovered terminals to persistent storage")
-        
-        # Windows production environment final validation
-        if os.name == 'nt':  # Windows
-            log.info("🪟 WINDOWS PRODUCTION ENVIRONMENT - Final Validation:")
-            log.info(f"   ✅ Total terminals ready for processing: {len(validated_terminals)}")
-            log.info(f"   ✅ Status distribution validated: {len(status_counts)} statuses checked")
-            log.info(f"   ✅ Discovery persistence: {'Enabled' if not self.demo_mode else 'Demo Mode'}")
-            log.info(f"   ✅ Memory usage optimized for terminal details retrieval")
-            
-            # Log performance metrics for Windows troubleshooting
-            if hasattr(self, 'session') and self.session:
-                log.info(f"   ✅ HTTP session: Active with Windows optimizations")
-            
-        log.info("=== COMPREHENSIVE SEARCH COMPLETED ===")
-        
-        return validated_terminals, status_counts
+        return all_terminals, status_counts
 
-    def load_discovered_terminals(self) -> set:
-        """
-        Load previously discovered terminal IDs from persistent storage
-        Windows-compatible version with proper path handling
-        
-        Returns:
-            set: Set of all known terminal IDs
-        """
-        # Get the script directory (works on both Windows and Unix)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        discovered_terminals_file = os.path.join(script_dir, "discovered_terminals.json")
-        
-        # Normalize the path for Windows compatibility
-        discovered_terminals_file = os.path.normpath(discovered_terminals_file)
-        
-        try:
-            if os.path.exists(discovered_terminals_file):
-                # Use UTF-8 encoding explicitly for Windows compatibility
-                with open(discovered_terminals_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    
-                discovered_terminals = set(data.get('discovered_terminals', []))
-                last_updated = data.get('last_updated', 'Unknown')
-                
-                log.info(f"Loaded {len(discovered_terminals)} previously discovered terminals")
-                log.info(f"Last discovery update: {last_updated}")
-                log.info(f"Discovery file location: {discovered_terminals_file}")
-                
-                return discovered_terminals
-            else:
-                log.info("No previous terminal discovery file found - starting fresh")
-                log.info(f"Will create discovery file at: {discovered_terminals_file}")
-                return set()
-                
-        except Exception as e:
-            log.warning(f"Error loading discovered terminals from {discovered_terminals_file}: {e}")
-            log.warning(f"This may be the first run - continuing with empty discovery set")
-            return set()
-    
-    def save_discovered_terminals(self, all_discovered_terminals: set):
-        """
-        Save discovered terminal IDs to persistent storage
-        Windows-compatible version with proper path handling and error recovery
-        
-        Args:
-            all_discovered_terminals: Set of all discovered terminal IDs
-        """
-        # Get the script directory (works on both Windows and Unix)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        discovered_terminals_file = os.path.join(script_dir, "discovered_terminals.json")
-        
-        # Normalize the path for Windows compatibility
-        discovered_terminals_file = os.path.normpath(discovered_terminals_file)
-        
-        try:
-            # Create directory if it doesn't exist (Windows may need this)
-            os.makedirs(script_dir, exist_ok=True)
-            
-            data = {
-                'discovered_terminals': sorted(list(all_discovered_terminals)),
-                'total_count': len(all_discovered_terminals),
-                'last_updated': datetime.now().isoformat(),
-                'discovery_metadata': {
-                    'demo_mode': self.demo_mode,
-                    'total_atms_configured': self.total_atms,
-                    'discovery_timestamp': datetime.now().isoformat(),
-                    'platform': os.name,  # Track which OS discovered the terminals
-                    'script_version': '2.0_windows_compatible'
-                }
-            }
-            
-            # Use UTF-8 encoding explicitly for Windows compatibility
-            with open(discovered_terminals_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            
-            log.info(f"✅ Saved {len(all_discovered_terminals)} discovered terminals to discovery file")
-            log.info(f"📁 Discovery file location: {discovered_terminals_file}")
-            
-        except PermissionError as e:
-            log.error(f"❌ Permission denied saving discovered terminals to {discovered_terminals_file}: {e}")
-            log.error(f"💡 Suggestion: Run the script as administrator on Windows or check file permissions")
-        except Exception as e:
-            log.error(f"❌ Error saving discovered terminals to {discovered_terminals_file}: {e}")
-            log.error(f"💡 This won't prevent the script from working, but terminal discovery won't persist")
-
-    def get_adaptive_terminal_list(self) -> List[str]:
-        """
-        Get an adaptive list of terminal IDs that includes both expected and previously discovered terminals
-        
-        Returns:
-            List[str]: Combined list of expected and discovered terminal IDs
-        """
-        # Base expected terminals
-        expected_terminal_ids = ['83', '2603', '88', '147', '87', '169', '2605', '2604', '93', '49', '86', '89', '85', '90']
-        
-        # Load previously discovered terminals
-        previously_discovered = self.load_discovered_terminals()
-        
-        # Combine and deduplicate
-        all_known_terminals = set(expected_terminal_ids) | previously_discovered
-        
-        log.info(f"Adaptive terminal list: {len(expected_terminal_ids)} expected + {len(previously_discovered)} previously discovered = {len(all_known_terminals)} total")
-        
-        return sorted(list(all_known_terminals))
-    
-def signal_handler(signum, frame):
-    """Handle SIGINT (Ctrl+C) and SIGTERM signals gracefully"""
-    signal_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
-    log.info(f"\n[STOP] Received {signal_name} signal. Initiating graceful shutdown...")
-    stop_flag.set()
-    print("\nWARNING: Shutting down gracefully. Please wait for current operation to complete...")
-
-
-def update_execution_stats(success: bool, error_type: Optional[str] = None):
-    """Update global execution statistics"""
-    global execution_stats
-    
-    current_time = datetime.now()
-    execution_stats['total_cycles'] += 1
-    
-    if success:
-        execution_stats['successful_cycles'] += 1
-        execution_stats['last_success'] = current_time
-        execution_stats['cycle_history'].append({
-            'timestamp': current_time,
-            'success': True,
-            'error': None
-        })
-    else:
-        execution_stats['failed_cycles'] += 1
-        if error_type == 'connection':
-            execution_stats['connection_failures'] += 1
-        execution_stats['cycle_history'].append({
-            'timestamp': current_time,
-            'success': False,
-            'error': error_type
-        })
-
-
-def print_execution_stats():
-    """Print comprehensive execution statistics"""
-    if execution_stats['total_cycles'] == 0:
-        return
-    
-    current_time = datetime.now()
-    uptime = current_time - execution_stats['start_time'] if execution_stats['start_time'] else current_time
-    success_rate = (execution_stats['successful_cycles'] / execution_stats['total_cycles']) * 100
-    
-    print("\n" + "=" * 80)
-    print("=== EXECUTION STATISTICS ===")
-    print("=" * 80)
-    print(f"[TIME] Total uptime: {uptime}")
-    print(f"[CYCLES] Total cycles: {execution_stats['total_cycles']}")
-    print(f"[SUCCESS] Successful cycles: {execution_stats['successful_cycles']}")
-    print(f"[FAILED] Failed cycles: {execution_stats['failed_cycles']}")
-    print(f"[NET] Connection failures: {execution_stats['connection_failures']}")
-    print(f"[STATS] Success rate: {success_rate:.1f}%")
-    
-    if execution_stats['last_success']:
-        time_since_success = current_time - execution_stats['last_success']
-        print(f"[TIME] Last successful cycle: {time_since_success} ago")
-    
-    # Show recent cycle history
-    recent_cycles = list(execution_stats['cycle_history'])[-10:]  # Last 10 cycles
-    if recent_cycles:
-        print(f"\n[HISTORY] Recent cycle history (last {len(recent_cycles)}):")
-        for i, cycle in enumerate(recent_cycles, 1):
-            status = "[OK]" if cycle['success'] else "[FAIL]"
-            error_info = f" ({cycle['error']})" if cycle['error'] else ""
-            timestamp = cycle['timestamp'].strftime('%H:%M:%S')
-            print(f"  {i:2d}. {status} {timestamp}{error_info}")
-    
-    print("=" * 80)
-
-
-def wait_with_progress(duration_minutes: int, reason: str):
-    """Wait for specified duration with progress indication and early exit on stop signal"""
-    total_seconds = duration_minutes * 60
-    log.info(f"[WAIT] {reason} - waiting {duration_minutes} minutes...")
-    
-    for remaining in range(total_seconds, 0, -1):
-        if stop_flag.is_set():
-            log.info("Stop signal received during wait period")
-            return False
-        
-        # Update progress every 30 seconds or on first/last iterations
-        if remaining % 30 == 0 or remaining <= 5 or remaining == total_seconds:
-            hours, remainder = divmod(remaining, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            
-            if hours > 0:
-                time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            else:
-                time_str = f"{minutes:02d}:{seconds:02d}"
-            
-            print(f"\r[WAIT] {reason} - Time remaining: {time_str}    ", end="", flush=True)
-        
-        time.sleep(1)
-    
-    print()  # New line after progress
-    return True
-
-
-def handle_connection_error(error: Exception, cycle_number: int) -> bool:
-    """
-    Handle connection errors with intelligent retry logic
-    
-    Returns:
-        bool: True if should continue, False if should stop
-    """
-    log.error(f"[NET] Connection error in cycle {cycle_number}: {str(error)}")
-    
-    # Check if this is a LOGIN_URL specific error
-    is_login_error = False
-    if hasattr(error, 'response') and getattr(error, 'response', None) is not None:
-        # Check if the error occurred during authentication
-        if 'login' in str(error).lower() or 'authentication' in str(error).lower():
-            is_login_error = True
-    elif 'login' in str(error).lower() or 'authentication' in str(error).lower():
-        is_login_error = True
-    
-    update_execution_stats(False, 'connection')
-    
-    if is_login_error:
-        log.warning("[AUTH] Detected LOGIN_URL connection failure - implementing 15-minute retry period")
-        if not wait_with_progress(15, "Retrying after LOGIN_URL connection failure"):
-            return False
-    else:
-        log.warning("[NET] General connection error - implementing 5-minute retry period")
-        if not wait_with_progress(5, "Retrying after connection error"):
-            return False
-    
-    return True
-
-
-def run_continuous_operation(args):
-    """Run the ATM retrieval script continuously with enhanced error handling"""
-    global execution_stats
-    
-    # Set up signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    # Initialize execution stats
-    execution_stats['start_time'] = datetime.now()
-    
-    log.info("[START] Starting continuous ATM data retrieval operation")
-    log.info(f"[TIME] Start time: {execution_stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
-    log.info(f"[CONFIG] Configuration: Demo={args.demo}, Save-to-DB={args.save_to_db}, Use-New-Tables={args.use_new_tables}")
-    log.info("[INFO] Running every 15 minutes. Press Ctrl+C for graceful shutdown.")
-    
-    # Create retriever instance
-    retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
-    cycle_number = 0
-    success = False  # Initialize success variable
-    
-    while not stop_flag.is_set():
-        cycle_number += 1
-        cycle_start_time = datetime.now()
-        
-        try:
-            log.info(f"\n{'='*20} CYCLE {cycle_number} - {cycle_start_time.strftime('%Y-%m-%d %H:%M:%S')} {'='*20}")
-            
-            # Execute the complete retrieval and processing flow
-            success, all_data = retriever.retrieve_and_process_all_data(
-                save_to_db=args.save_to_db,
-                use_new_tables=args.use_new_tables
-            )
-            
-            if success:
-                log.info(f"[OK] Cycle {cycle_number} completed successfully")
-                
-                # Display brief results
-                summary = all_data.get("summary", {})
-                log.info(f"[RESULTS] Results: {summary.get('total_regions', 0)} regions, "
-                        f"{summary.get('total_terminals', 0)} terminals, "
-                        f"{summary.get('total_terminal_details', 0)} terminal details")
-                
-                # Save to JSON if requested or if we have data
-                if args.save_json or all_data.get("summary", {}).get("total_terminals", 0) > 0:
-                    json_filename = save_to_json(all_data)
-                    log.info(f"[FILE] Data saved to: {json_filename}")
-                
-                if args.save_to_db and DB_AVAILABLE:
-                    if args.use_new_tables:
-                        log.info("[DB] Data saved to new database tables (regional_data and terminal_details)")
-                    else:
-                        log.info("[DB] Regional data saved to database (regional_atm_counts table)")
-                
-                update_execution_stats(True)
-                
-            else:
-                log.error(f"[FAIL] Cycle {cycle_number} failed - unable to retrieve ATM data")
-                update_execution_stats(False, 'general')
-                
-        except requests.exceptions.ConnectionError as e:
-            if not handle_connection_error(e, cycle_number):
-                break
-            continue
-            
-        except requests.exceptions.Timeout as e:
-            log.error(f"[TIMEOUT] Timeout error in cycle {cycle_number}: {str(e)}")
-            update_execution_stats(False, 'timeout')
-            
-        except requests.exceptions.RequestException as e:
-            if not handle_connection_error(e, cycle_number):
-                break
-            continue
-            
-        except Exception as e:
-            log.error(f"[ERROR] Unexpected error in cycle {cycle_number}: {str(e)}")
-            log.debug("Error details:", exc_info=True)
-            update_execution_stats(False, 'unexpected')
-            
-            # For unexpected errors, wait a bit before continuing
-            if not wait_with_progress(2, "Recovering from unexpected error"):
-                break
-        
-        # Print statistics every 10 cycles or if this was a failed cycle
-        if cycle_number % 10 == 0 or not success:
-            print_execution_stats()
-        
-        # Check for stop signal before waiting
-        if stop_flag.is_set():
-            break
-        
-        # Wait for next cycle (15 minutes)
-        log.info(f"[CYCLE] Cycle {cycle_number} completed. Next cycle in 15 minutes...")
-        if not wait_with_progress(15, "Next cycle"):
-            break
-    
-    # Final statistics and cleanup
-    log.info("\n[STOP] Continuous operation stopped")
-    print_execution_stats()
-    
-    end_time = datetime.now()
-    total_runtime = end_time - execution_stats['start_time']
-    log.info(f"[RUNTIME] Total runtime: {total_runtime}")
-    log.info(f"[SHUTDOWN] Shutdown completed at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-
-def display_results(all_data: Dict[str, Any]) -> None:
-    """Display the processed results in a formatted way"""
-    print("\n" + "=" * 120)
-    print("COMBINED ATM DATA RETRIEVAL RESULTS")
-    print("=" * 120)
-    
-    # Summary
-    summary = all_data.get("summary", {})
-    status_counts = summary.get('status_counts', {})
-    total_terminals = sum(status_counts.values()) if status_counts else 0
-    
-    print(f"Retrieval Time: {all_data.get('retrieval_timestamp', 'Unknown')}")
-    print(f"Demo Mode: {all_data.get('demo_mode', False)}")
-    print(f"Total Regions: {summary.get('total_regions', 0)}")
-    print(f"Total Terminals: {total_terminals}")
-    print(f"Terminal Details Retrieved: {summary.get('total_terminal_details', 0)}")
-    
-    # Show collection note if available
-    collection_note = summary.get('collection_note')
-    if collection_note:
-        print(f"Note: {collection_note}")
-    
-    # Regional data
-    regional_data = all_data.get("regional_data", [])
-    if regional_data:
-        print("\n--- REGIONAL ATM COUNTS ---")
-        print(f"{'Region':<10} {'Available':<10} {'Warning':<8} {'Zombie':<8} {'Wounded':<8} {'Out/Svc':<8} {'Total':<6}")
-        print("-" * 70)
-        
-        for record in regional_data:
-            print(f"{record['region_code']:<10} "
-                  f"{record['count_available']:3d} ({record['percentage_available']*100:5.1f}%) "
-                  f"{record['count_warning']:3d}      "
-                  f"{record['count_zombie']:3d}      "
-                  f"{record['count_wounded']:3d}      "
-                  f"{record['count_out_of_service']:3d}      "
-                  f"{record['total_atms_in_region']:3d}")
-    
-    # Terminal status summary
-    if status_counts:
-        print("\n--- TERMINAL STATUS SUMMARY ---")
-        for status, count in status_counts.items():
-            percentage = (count / total_terminals * 100) if total_terminals > 0 else 0
-            print(f"{status}: {count} terminals ({percentage:.1f}%)")
-        print(f"Total: {total_terminals} terminals")
-    
-    # Terminal details summary
-    terminal_details = all_data.get("terminal_details_data", [])
-    if terminal_details:
-        print("\n--- TERMINAL DETAILS SUMMARY ---")
-        print(f"Terminal details with unique IDs: {summary.get('terminal_details_with_unique_ids', len(terminal_details))}")
-        
-        fault_types = {}
-        for detail in terminal_details:
-            error_desc = detail.get('agentErrorDescription', '')
-            if error_desc:
-                fault_types[error_desc] = fault_types.get(error_desc, 0) + 1
-        
-        print("Fault Summary:")
-        for error_type, count in sorted(fault_types.items(), key=lambda x: x[1], reverse=True):
-            if error_type:
-                print(f"  {error_type}: {count}")
-    
-    print("=" * 120)
-
-
-def save_to_json(all_data: Dict[str, Any], filename: Optional[str] = None) -> str:
-    """Save all retrieved data to JSON file"""
-    if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"combined_atm_data_{timestamp}.json"
-    
-    # Ensure the saved_data directory exists
-    save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_data")
-    os.makedirs(save_dir, exist_ok=True)
-    full_path = os.path.join(save_dir, filename)
-    
-    # Convert datetime objects to strings for JSON serialization
-    json_data = all_data.copy()
-    
-    # Convert regional data datetime objects
-    if "regional_data" in json_data:
-        for record in json_data["regional_data"]:
-            if 'date_creation' in record and hasattr(record['date_creation'], 'isoformat'):
-                record['date_creation'] = record['date_creation'].isoformat()
-    
-    with open(full_path, 'w', encoding='utf-8') as f:
-        json.dump(json_data, f, indent=2, ensure_ascii=False)
-    
-    log.info(f"All data saved to JSON file: {full_path}")
-    return full_path
-
-
-def log_execution_summary(all_data: Dict[str, Any], success: bool) -> None:
-    """
-    Log a comprehensive summary of the execution results
-    
-    Args:
-        all_data: Dictionary containing all retrieved data
-        success: Whether the execution was successful
-    """
-    log.info("=" * 80)
-    log.info("📊 EXECUTION SUMMARY")
-    log.info("=" * 80)
-    
-    # Basic execution info
-    log.info(f"🚀 Execution Status: {'SUCCESS' if success else 'FAILED'}")
-    log.info(f"🎭 Demo Mode: {'Enabled' if all_data.get('demo_mode', False) else 'Disabled'}")
-    log.info(f"🔄 Failover Mode: {'Activated' if all_data.get('failover_mode', False) else 'Normal Operation'}")
-    log.info(f"⏰ Timestamp: {all_data.get('retrieval_timestamp', 'N/A')}")
-    
-    # Performance metrics
-    performance = all_data.get('performance_metrics', {})
-    if performance:
-        log.info("⚡ PERFORMANCE BREAKDOWN:")
-        total_time = performance.get('total_execution', 0)
-        log.info(f"   • Total Execution: {total_time:.2f}s")
-        
-        if total_time > 0:
-            for phase, time_taken in performance.items():
-                if phase != 'total_execution' and time_taken > 0:
-                    percentage = (time_taken / total_time) * 100
-                    log.info(f"   • {phase.replace('_', ' ').title()}: {time_taken:.2f}s ({percentage:.1f}%)")
-    
-    # Data summary
-    summary = all_data.get('summary', {})
-    log.info("📈 DATA COLLECTION RESULTS:")
-    log.info(f"   • Regions: {summary.get('total_regions', 0)}")
-    log.info(f"   • Terminals: {summary.get('total_terminals', 0)}")
-    log.info(f"   • Terminal Details: {summary.get('total_terminal_details', 0)}")
-    
-    # Status breakdown if available
-    status_counts = summary.get('status_counts', {})
-    if status_counts:
-        log.info("🏧 TERMINAL STATUS BREAKDOWN:")
-        for status, count in status_counts.items():
-            log.info(f"   • {status}: {count}")
-    
-    # Failure information if applicable
-    if all_data.get('failover_mode'):
-        failure_type = summary.get('failure_type', 'UNKNOWN')
-        connection_status = summary.get('connection_status', 'UNKNOWN')
-        log.info("🚨 FAILOVER INFORMATION:")
-        log.info(f"   • Failure Type: {failure_type}")
-        log.info(f"   • Connection Status: {connection_status}")
-    
-    log.info("=" * 80)
-
-
-def main():
-    """Main execution function"""
-    parser = argparse.ArgumentParser(
-        description="Combined ATM Data Retrieval Script with Continuous Operation Support",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python combined_atm_retrieval_script.py                           # Live mode, display only
-  python combined_atm_retrieval_script.py --demo                    # Demo mode for testing
-  python combined_atm_retrieval_script.py --save-to-db              # Live mode with database save
-  python combined_atm_retrieval_script.py --save-json               # Live mode with JSON save
-  python combined_atm_retrieval_script.py --continuous              # Continuous mode (15-min intervals)
-  python combined_atm_retrieval_script.py --continuous --save-to-db --use-new-tables
-  python combined_atm_retrieval_script.py --demo --save-json --total-atms 20
-        """
-    )
-    
-    parser.add_argument('--demo', action='store_true', 
-                       help='Run in demo mode (no actual network requests)')
-    parser.add_argument('--save-to-db', action='store_true',
-                       help='Save processed data to database')
-    parser.add_argument('--use-new-tables', action='store_true',
-                       help='Use new database tables (regional_data and terminal_details) with JSONB support')
-    parser.add_argument('--save-json', action='store_true',
-                       help='Save all retrieved data to JSON file')
-    parser.add_argument('--continuous', action='store_true',
-                       help='Run continuously with 15-minute intervals (enhanced error handling)')
-    parser.add_argument('--total-atms', type=int, default=14,
-                       help='Total number of ATMs for percentage to count conversion (default: 14)')
-    parser.add_argument('--quiet', action='store_true',
-                       help='Reduce logging output (errors and warnings only)')
-    
+# Main execution point of the script
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Combined ATM Data Retrieval Script")
+    parser.add_argument("--demo", action="store_true", help="Run in demo mode without actual API calls")
+    parser.add_argument("--save-to-db", action="store_true", help="Save the retrieved data to the database")
+    parser.add_argument("--save-json", action="store_true", help="Save the retrieved data as JSON files")
+    parser.add_argument("--use-new-tables", action="store_true", help="Use new database tables with JSONB support")
+    parser.add_argument("--total-atms", type=int, default=14, help="Total number of ATMs for percentage calculation")
+    parser.add_argument("--include-cash-info", action="store_true", help="Include cash information retrieval")
     args = parser.parse_args()
     
-    # Adjust logging level if quiet mode
-    if args.quiet:
-        logging.getLogger().setLevel(logging.WARNING)
-    
-    # Check for continuous mode
-    if args.continuous:
-        log.info("[CONTINUOUS] Continuous mode enabled - script will run every 15 minutes")
-        run_continuous_operation(args)
-        return 0
-    
-    # Single execution mode (original behavior)
-    # Create retriever instance
-    retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
-    
     try:
-        # Execute the complete retrieval and processing flow
-        success, all_data = retriever.retrieve_and_process_all_data(
-            save_to_db=args.save_to_db, 
-            use_new_tables=args.use_new_tables
+        # Initialize retriever with command line arguments
+        retriever = CombinedATMRetriever(demo_mode=args.demo, total_atms=args.total_atms)
+        
+        # Run the combined data retrieval process
+        success, data = retriever.retrieve_and_process_all_data(
+            save_to_db=args.save_to_db,
+            use_new_tables=args.use_new_tables,
+            include_cash_info=args.include_cash_info
         )
         
+        # Save JSON output if requested
+        if args.save_json:
+            output_filename = f"combined_atm_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            try:
+                with open(output_filename, "w") as f:
+                    json.dump(data, f, default=str, indent=2)
+                log.info(f"✅ Data saved to {output_filename}")
+            except Exception as e:
+                log.error(f"❌ Error saving JSON output: {str(e)}")
+        
         if success:
-            # Display results
-            display_results(all_data)
-            
-            # Save to JSON if requested or if we have data
-            if args.save_json or all_data.get("summary", {}).get("total_terminals", 0) > 0:
-                json_filename = save_to_json(all_data)
-                print(f"\n[FILE] All data saved to: {json_filename}")
-            
-            # Log comprehensive execution summary
-            log_execution_summary(all_data, success)
-            
-            summary = all_data.get("summary", {})
-            print(f"\n[OK] SUCCESS: Retrieved data for {summary.get('total_regions', 0)} regions, "
-                  f"{summary.get('total_terminals', 0)} terminals, and "
-                  f"{summary.get('total_terminal_details', 0)} terminal details")
-            
-            if args.save_to_db and DB_AVAILABLE:
-                if args.use_new_tables:
-                    print("[OK] Data saved to new database tables (regional_data and terminal_details)")
-                else:
-                    print("[OK] Regional data saved to database (regional_atm_counts table)")
-            elif args.save_to_db and not DB_AVAILABLE:
-                print("WARNING: Database not available - data not saved to database")
-            
-            return 0
+            log.info("🎉 Script completed successfully!")
+            sys.exit(0)
         else:
-            # Log summary for failed execution
-            log_execution_summary(all_data if 'all_data' in locals() else {}, False)
-            print("\n[FAIL] FAILED: Unable to retrieve ATM data")
-            return 1
+            log.error("⚠️ Script completed with errors.")
+            sys.exit(1)
             
     except KeyboardInterrupt:
-        log.warning("⚠️ Process interrupted by user")
-        print("\n[WARNING] Process interrupted by user")
-        return 1
+        log.warning("\n⚠️ Script interrupted by user")
+        sys.exit(130)  # Standard SIGINT exit code
     except Exception as e:
-        log.error(f"💥 Unexpected error in main execution: {str(e)}")
-        log.error("Full error details:", exc_info=True)
-        print(f"\n[ERROR] Unexpected error: {str(e)}")
-        return 1
-    finally:
-        # Log final cleanup
-        log.info("🏁 Script execution completed")
-        log.info(f"📁 Log files available in: {logs_dir}")
-
-
-if __name__ == "__main__":
-    exit_code = main()
-    log.info(f"🏁 Process exiting with code: {exit_code}")
-    sys.exit(exit_code)
+        log.error(f"❌ Unhandled exception: {str(e)}", exc_info=True)
+        sys.exit(1)
