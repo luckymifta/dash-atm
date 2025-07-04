@@ -152,19 +152,19 @@ export default function Sidebar({ className }: SidebarProps) {
   return (
     <div
       className={clsx(
-        'relative bg-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col',
+        'relative bg-white border-r border-gray-200 text-gray-800 transition-all duration-300 ease-in-out flex flex-col shadow-sm',
         isCollapsed ? 'w-16' : 'w-64',
         className
       )}
     >
       {/* Header */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-slate-700">
+      <div className="flex h-16 items-center justify-between px-4 border-b border-gray-200">
         {!isCollapsed && (
-          <h1 className="text-xl font-bold text-white">ATM Dashboard</h1>
+          <h1 className="text-xl font-bold text-gray-900">ATM Dashboard</h1>
         )}
         <button
           onClick={toggleSidebar}
-          className="rounded-lg p-2 hover:bg-slate-800 transition-colors"
+          className="rounded-lg p-2 hover:bg-gray-100 transition-colors text-gray-600 hover:text-gray-900"
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? (
@@ -177,13 +177,13 @@ export default function Sidebar({ className }: SidebarProps) {
 
       {/* User Info */}
       {user && !isCollapsed && (
-        <div className="px-4 py-4 border-b border-slate-700">
+        <div className="px-4 py-4 border-b border-gray-200">
           <div className="flex items-center space-x-3">
-            <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center">
-              <User className="h-5 w-5 text-white" />
+            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+              <User className="h-5 w-5 text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
+              <p className="text-sm font-medium text-gray-900 truncate">
                 {user.first_name} {user.last_name}
               </p>
               <div className="flex items-center space-x-2 mt-1">
@@ -219,8 +219,8 @@ export default function Sidebar({ className }: SidebarProps) {
                     className={clsx(
                       'flex items-center w-full rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
                       isCollapsed ? 'justify-center' : 'justify-between'
                     )}
                     title={isCollapsed ? item.name : undefined}
@@ -255,8 +255,8 @@ export default function Sidebar({ className }: SidebarProps) {
                               className={clsx(
                                 'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                                 isSubActive
-                                  ? 'bg-blue-500 text-white'
-                                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                               )}
                             >
                               <SubIcon className="h-4 w-4 flex-shrink-0" />
@@ -281,8 +281,8 @@ export default function Sidebar({ className }: SidebarProps) {
                     className={clsx(
                       'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
                       isCollapsed ? 'justify-center' : 'justify-start'
                     )}
                     title={isCollapsed ? item.name : undefined}
@@ -300,13 +300,13 @@ export default function Sidebar({ className }: SidebarProps) {
       </nav>
 
       {/* Logout Button */}
-      <div className="p-4 border-t border-slate-700">
+      <div className="p-4 border-t border-gray-200">
         <button
           onClick={handleLogout}
           disabled={isLoggingOut}
           className={clsx(
             'flex items-center w-full rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-            'text-slate-300 hover:bg-slate-800 hover:text-white',
+            'text-gray-600 hover:bg-red-50 hover:text-red-700',
             isCollapsed ? 'justify-center' : 'justify-start',
             isLoggingOut && 'opacity-50 cursor-not-allowed'
           )}
@@ -324,12 +324,12 @@ export default function Sidebar({ className }: SidebarProps) {
       {/* Footer */}
       {!isCollapsed && (
         <div className="p-4">
-          <div className="rounded-lg bg-slate-800 p-3">
-            <p className="text-xs text-slate-400">
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+            <p className="text-xs text-gray-600">
               ATM Dash System v2.0
             </p>
             {user && (
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-gray-500 mt-1">
                 Logged in as {user.username}
               </p>
             )}

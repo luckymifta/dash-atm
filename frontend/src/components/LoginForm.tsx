@@ -54,18 +54,18 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 relative overflow-hidden">
-      {/* Floating decorative elements */}
-      <div className="absolute top-32 left-20 w-16 h-16 bg-orange-500 rounded-lg transform rotate-12 opacity-80 animate-pulse"></div>
-      <div className="absolute top-20 right-32 w-24 h-24 bg-orange-400 rounded-lg transform -rotate-12 opacity-70 animate-pulse" style={{ animationDelay: '1s' }}></div>
-      <div className="absolute bottom-40 left-16 w-12 h-12 bg-orange-500 rounded-lg transform rotate-45 opacity-60 animate-pulse" style={{ animationDelay: '2s' }}></div>
-      <div className="absolute bottom-32 right-20 w-20 h-20 bg-orange-400 rounded-lg transform -rotate-45 opacity-50 animate-pulse" style={{ animationDelay: '3s' }}></div>
-      <div className="absolute top-1/2 left-10 w-8 h-8 bg-orange-300 rounded-lg transform rotate-12 opacity-40 animate-pulse" style={{ animationDelay: '4s' }}></div>
-      <div className="absolute top-1/3 right-16 w-14 h-14 bg-orange-500 rounded-lg transform -rotate-30 opacity-60 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+    <div className="min-h-screen bg-gray-50 relative overflow-hidden">
+      {/* Subtle decorative elements */}
+      <div className="absolute top-32 left-20 w-16 h-16 bg-gray-200 rounded-lg transform rotate-12 opacity-30"></div>
+      <div className="absolute top-20 right-32 w-24 h-24 bg-gray-300 rounded-lg transform -rotate-12 opacity-20"></div>
+      <div className="absolute bottom-40 left-16 w-12 h-12 bg-gray-200 rounded-lg transform rotate-45 opacity-25"></div>
+      <div className="absolute bottom-32 right-20 w-20 h-20 bg-gray-300 rounded-lg transform -rotate-45 opacity-20"></div>
+      <div className="absolute top-1/2 left-10 w-8 h-8 bg-gray-100 rounded-lg transform rotate-12 opacity-30"></div>
+      <div className="absolute top-1/3 right-16 w-14 h-14 bg-gray-200 rounded-lg transform -rotate-30 opacity-25"></div>
       
       {/* Main container */}
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative z-10 backdrop-blur-sm">
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-md relative z-10">
           {/* Logo Section */}
           <div className="text-center mb-8">
             <div className="mb-6">
