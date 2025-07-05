@@ -87,10 +87,19 @@ LOGOUT_URL = "https://172.31.1.46/sigit/user/logout"
 REPORTS_URL = "https://172.31.1.46/sigit/reports/dashboards?terminal_type=ATM&status_filter=Status"
 DASHBOARD_URL = "https://172.31.1.46/sigit/terminal/searchTerminalDashBoard?number_of_occurrences=30&terminal_type=ATM"
 
-LOGIN_PAYLOAD = {
+# Primary and fallback login credentials
+PRIMARY_LOGIN_PAYLOAD = {
     "user_name": "Lucky.Saputra",
     "password": "TimlesMon2025@"
 }
+
+FALLBACK_LOGIN_PAYLOAD = {
+    "user_name": "Adelaide",
+    "password": "Adelaide02052024*"
+}
+
+# Active login payload (will be set during authentication)
+LOGIN_PAYLOAD = PRIMARY_LOGIN_PAYLOAD.copy()
 
 COMMON_HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -410,6 +419,7 @@ class CombinedATMRetriever:
     def authenticate(self) -> bool:
         """
         Authenticate with the ATM monitoring system
+        Try primary credentials first, then fallback to secondary credentials if primary fails
         
         Returns:
             bool: True if authentication successful, False otherwise
@@ -419,12 +429,42 @@ class CombinedATMRetriever:
             self.user_token = "demo_token_" + str(int(time.time()))
             return True
         
-        log.info("Attempting authentication...")
+        global LOGIN_PAYLOAD  # Make LOGIN_PAYLOAD modifiable
         
+        # Try primary credentials first
+        log.info("Attempting authentication with primary credentials (Lucky.Saputra)...")
+        
+        if self._try_authentication(PRIMARY_LOGIN_PAYLOAD):
+            LOGIN_PAYLOAD = PRIMARY_LOGIN_PAYLOAD.copy()
+            log.info("✅ Authentication successful with primary credentials (Lucky.Saputra)")
+            return True
+        
+        # If primary fails, try fallback credentials
+        log.warning("Primary authentication failed, trying fallback credentials (Adelaide)...")
+        
+        if self._try_authentication(FALLBACK_LOGIN_PAYLOAD):
+            LOGIN_PAYLOAD = FALLBACK_LOGIN_PAYLOAD.copy()
+            log.info("✅ Authentication successful with fallback credentials (Adelaide)")
+            return True
+        
+        # Both authentication attempts failed
+        log.error("❌ Authentication failed with both primary and fallback credentials")
+        return False
+    
+    def _try_authentication(self, credentials: Dict[str, str]) -> bool:
+        """
+        Try authentication with the provided credentials
+        
+        Args:
+            credentials: Dictionary containing user_name and password
+            
+        Returns:
+            bool: True if authentication successful, False otherwise
+        """
         try:
             response = self.session.post(
                 LOGIN_URL,
-                json=LOGIN_PAYLOAD,
+                json=credentials,
                 headers=COMMON_HEADERS,
                 verify=False,
                 timeout=self.default_timeout
@@ -440,33 +480,29 @@ class CombinedATMRetriever:
             for key in ['user_token', 'token']:
                 if key in login_data:
                     user_token = login_data[key]
-                    # Reduced logging verbosity for performance
                     break
             
             # Method 2: From header field
             if not user_token and 'header' in login_data:
                 user_token = login_data['header'].get('user_token')
-                if user_token:
-                    # Reduced logging verbosity for performance
-                    pass
             
             if user_token:
                 self.user_token = user_token
-                log.info("Authentication successful")
+                log.debug(f"User token extracted successfully for {credentials['user_name']}")
                 return True
             else:
-                log.error("Authentication failed: Unable to extract user token from response")
+                log.warning(f"Authentication failed for {credentials['user_name']}: Unable to extract user token from response")
                 log.debug(f"Available keys in response: {list(login_data.keys())}")
                 return False
                 
         except requests.exceptions.RequestException as e:
-            log.error(f"Authentication request failed: {str(e)}")
+            log.warning(f"Authentication request failed for {credentials['user_name']}: {str(e)}")
             return False
         except json.JSONDecodeError as e:
-            log.error(f"Authentication response not valid JSON: {str(e)}")
+            log.warning(f"Authentication response not valid JSON for {credentials['user_name']}: {str(e)}")
             return False
         except Exception as e:
-            log.error(f"Unexpected error during authentication: {str(e)}")
+            log.warning(f"Unexpected error during authentication for {credentials['user_name']}: {str(e)}")
             return False
     
     def refresh_token(self) -> bool:
