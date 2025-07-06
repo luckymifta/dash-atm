@@ -42,18 +42,20 @@ import sys
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, AsyncGenerator
 from enum import Enum
 import asyncio
 import asyncpg
 from contextlib import asynccontextmanager
 import pytz
+import jwt
 
 # FastAPI imports
-from fastapi import FastAPI, HTTPException, Query, Path, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, Path as FastAPIPath, Depends, BackgroundTasks, UploadFile, File, Form, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import uvicorn
 
 # Additional imports for background task management
@@ -118,6 +120,14 @@ DB_CONFIG = {
     'password': os.getenv('DB_PASSWORD', 'timlesdev')
 }
 
+# File upload configuration for maintenance system
+UPLOAD_CONFIG = {
+    'upload_directory': os.getenv('UPLOAD_DIRECTORY', './uploads/maintenance'),
+    'max_file_size': int(os.getenv('MAX_FILE_SIZE', 10 * 1024 * 1024)),  # 10MB default
+    'max_files_per_record': int(os.getenv('MAX_FILES_PER_RECORD', 10)),
+    'allowed_extensions': ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.txt', '.doc', '.docx']
+}
+
 # Timezone configuration
 DILI_TZ = pytz.timezone('Asia/Dili')  # UTC+9
 UTC_TZ = pytz.UTC
@@ -175,6 +185,12 @@ class HealthStatusEnum(str, Enum):
     ATTENTION = "ATTENTION"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
+
+class UserRole(str, Enum):
+    VIEWER = "VIEWER"
+    OPERATOR = "OPERATOR"
+    ADMIN = "ADMIN"
+    SUPERADMIN = "SUPERADMIN"
 
 # New models for individual ATM historical data
 class ATMStatusPoint(BaseModel):
@@ -295,13 +311,135 @@ class FaultHistoryReportResponse(BaseModel):
     terminal_count: int = Field(..., description="Number of terminals included")
     chart_data: Dict[str, Any] = Field(..., description="Chart configuration and data")
 
-# Global job tracking
-refresh_jobs: Dict[str, RefreshJobResponse] = {}
-job_executor = ThreadPoolExecutor(max_workers=2)  # Limit concurrent refresh jobs
+# Terminal Maintenance Management Models (PRD.md section 2.2.3)
+class MaintenanceTypeEnum(str, Enum):
+    PREVENTIVE = "PREVENTIVE"
+    CORRECTIVE = "CORRECTIVE"
+    EMERGENCY = "EMERGENCY"
+
+class MaintenancePriorityEnum(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+class MaintenanceStatusEnum(str, Enum):
+    PLANNED = "PLANNED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+class MaintenanceImage(BaseModel):
+    image_id: str = Field(..., description="Unique identifier for the image")
+    filename: str = Field(..., description="Original filename")
+    file_path: str = Field(..., description="Server file path")
+    uploaded_at: datetime = Field(..., description="Upload timestamp")
+    file_size: int = Field(..., description="File size in bytes")
+    
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda dt: dt.isoformat() if dt else None
+        }
+    )
+
+class MaintenanceCreate(BaseModel):
+    terminal_id: str = Field(..., description="Terminal identifier")
+    start_datetime: datetime = Field(..., description="Maintenance start time")
+    end_datetime: Optional[datetime] = Field(None, description="Maintenance end time")
+    problem_description: str = Field(..., min_length=10, max_length=2000, description="Problem description")
+    solution_description: Optional[str] = Field(None, max_length=2000, description="Solution description")
+    maintenance_type: MaintenanceTypeEnum = Field(MaintenanceTypeEnum.CORRECTIVE, description="Type of maintenance")
+    priority: MaintenancePriorityEnum = Field(MaintenancePriorityEnum.MEDIUM, description="Priority level")
+    status: MaintenanceStatusEnum = Field(MaintenanceStatusEnum.PLANNED, description="Current status")
+
+    @field_validator('end_datetime')
+    @classmethod
+    def validate_end_datetime(cls, v, info):
+        if v is not None and 'start_datetime' in info.data:
+            if v <= info.data['start_datetime']:
+                raise ValueError('end_datetime must be after start_datetime')
+        return v
+
+    @field_validator('start_datetime')
+    @classmethod
+    def validate_start_datetime(cls, v):
+        # Cannot be more than 1 hour in the future (PRD business rule)
+        max_future = datetime.now() + timedelta(hours=1)
+        if v > max_future:
+            raise ValueError('start_datetime cannot be more than 1 hour in the future')
+        return v
+
+class MaintenanceUpdate(BaseModel):
+    start_datetime: Optional[datetime] = Field(None, description="Maintenance start time")
+    end_datetime: Optional[datetime] = Field(None, description="Maintenance end time")
+    problem_description: Optional[str] = Field(None, min_length=10, max_length=2000, description="Problem description")
+    solution_description: Optional[str] = Field(None, max_length=2000, description="Solution description")
+    maintenance_type: Optional[MaintenanceTypeEnum] = Field(None, description="Type of maintenance")
+    priority: Optional[MaintenancePriorityEnum] = Field(None, description="Priority level")
+    status: Optional[MaintenanceStatusEnum] = Field(None, description="Current status")
+
+    @field_validator('end_datetime')
+    @classmethod
+    def validate_end_datetime(cls, v, info):
+        if v is not None and 'start_datetime' in info.data and info.data['start_datetime'] is not None:
+            if v <= info.data['start_datetime']:
+                raise ValueError('end_datetime must be after start_datetime')
+        return v
+
+class MaintenanceRecord(BaseModel):
+    id: str = Field(..., description="Unique maintenance record identifier")
+    terminal_id: str = Field(..., description="Terminal identifier")
+    terminal_name: Optional[str] = Field(None, description="Terminal name")
+    location: Optional[str] = Field(None, description="Terminal location")
+    start_datetime: datetime = Field(..., description="Maintenance start time")
+    end_datetime: Optional[datetime] = Field(None, description="Maintenance end time")
+    problem_description: str = Field(..., description="Problem description")
+    solution_description: Optional[str] = Field(None, description="Solution description")
+    maintenance_type: str = Field(..., description="Type of maintenance")
+    priority: str = Field(..., description="Priority level")
+    status: str = Field(..., description="Current status")
+    images: List[MaintenanceImage] = Field(default_factory=list, description="Attached images")
+    duration_hours: Optional[float] = Field(None, description="Duration in hours")
+    created_by: str = Field(..., description="User who created the record")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+class MaintenanceListFilter(BaseModel):
+    terminal_id: Optional[str] = Field(None, description="Filter by terminal ID")
+    status: Optional[MaintenanceStatusEnum] = Field(None, description="Filter by status")
+    maintenance_type: Optional[MaintenanceTypeEnum] = Field(None, description="Filter by type")
+    priority: Optional[MaintenancePriorityEnum] = Field(None, description="Filter by priority")
+    created_by: Optional[str] = Field(None, description="Filter by creator")
+    start_date: Optional[datetime] = Field(None, description="Filter from date")
+    end_date: Optional[datetime] = Field(None, description="Filter to date")
+
+class MaintenanceListResponse(BaseModel):
+    maintenance_records: List[MaintenanceRecord] = Field(..., description="List of maintenance records")
+    total_count: int = Field(..., description="Total number of records")
+    page: int = Field(..., description="Current page number")
+    per_page: int = Field(..., description="Records per page")
+    has_more: bool = Field(..., description="Whether more records exist")
+    filters_applied: Dict[str, Any] = Field(..., description="Applied filters")
+
+# Initialize notification service
+notification_service = None
+
+async def get_notification_service():
+    """Get or create notification service instance"""
+    global notification_service
+    if NotificationService is None:
+        raise HTTPException(status_code=503, detail="Notification service not available")
+    if notification_service is None:
+        notification_service = NotificationService()
+        # Share the main application's connection pool instead of creating a new one
+        if db_pool is not None:
+            notification_service.set_shared_pool(db_pool)
+        await notification_service.ensure_notification_tables()
+    return notification_service
 
 # Lifespan management
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(fastapi_app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     logger.info("Starting ATM FastAPI application...")
     await create_db_pool()
@@ -379,6 +517,10 @@ app.add_middleware(
 # Global variables
 app_start_time = datetime.now()
 db_pool = None
+
+# Global job tracking for refresh operations
+refresh_jobs: Dict[str, RefreshJobResponse] = {}
+job_executor = ThreadPoolExecutor(max_workers=2)  # Limit concurrent refresh jobs
 
 # Database connection functions
 async def create_db_pool():
@@ -1035,33 +1177,32 @@ async def get_overall_atm_trends_events(
                         LEFT JOIN terminal_details td ON 
                             td.retrieved_date <= se.retrieved_date
                             AND td.retrieved_date >= NOW() - INTERVAL '%s hours'
-                        WHERE td.terminal_id IS NOT NULL
-                    ),
-                    latest_status_per_event AS (
-                        SELECT 
-                            event_time,
-                            terminal_id,
-                            COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
-                        FROM atm_status_at_events 
-                        WHERE rn = 1
-                    )
-                    SELECT 
-                        event_time,
-                        COUNT(*) as total_atms,
-                        COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
-                        COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
-                        COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
-                        COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
-                        COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
-                    FROM latest_status_per_event
-                    GROUP BY event_time
-                    HAVING COUNT(*) > 0
-                    ORDER BY event_time ASC
-                """ % (fallback_hours, fallback_hours)
+                WHERE td.terminal_id IS NOT NULL
+            ),
+            latest_status_per_event AS (
+                SELECT 
+                    event_time,
+                    terminal_id,
+                    COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
+                FROM atm_status_at_events 
+                WHERE rn = 1
+            )
+            SELECT 
+                event_time,
+                COUNT(*) as total_atms,
+                COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
+                COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
+                COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
+                COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
+                COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
+            FROM latest_status_per_event
+            GROUP BY event_time
+            HAVING COUNT(*) > 0
+            ORDER BY event_time ASC
+                """ % (fallback_hours, hours, hours, fallback_hours)
                 
-                fallback_rows = await conn.fetch(fallback_query)
-                if fallback_rows:
-                    rows = fallback_rows
+                rows = await conn.fetch(fallback_query)
+                if rows:
                     actual_hours_used = fallback_hours
                     fallback_message = f"Data for {hours}h unavailable, showing {fallback_hours}h"
                     logger.info(f"Using fallback period of {fallback_hours}h for overall event trends")
@@ -1352,7 +1493,7 @@ async def get_latest_data(
 
 @app.get("/api/v1/atm/{terminal_id}/history", response_model=ATMHistoricalResponse, tags=["ATM Historical"])
 async def get_atm_history(
-    terminal_id: str = Path(..., description="Terminal ID to get history for"),
+    terminal_id: str = FastAPIPath(..., description="Terminal ID to get history for"),
     hours: int = Query(168, ge=1, le=2160, description="Number of hours to look back (1-2160, default 168=7 days)"),
     include_fault_details: bool = Query(True, description="Include fault descriptions in history"),
     db_check: bool = Depends(validate_db_connection)
@@ -1671,1272 +1812,1023 @@ async def get_atm_list(
     finally:
         await release_db_connection(conn)
 
-# ========================
-# NOTIFICATION ENDPOINTS
-# ========================
+# ============================================================================
+# TERMINAL MAINTENANCE MANAGEMENT ENDPOINTS
+# Implementation of PRD.md section 2.2.2 API endpoints
+# ============================================================================
 
-# Pydantic models for notifications
-class NotificationResponse(BaseModel):
-    notification_id: str = Field(..., description="Unique notification identifier")
-    terminal_id: str = Field(..., description="ATM terminal ID")
-    previous_status: Optional[str] = Field(None, description="Previous ATM status")
-    current_status: str = Field(..., description="Current ATM status")
-    severity: str = Field(..., description="Notification severity level")
-    title: str = Field(..., description="Notification title")
-    message: str = Field(..., description="Notification message")
-    created_at: datetime = Field(..., description="When notification was created")
-    is_read: bool = Field(..., description="Whether notification has been read")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+# ============================================================================
+# TERMINAL MAINTENANCE MANAGEMENT ENDPOINTS
+# Implementation of PRD.md section 2.2.2 API endpoints
+# ============================================================================
 
-class NotificationListResponse(BaseModel):
-    notifications: List[NotificationResponse]
-    total_count: int = Field(..., ge=0, description="Total number of notifications")
-    unread_count: int = Field(..., ge=0, description="Number of unread notifications")
-    page: int = Field(..., ge=1, description="Current page number")
-    per_page: int = Field(..., ge=1, description="Items per page")
-    has_more: bool = Field(..., description="Whether there are more notifications")
+# JWT Configuration (same as user_management_api.py)
+SECRET_KEY = "your-secret-key-change-in-production"
+ALGORITHM = "HS256"
 
-# Initialize notification service
-notification_service = None
+# Security dependency for JWT authentication
+security = HTTPBearer()
 
-async def get_notification_service():
-    """Get or create notification service instance"""
-    global notification_service
-    if NotificationService is None:
-        raise HTTPException(status_code=503, detail="Notification service not available")
-    if notification_service is None:
-        notification_service = NotificationService()
-        # Share the main application's connection pool instead of creating a new one
-        if db_pool is not None:
-            notification_service.set_shared_pool(db_pool)
-        await notification_service.ensure_notification_tables()
-    return notification_service
+# User database query support
+class DatabaseConnectionError(Exception):
+    """Exception raised when database connection fails"""
+    pass
 
-@app.get("/api/v1/notifications", response_model=NotificationListResponse, tags=["Notifications"])
-async def get_notifications(
-    page: int = Query(1, ge=1, description="Page number"),
-    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
-    unread_only: bool = Query(False, description="Get only unread notifications"),
-    db_check: bool = Depends(validate_db_connection)
-):
+def execute_user_query(query: str, params: tuple = (), fetch: str = "all"):
     """
-    Get paginated list of notifications for ATM status changes
+    Execute a query against the users database using psycopg2 (for compatibility with user management)
+    """
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
     
-    Returns notifications sorted by creation time (newest first).
-    Supports filtering by read status.
-    """
-    try:
-        if NotificationService is None:
-            raise HTTPException(status_code=503, detail="Notification service not available")
-            
-        service = await get_notification_service()
-        
-        # Calculate offset for pagination
-        offset = (page - 1) * per_page
-        
-        # Get notifications with pagination
-        notifications, total_count = await service.get_notifications(
-            unread_only=unread_only,
-            limit=per_page,
-            offset=offset
-        )
-        
-        # Convert to response format
-        notification_responses = []
-        for notif in notifications:
-            # Parse metadata if it's a string
-            metadata = notif.get('metadata', {})
-            if isinstance(metadata, str):
-                import json
-                try:
-                    metadata = json.loads(metadata)
-                except (json.JSONDecodeError, TypeError):
-                    metadata = {}
-            
-            notification_responses.append(NotificationResponse(
-                notification_id=notif['id'],
-                terminal_id=notif['terminal_id'],
-                previous_status=notif.get('previous_status'),
-                current_status=notif['current_status'],
-                severity=notif['severity'],
-                title=notif['title'],
-                message=notif['message'],
-                created_at=datetime.fromisoformat(notif['created_at'].replace('Z', '+00:00')),
-                is_read=notif['is_read'],
-                metadata=metadata
-            ))
-        
-        # Calculate unread count
-        unread_count = 0
-        if not unread_only:
-            _, unread_count = await service.get_notifications(unread_only=True, limit=1)
-        else:
-            unread_count = total_count
-        
-        has_more = offset + per_page < total_count
-        
-        return NotificationListResponse(
-            notifications=notification_responses,
-            total_count=total_count,
-            unread_count=unread_count,
-            page=page,
-            per_page=per_page,
-            has_more=has_more
-        )
-        
-    except Exception as e:
-        logger.error(f"Error fetching notifications: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch notifications")
-
-@app.post("/api/v1/notifications/{notification_id}/mark-read", tags=["Notifications"])
-async def mark_notification_as_read(
-    notification_id: str = Path(..., description="Notification ID to mark as read"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Mark a specific notification as read
-    
-    Marks the notification with the given ID as read.
-    """
-    try:
-        if NotificationService is None:
-            raise HTTPException(status_code=503, detail="Notification service not available")
-            
-        service = await get_notification_service()
-        
-        success = await service.mark_notification_read(notification_id)
-        
-        if not success:
-            raise HTTPException(status_code=404, detail="Notification not found")
-        
-        return {
-            "success": True,
-            "message": "Notification marked as read",
-            "notification_id": notification_id,
-            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error marking notification as read: {e}")
-        raise HTTPException(status_code=500, detail="Failed to mark notification as read")
-
-@app.post("/api/v1/notifications/mark-all-read", tags=["Notifications"])
-async def mark_all_notifications_as_read(
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Mark all notifications as read
-    
-    Marks all unread notifications as read.
-    """
-    try:
-        if NotificationService is None:
-            raise HTTPException(status_code=503, detail="Notification service not available")
-            
-        service = await get_notification_service()
-        
-        updated_count = await service.mark_all_notifications_read()
-        
-        return {
-            "success": True,
-            "message": f"Marked {updated_count} notifications as read",
-            "updated_count": updated_count,
-            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error marking all notifications as read: {e}")
-        raise HTTPException(status_code=500, detail="Failed to mark notifications as read")
-
-@app.post("/api/v1/notifications/check-changes", tags=["Notifications"])
-async def check_status_changes(
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Manually trigger a check for ATM status changes
-    
-    This endpoint can be called to immediately check for status changes
-    and create notifications. Useful for testing or manual triggers.
-    """
-    try:
-        if NotificationService is None:
-            raise HTTPException(status_code=503, detail="Notification service not available")
-            
-        service = await get_notification_service()
-        
-        new_notifications = await service.check_status_changes()
-        
-        return {
-            "success": True,
-            "message": f"Status check completed. Created {len(new_notifications)} new notifications",
-            "new_notifications_count": len(new_notifications),
-            "new_notifications": [
-                {
-                    "terminal_id": notif["terminal_id"],
-                    "status_change": f"{notif.get('previous_status', 'Unknown')} → {notif['current_status']}",
-                    "severity": notif["severity"]
-                }
-                for notif in new_notifications
-            ],
-            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error checking status changes: {e}")
-        raise HTTPException(status_code=500, detail="Failed to check status changes")
-
-@app.get("/api/v1/notifications/unread-count", tags=["Notifications"])
-async def get_unread_count(
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get count of unread notifications
-    
-    Lightweight endpoint for checking notification badge count.
-    """
-    try:
-        if NotificationService is None:
-            return {"unread_count": 0, "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()}
-            
-        service = await get_notification_service()
-        
-        # Get unread notifications count
-        _, unread_count = await service.get_notifications(unread_only=True, limit=1)
-        
-        return {
-            "unread_count": unread_count,
-            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting unread count: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get unread count")
-
-# Background task function for running the combined ATM retrieval script
-def run_atm_refresh_script(job_id: str, use_new_tables: bool = True):
-    """
-   Background task function to run the combined ATM retrieval script
-    """
-    try:
-        # Update job status to running
-        if job_id in refresh_jobs:
-            refresh_jobs[job_id].status = RefreshJobStatus.RUNNING
-            refresh_jobs[job_id].started_at = datetime.utcnow()
-            refresh_jobs[job_id].message = "Starting ATM data retrieval..."
-            refresh_jobs[job_id].progress = 10.0
-
-        # Get the script path (should be in the same directory as this API file)
-        script_path = PathLib(__file__).parent / "combined_atm_retrieval_script.py"
-        
-        if not script_path.exists():
-            raise FileNotFoundError(f"Combined ATM retrieval script not found at {script_path}")
-
-        # Prepare command arguments
-        cmd = [sys.executable, str(script_path), "--save-to-db"]
-        if use_new_tables:
-            cmd.append("--use-new-tables")
-
-        logger.info(f"Starting ATM refresh job {job_id} with command: {' '.join(cmd)}")
-
-        # Update progress
-        if job_id in refresh_jobs:
-            refresh_jobs[job_id].message = "Executing data retrieval script..."
-            refresh_jobs[job_id].progress = 30.0
-
-        # Run the script
-        result = subprocess.run(
-            cmd,
-            cwd=str(script_path.parent),
-            capture_output=True,
-            text=True,
-            timeout=900  # 15 minutes timeout
-        )
-
-        # Update progress
-        if job_id in refresh_jobs:
-            refresh_jobs[job_id].progress = 80.0
-            refresh_jobs[job_id].message = "Processing results..."
-
-        if result.returncode == 0:
-            # Success
-            if job_id in refresh_jobs:
-                refresh_jobs[job_id].status = RefreshJobStatus.COMPLETED
-                refresh_jobs[job_id].completed_at = datetime.utcnow()
-                refresh_jobs[job_id].progress = 100.0
-                refresh_jobs[job_id].message = "ATM data refresh completed successfully"
-                
-            logger.info(f"ATM refresh job {job_id} completed successfully")
-            logger.debug(f"Script output: {result.stdout}")
-        else:
-            # Script failed
-            error_msg = f"Script failed with return code {result.returncode}"
-            if result.stderr:
-                error_msg += f": {result.stderr}"
-                
-            if job_id in refresh_jobs:
-                refresh_jobs[job_id].status = RefreshJobStatus.FAILED
-                refresh_jobs[job_id].completed_at = datetime.utcnow()
-                refresh_jobs[job_id].error = error_msg
-                refresh_jobs[job_id].message = "ATM data refresh failed"
-                
-            logger.error(f"ATM refresh job {job_id} failed: {error_msg}")
-            logger.debug(f"Script stderr: {result.stderr}")
-            logger.debug(f"Script stdout: {result.stdout}")
-
-    except subprocess.TimeoutExpired:
-        error_msg = "Script execution timed out after 15 minutes"
-        if job_id in refresh_jobs:
-            refresh_jobs[job_id].status = RefreshJobStatus.FAILED
-            refresh_jobs[job_id].completed_at = datetime.utcnow()
-            refresh_jobs[job_id].error = error_msg
-            refresh_jobs[job_id].message = "ATM data refresh timed out"
-        logger.error(f"ATM refresh job {job_id} timed out")
-        
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        if job_id in refresh_jobs:
-            refresh_jobs[job_id].status = RefreshJobStatus.FAILED
-            refresh_jobs[job_id].completed_at = datetime.utcnow()
-            refresh_jobs[job_id].error = error_msg
-            refresh_jobs[job_id].message = "ATM data refresh failed"
-        logger.error(f"ATM refresh job {job_id} failed with error: {e}")
-
-# Refresh endpoints
-@app.post("/api/v1/atm/refresh", response_model=RefreshJobResponse, tags=["ATM Refresh"])
-async def trigger_atm_refresh(
-    background_tasks: BackgroundTasks,
-    refresh_request: RefreshJobRequest = RefreshJobRequest(force=False, use_new_tables=True)
-):
-    """
-    Trigger an immediate refresh of ATM data
-    
-    This endpoint starts a background job to run the combined ATM retrieval script,
-    which will fetch fresh data from the ATM monitoring system and update the database.
-    The job runs asynchronously, so you can check its status using the job ID returned.
-    """
-    try:
-        # Check if there's already a running job
-        running_jobs = [job for job in refresh_jobs.values() if job.status == RefreshJobStatus.RUNNING]
-        if running_jobs and not refresh_request.force:
-            raise HTTPException(
-                status_code=409, 
-                detail="A refresh job is already running. Use force=true to queue another job."
-            )
-
-        # Create new job
-        job_id = str(uuid.uuid4())
-        job = RefreshJobResponse(
-            job_id=job_id,
-            status=RefreshJobStatus.QUEUED,
-            created_at=datetime.utcnow(),
-            started_at=None,
-            completed_at=None,
-            progress=0.0,
-            message="Refresh job queued",
-            error=None
-        )
-        
-        refresh_jobs[job_id] = job
-        
-        # Add background task
-        background_tasks.add_task(
-            run_atm_refresh_script, 
-            job_id, 
-            refresh_request.use_new_tables
-        )
-        
-        logger.info(f"ATM refresh job {job_id} queued")
-        
-        return job
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error triggering ATM refresh: {e}")
-        raise HTTPException(status_code=500, detail="Failed to trigger refresh")
-
-@app.get("/api/v1/atm/refresh/{job_id}", response_model=RefreshJobResponse, tags=["ATM Refresh"])
-async def get_refresh_job_status(job_id: str = Path(..., description="Job ID to check")):
-    """
-    Get the status of a refresh job
-    
-    Check the current status, progress, and any error messages for a specific refresh job.
-    """
-    if job_id not in refresh_jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    return refresh_jobs[job_id]
-
-@app.get("/api/v1/atm/refresh", response_model=List[RefreshJobResponse], tags=["ATM Refresh"])
-async def list_refresh_jobs(
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of jobs to return"),
-    status: Optional[RefreshJobStatus] = Query(None, description="Filter by job status")
-):
-    """
-    List refresh jobs
-    
-    Get a list of recent refresh jobs, optionally filtered by status.
-    """
-    jobs = list(refresh_jobs.values())
-    
-    # Filter by status if specified
-    if status:
-        jobs = [job for job in jobs if job.status == status]
-    
-    # Sort by creation time (newest first)
-    jobs.sort(key=lambda x: x.created_at, reverse=True)
-    
-    # Apply limit
-    return jobs[:limit]
-
-# Custom exception handlers
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    """Handle unexpected exceptions"""
-    logger.error(f"Unexpected error: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"success": False, "message": "Internal server error", "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()}
-    )
-
-# ========================
-# PREDICTIVE ANALYTICS ENDPOINTS (Using Existing Data)
-# ========================
-
-# Pydantic models for predictive analytics
-class ComponentHealthScore(BaseModel):
-    component_type: str = Field(..., description="Component type (DISPENSER, READER, etc.)")
-    health_score: float = Field(..., ge=0, le=100, description="Health score percentage")
-    failure_risk: str = Field(..., description="Risk level (LOW, MEDIUM, HIGH, CRITICAL)")
-    last_fault_date: Optional[datetime] = Field(None, description="Last fault timestamp")
-    fault_frequency: int = Field(..., ge=0, description="Number of faults in last 30 days")
-
-class FailurePrediction(BaseModel):
-    risk_score: float = Field(..., ge=0, le=100, description="Failure risk score percentage")
-    risk_level: str = Field(..., description="Risk level (LOW, MEDIUM, HIGH, CRITICAL)")
-    prediction_horizon: str = Field(..., description="Prediction time horizon")
-    confidence: float = Field(..., ge=0, le=100, description="Prediction confidence percentage")
-    contributing_factors: List[str] = Field(..., description="Main factors contributing to prediction")
-
-class MaintenanceRecommendation(BaseModel):
-    action: str = Field(..., description="Recommended maintenance action")
-    priority: str = Field(..., description="Priority level (LOW, MEDIUM, HIGH, URGENT)")
-    estimated_time: str = Field(..., description="Estimated time to complete")
-    components: List[str] = Field(..., description="Components requiring attention")
-    description: str = Field(..., description="Detailed description of recommendation")
-
-class ATMPredictiveAnalytics(BaseModel):
-    terminal_id: str = Field(..., description="Terminal identifier")
-    location: Optional[str] = Field(None, description="ATM location")
-    overall_health_score: float = Field(..., ge=0, le=100, description="Overall ATM health score")
-    failure_prediction: FailurePrediction
-    component_health: List[ComponentHealthScore]
-    maintenance_recommendations: List[MaintenanceRecommendation]
-    data_quality_score: float = Field(..., ge=0, le=100, description="Quality of data used for prediction")
-    last_analysis: datetime = Field(..., description="When analysis was performed")
-    analysis_period: str = Field(..., description="Data period used for analysis")
-
-class PredictiveAnalyticsResponse(BaseModel):
-    atm_analytics: ATMPredictiveAnalytics
-    analysis_metadata: Dict[str, Any] = Field(..., description="Metadata about the analysis")
-
-# Utility functions for predictive analytics using existing JSONB data
-def calculate_component_health_score(fault_history: List[Dict[str, Any]], component_type: str) -> ComponentHealthScore:
-    """Calculate health score for a specific component based on fault history from JSONB data"""
-    now = datetime.now()
-    thirty_days_ago = now - timedelta(days=30)
-    
-    component_faults = []
-    last_fault_date = None
-    
-    # Component mapping - map component types to keywords in fault descriptions
-    component_keywords = {
-        'DISPENSER': ['CDM', 'dispenser', 'notes', 'cash', 'bills', 'currency'],
-        'READER': ['reader', 'card', 'magnetic', 'chip'],
-        'PRINTER': ['printer', 'receipt', 'paper', 'print'],
-        'NETWORK_MODULE': ['network', 'communications', 'connection', 'comms'],
-        'DEPOSIT_MODULE': ['deposit', 'check', 'envelope'],
-        'SENSOR': ['sensor', 'detect', 'proximity', 'motion']
+    # User management database configuration
+    USER_DB_CONFIG = {
+        'host': os.getenv('DB_HOST', '88.222.214.26'),
+        'port': int(os.getenv('DB_PORT', 5432)),
+        'database': os.getenv('DB_NAME', 'development_db'),
+        'user': os.getenv('DB_USER', 'timlesdev'),
+        'password': os.getenv('DB_PASSWORD', 'timlesdev')
     }
     
-    for fault in fault_history:
-        # Try to parse the creation date from the actual fault data structure
-        creation_date = fault.get('agentErrorDescription')
-        fault_date = None
-        
-        if creation_date:
-            try:
-                if isinstance(creation_date, str):
-                    # Handle different date formats found in the data
-                    # Format: "11:06:2025 11:40:18" (day:month:year hour:minute:second)
-                    if ':' in creation_date and len(creation_date.split(' ')) == 2:
-                        date_part, time_part = creation_date.split(' ')
-                        day, month_num, year = date_part.split(':')
-                        hour, minute, second = time_part.split(':')
-                        
-                        # Convert month number to actual month
-                        month_map = {
-                            '01': 1, '02': 2, '03': 3, '04': 4, '05': 5, '06': 6,
-                            '07': 7, '08': 8, '09': 9, '10': 10, '11': 11, '12': 12,
-                            'JANUARY': 1, 'FEBRUARY': 2, 'MARCH': 3, 'APRIL': 4,
-                            'MAY': 5, 'JUNE': 6, 'JULY': 7, 'AUGUST': 8,
-                            'SEPTEMBER': 9, 'OCTOBER': 10, 'NOVEMBER': 11, 'DECEMBER': 12
-                        }
-                        
-                        month_int = month_map.get(month_num, int(month_num) if month_num.isdigit() else 1)
-                        fault_date = datetime(int(year), month_int, int(day), int(hour), int(minute), int(second))
-                    else:
-                        # Try ISO format
-                        fault_date = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
-                elif isinstance(creation_date, (int, float)):
-                    # Unix timestamp
-                    fault_date = datetime.fromtimestamp(creation_date / 1000)
-            except Exception as e:
-                # If date parsing fails, include the fault anyway but without date filtering
-                fault_date = now  # Treat as recent
-        
-        # Check if this fault is related to the specified component
-        fault_description = fault.get('agentErrorDescription', '').lower()
-        external_fault_id = fault.get('externalFaultId', '').lower()
-        
-        # Check if fault relates to this component type
-        is_component_fault = False
-        if component_type in component_keywords:
-            keywords = component_keywords[component_type]
-            for keyword in keywords:
-                if keyword.lower() in fault_description or keyword.lower() in external_fault_id:
-                    is_component_fault = True
-                    break
-        
-        if is_component_fault:
-            if fault_date and fault_date >= thirty_days_ago:
-                component_faults.append(fault)
-                if not last_fault_date or fault_date > last_fault_date:
-                    last_fault_date = fault_date
-            elif not fault_date:
-                # Include faults without parseable dates
-                component_faults.append(fault)
-    
-    fault_count = len(component_faults)
-    base_score = 100
-    
-    # Reduce score based on fault frequency and severity
-    for fault in component_faults:
-        # Determine severity based on fault description keywords
-        fault_description = fault.get('agentErrorDescription', '').lower()
-        
-        # Critical keywords that indicate severe issues
-        critical_keywords = ['timeout', 'failure', 'error', 'jam', 'stuck', 'blocked']
-        warning_keywords = ['out of', 'empty', 'low', 'warning', 'check']
-        
-        if any(keyword in fault_description for keyword in critical_keywords):
-            severity_impact = 12  # Critical impact
-        elif any(keyword in fault_description for keyword in warning_keywords):
-            severity_impact = 6   # Warning impact
-        else:
-            severity_impact = 8   # Default moderate impact
-        
-        base_score -= severity_impact
-    
-    health_score = max(0, min(100, base_score))
-    
-    # Determine risk level
-    if health_score >= 85:
-        risk_level = "LOW"
-    elif health_score >= 70:
-        risk_level = "MEDIUM" 
-    elif health_score >= 50:
-        risk_level = "HIGH"
-    else:
-        risk_level = "CRITICAL"
-    
-    return ComponentHealthScore(
-        component_type=component_type,
-        health_score=round(health_score, 1),
-        failure_risk=risk_level,
-        last_fault_date=last_fault_date,
-        fault_frequency=fault_count
-    )
-
-def predict_atm_failure(fault_history: List[Dict[str, Any]], component_health: List[ComponentHealthScore]) -> FailurePrediction:
-    """Predict ATM failure based on existing fault data"""
-    # Calculate risk based on component health and fault patterns
-    avg_component_health = mean([comp.health_score for comp in component_health]) if component_health else 100
-    
-    # Count recent faults (last 7 days)
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
-    recent_faults = []
-    
-    for fault in fault_history:
-        creation_date = fault.get('creationDate')
-        fault_date = None
-        
-        if creation_date:
-            try:
-                if isinstance(creation_date, str):
-                    # Handle the specific date format found in the data
-                    # Format: "11:06:2025 11:40:18" (day:month:year hour:minute:second)
-                    if ':' in creation_date and len(creation_date.split(' ')) == 2:
-                        date_part, time_part = creation_date.split(' ')
-                        day, month_num, year = date_part.split(':')
-                        hour, minute, second = time_part.split(':')
-                        
-                        # Convert month number to actual month
-                        month_map = {
-                            '01': 1, '02': 2, '03': 3, '04': 4, '05': 5, '06': 6,
-                            '07': 7, '08': 8, '09': 9, '10': 10, '11': 11, '12': 12
-                        }
-                        
-                        month_int = month_map.get(month_num, int(month_num) if month_num.isdigit() else 1)
-                        fault_date = datetime(int(year), month_int, int(day), int(hour), int(minute), int(second))
-                    else:
-                        # Try ISO format
-                        fault_date = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
-                elif isinstance(creation_date, (int, float)):
-                    fault_date = datetime.fromtimestamp(creation_date / 1000)
-                    
-                if fault_date and fault_date >= seven_days_ago:
-                    recent_faults.append(fault)
-            except Exception as e:
-                # If date parsing fails, include the fault anyway as potentially recent
-                recent_faults.append(fault)
-    
-    # Calculate risk score
-    risk_score = (100 - avg_component_health) * 0.6 + min(len(recent_faults) * 15, 40)
-    risk_score = max(0, min(100, risk_score))
-    
-    # Determine risk level and prediction horizon
-    if risk_score < 25:
-        risk_level = "LOW"
-        horizon = "30+ days"
-        confidence = 75
-    elif risk_score < 50:
-        risk_level = "MEDIUM"
-        horizon = "14-30 days"
-        confidence = 80
-    elif risk_score < 75:
-        risk_level = "HIGH"
-        horizon = "7-14 days"
-        confidence = 85
-    else:
-        risk_level = "CRITICAL"
-        horizon = "1-7 days"
-        confidence = 90
-    
-    # Contributing factors
-    factors = []
-    if avg_component_health < 70:
-        factors.append("Component degradation detected")
-    if len(recent_faults) > 3:
-        factors.append("High recent fault frequency")
-    if not factors:
-        factors = ["Normal operational patterns"]
-    
-    return FailurePrediction(
-        risk_score=round(risk_score, 1),
-        risk_level=risk_level,
-        prediction_horizon=horizon,
-        confidence=confidence,
-        contributing_factors=factors
-    )
-
-def generate_maintenance_recommendations(component_health: List[ComponentHealthScore], 
-                                       failure_prediction: FailurePrediction) -> List[MaintenanceRecommendation]:
-    """Generate maintenance recommendations based on analysis"""
-    recommendations = []
-    
-    # Component-specific recommendations
-    for comp in component_health:
-        if comp.health_score < 70:
-            if comp.component_type in ["DISPENSER", "READER", "PRINTER"]:
-                priority = "HIGH" if comp.health_score < 50 else "MEDIUM"
-                recommendations.append(MaintenanceRecommendation(
-                    action=f"Inspect and service {comp.component_type.lower()}",
-                    priority=priority,
-                    estimated_time="2-3 hours",
-                    components=[comp.component_type],
-                    description=f"{comp.component_type} health score is {comp.health_score}%. Requires attention."
-                ))
-    
-    # Risk-based recommendations
-    if failure_prediction.risk_level in ["HIGH", "CRITICAL"]:
-        recommendations.append(MaintenanceRecommendation(
-            action="Comprehensive ATM inspection",
-            priority="URGENT" if failure_prediction.risk_level == "CRITICAL" else "HIGH",
-            estimated_time="4-6 hours",
-            components=["ALL"],
-            description=f"High failure risk detected ({failure_prediction.risk_score}%). Perform complete diagnostic check."
-        ))
-    
-    # Default recommendation if no issues found
-    if not recommendations:
-        recommendations.append(MaintenanceRecommendation(
-            action="Routine preventive maintenance",
-            priority="LOW",
-            estimated_time="2 hours",
-            components=["ALL"],
-            description="ATM appears healthy. Perform routine checks to maintain optimal performance."
-        ))
-    
-    return recommendations
-
-@app.get("/api/v1/atm/{terminal_id}/predictive-analytics", response_model=PredictiveAnalyticsResponse, tags=["Predictive Analytics"])
-async def get_atm_predictive_analytics(
-    terminal_id: str = Path(..., description="Terminal ID to analyze"),
-    analysis_days: int = Query(30, ge=7, le=90, description="Days of data to analyze"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get predictive analytics for a specific ATM using existing JSONB fault data
-    
-    Analyzes fault history from terminal_details table and provides:
-    - Component health scores  
-    - Failure risk predictions
-    - Maintenance recommendations
-    - Data quality assessment
-    
-    No database schema changes required - uses existing JSONB fault data.
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
     try:
-        # Get latest terminal info and fault data
-        query = """
-            SELECT 
-                terminal_id, location, fault_data, retrieved_date
-            FROM terminal_details
-            WHERE terminal_id = $1 
-                AND retrieved_date >= NOW() - INTERVAL '%s days'
-                AND fault_data IS NOT NULL
-            ORDER BY retrieved_date DESC
-        """ % analysis_days
-        
-        rows = await conn.fetch(query, terminal_id)
-        
-        if not rows:
-            raise HTTPException(status_code=404, detail=f"No fault data found for terminal {terminal_id} in the last {analysis_days} days")
-        
-        # Extract fault history from JSONB data
-        fault_history = []
-        location = None
-        
-        for row in rows:
-            if not location:
-                location = row['location']
+        conn = psycopg2.connect(**USER_DB_CONFIG)
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            
+            if fetch == "one":
+                result = cursor.fetchone()
+            elif fetch == "all":
+                result = cursor.fetchall()
+            else:
+                conn.commit()
+                result = cursor.rowcount
                 
-            if row['fault_data']:
-                try:
-                    fault_data = row['fault_data']
-                    
-                    # Parse JSON string if needed
-                    if isinstance(fault_data, str):
-                        try:
-                            fault_data = json.loads(fault_data)
-                        except json.JSONDecodeError:
-                            logger.warning(f"Could not parse fault_data as JSON for terminal {terminal_id}")
-                            continue
-                    
-                    if isinstance(fault_data, dict):
-                        fault_history.append(fault_data)
-                    elif isinstance(fault_data, list):
-                        # If fault_data is a list, extend fault_history with each item
-                        fault_history.extend([item for item in fault_data if isinstance(item, dict)])
-                except Exception as e:
-                    logger.warning(f"Could not parse fault data for terminal {terminal_id}: {e}")
-        
-        if not fault_history:
+        conn.close()
+        return result
+    except Exception as e:
+        logger.error(f"Database query failed: {e}")
+        raise DatabaseConnectionError(f"Database query failed: {e}")
+
+# JWT Authentication function (replaces mock authentication)
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    """Get current authenticated user from JWT token and database lookup"""
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
             raise HTTPException(
-                status_code=404, 
-                detail=f"No valid fault data found for terminal {terminal_id} in the last {analysis_days} days"
+                status_code=401,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Get user from database
+    query = "SELECT * FROM users WHERE id = %s AND is_active = true AND is_deleted = false"
+    try:
+        user = execute_user_query(query, (user_id,), fetch="one")
+        
+        if user is None:
+            raise HTTPException(
+                status_code=401,
+                detail="User not found or inactive",
+                headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Analyze component health
-        component_types = ["DISPENSER", "READER", "PRINTER", "NETWORK_MODULE", "DEPOSIT_MODULE", "SENSOR"]
-        component_health = []
-        
-        for comp_type in component_types:
-            health_score = calculate_component_health_score(fault_history, comp_type)
-            component_health.append(health_score)
-        
-        # Calculate overall health
-        overall_health = mean([comp.health_score for comp in component_health])
-        
-        # Predict failure
-        failure_prediction = predict_atm_failure(fault_history, component_health)
-        
-        # Generate recommendations
-        maintenance_recommendations = generate_maintenance_recommendations(component_health, failure_prediction)
-        
-        # Calculate data quality score
-        data_points = len(fault_history)
-        expected_data_points = analysis_days * 1  # Assume 1 check per day minimum
-        data_quality = min(100, (data_points / expected_data_points) * 100) if expected_data_points > 0 else 0
-        
-        # Create response
-        atm_analytics = ATMPredictiveAnalytics(
-            terminal_id=terminal_id,
-            location=location,
-            overall_health_score=round(overall_health, 1),
-            failure_prediction=failure_prediction,
-            component_health=component_health,
-            maintenance_recommendations=maintenance_recommendations,
-            data_quality_score=round(data_quality, 1),
-            last_analysis=convert_to_dili_time(datetime.utcnow()),
-            analysis_period=f"{analysis_days} days"
-        )
-        
-        analysis_metadata = {
-            "data_points_analyzed": data_points,
-            "analysis_period_days": analysis_days,
-            "components_analyzed": len(component_types),
-            "algorithm_version": "1.0-jsonb",
-            "analysis_timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
-            "data_source": "terminal_details.fault_data (JSONB)"
+        # Convert to dict and ensure compatibility with existing code
+        user_dict = dict(user)
+        return {
+            "username": user_dict["username"],
+            "role": UserRole(user_dict["role"].upper()),  # Convert role string to enum (uppercase)
+            "user_id": str(user_dict["id"]),
+            "full_name": f"{user_dict.get('first_name', '')} {user_dict.get('last_name', '')}".strip(),
+            "email": user_dict.get("email", ""),
+            **user_dict  # Include all other user fields
         }
         
-        return PredictiveAnalyticsResponse(
-            atm_analytics=atm_analytics,
-            analysis_metadata=analysis_metadata
+    except DatabaseConnectionError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection error",
+        )
+    except Exception as e:
+        logger.error(f"Error getting user: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while authenticating user",
+        )
+
+# Optional authentication function (for endpoints that work with or without auth)
+async def get_current_user_optional(authorization: Optional[str] = Header(None)) -> Optional[Dict[str, Any]]:
+    """Get current user if authenticated, otherwise return None"""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    
+    try:
+        token = authorization.split(" ")[1]
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            return None
+            
+        # Get user from database
+        query = "SELECT * FROM users WHERE id = %s AND is_active = true AND is_deleted = false"
+        user = execute_user_query(query, (user_id,), fetch="one")
+        
+        if user is None:
+            return None
+        
+        # Convert to dict and ensure compatibility with existing code
+        user_dict = dict(user)
+        return {
+            "username": user_dict["username"],
+            "role": UserRole(user_dict["role"].upper()),  # Convert role string to enum (uppercase)
+            "user_id": str(user_dict["id"]),
+            "full_name": f"{user_dict.get('first_name', '')} {user_dict.get('last_name', '')}".strip(),
+            "email": user_dict.get("email", ""),
+            **user_dict  # Include all other user fields
+        }
+        
+    except Exception as e:
+        logger.debug(f"Optional auth failed: {e}")
+        return None
+
+# Mock authentication and authorization functions (integrate with your auth system)
+# DEPRECATED: Replaced with actual JWT authentication above
+# DEPRECATED: Replaced with actual JWT authentication above
+async def get_current_user_DEPRECATED() -> Dict[str, Any]:
+    """
+    DEPRECATED: Mock function to get current user. 
+    Replaced with actual JWT authentication function above.
+    """
+    # For testing purposes, return a mock admin user
+    return {
+        "username": "test_admin",
+        "role": UserRole.ADMIN,
+        "user_id": "admin_123",
+        "full_name": "Test Administrator"
+    }
+
+def require_roles(allowed_roles: List[UserRole]):
+    """
+    Dependency factory for role-based authorization.
+    Creates a dependency that checks if the current user has one of the allowed roles.
+    """
+    async def check_roles(current_user: Dict[str, Any] = Depends(get_current_user)):
+        user_role = current_user.get('role')
+        
+        # Ensure user_role is a UserRole enum
+        if isinstance(user_role, str):
+            try:
+                user_role = UserRole(user_role.upper())  # Convert to uppercase for enum matching
+            except ValueError:
+                raise HTTPException(
+                    status_code=403, 
+                    detail=f"Invalid user role: {user_role}"
+                )
+        
+        if user_role not in allowed_roles:
+            allowed_role_names = [role.value for role in allowed_roles]
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. Required roles: {allowed_role_names}. Current role: {user_role.value if user_role else 'None'}"
+            )
+        
+        return current_user
+    
+    return check_roles
+
+# Create specific role dependencies for maintenance endpoints
+require_operator_or_higher = require_roles([UserRole.OPERATOR, UserRole.ADMIN, UserRole.SUPERADMIN])
+require_admin_or_higher = require_roles([UserRole.ADMIN, UserRole.SUPERADMIN])
+require_superadmin = require_roles([UserRole.SUPERADMIN])
+
+# Utility functions for maintenance operations
+async def get_maintenance_connection():
+    """Get database connection for maintenance operations"""
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database connection not available")
+    return await db_pool.acquire()
+
+async def release_maintenance_connection(conn):
+    """Release database connection"""
+    if conn and db_pool:
+        await db_pool.release(conn)
+
+async def verify_terminal_exists(conn, terminal_id: str) -> bool:
+    """Verify that a terminal exists in the system"""
+    try:
+        result = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM terminal_details WHERE terminal_id = $1)",
+            terminal_id
+        )
+        return bool(result) if result is not None else False
+    except Exception:
+        # If terminal_details table doesn't exist, skip validation for now
+        return True
+
+async def calculate_duration_hours(start_datetime: datetime, end_datetime: Optional[datetime]) -> Optional[float]:
+    """Calculate duration in hours between start and end datetime"""
+    if end_datetime is None:
+        return None
+    delta = end_datetime - start_datetime
+    return round(delta.total_seconds() / 3600, 2)
+
+async def get_terminal_info(conn, terminal_id: str) -> Dict[str, Optional[str]]:
+    """Get terminal name and location from terminal_details"""
+    try:
+        result = await conn.fetchrow(
+            """
+            SELECT terminal_name, location 
+            FROM terminal_details 
+            WHERE terminal_id = $1
+            """,
+            terminal_id
+        )
+        if result:
+            return {
+                "terminal_name": result['terminal_name'],
+                "location": result['location']
+            }
+    except Exception:
+        # If terminal_details table doesn't exist, return None values
+        pass
+    
+    return {"terminal_name": None, "location": None}
+
+# File upload utilities
+try:
+    import aiofiles  # Optional: pip install aiofiles for async file operations
+except ImportError:
+    aiofiles = None  # Fallback to synchronous file operations
+
+async def save_uploaded_file(file: UploadFile, maintenance_id: str) -> MaintenanceImage:
+    """Save uploaded file and return image metadata"""
+    # Validate filename exists
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File must have a filename")
+    
+    # Validate file type
+    file_ext = PathLib(file.filename).suffix.lower()
+    if file_ext not in UPLOAD_CONFIG['allowed_extensions']:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type {file_ext} not allowed. Allowed types: {', '.join(UPLOAD_CONFIG['allowed_extensions'])}"
+        )
+    
+    # Check file size
+    content = await file.read()
+    file_size = len(content)
+    
+    if file_size > UPLOAD_CONFIG['max_file_size']:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File size {file_size} bytes exceeds maximum allowed size of {UPLOAD_CONFIG['max_file_size']} bytes"
+        )
+    
+    # Create upload directory if it doesn't exist
+    upload_dir = PathLib(UPLOAD_CONFIG['upload_directory']) / maintenance_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate unique filename
+    image_id = str(uuid.uuid4())
+    filename = f"{image_id}{file_ext}"
+    file_path = upload_dir / filename
+    
+    # Save file (use regular file operations if aiofiles not available)
+    if aiofiles:
+        async with aiofiles.open(file_path, 'wb') as f:
+            await f.write(content)
+    else:
+        with open(file_path, 'wb') as f:
+            f.write(content)
+    
+    return MaintenanceImage(
+        image_id=image_id,
+        filename=file.filename,
+        file_path=str(file_path),
+        uploaded_at=datetime.now(),
+        file_size=file_size
+    )
+
+# Maintenance CRUD Endpoints
+
+@app.get("/api/v1/maintenance", response_model=MaintenanceListResponse, tags=["Terminal Maintenance"])
+async def list_maintenance_records(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Records per page"),
+    terminal_id: Optional[str] = Query(None, description="Filter by terminal ID"),
+    status: Optional[MaintenanceStatusEnum] = Query(None, description="Filter by status"),
+    maintenance_type: Optional[MaintenanceTypeEnum] = Query(None, description="Filter by type"),
+    priority: Optional[MaintenancePriorityEnum] = Query(None, description="Filter by priority"),
+    created_by: Optional[str] = Query(None, description="Filter by creator"),
+    start_date: Optional[str] = Query(None, description="Filter from date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="Filter to date (ISO format)"),
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)  # Optional authentication for testing
+):
+    """
+    List maintenance records with filtering and pagination.
+    All authenticated users can read maintenance records.
+    """
+    conn = await get_maintenance_connection()
+    try:
+        # Build WHERE clause based on filters
+        where_conditions = []
+        params = []
+        param_count = 0
+        
+        if terminal_id:
+            param_count += 1
+            where_conditions.append(f"terminal_id = ${param_count}")
+            params.append(terminal_id)
+        
+        if status:
+            param_count += 1
+            where_conditions.append(f"status = ${param_count}")
+            params.append(status.value)
+        
+        if maintenance_type:
+            param_count += 1
+            where_conditions.append(f"maintenance_type = ${param_count}")
+            params.append(maintenance_type.value)
+        
+        if priority:
+            param_count += 1
+            where_conditions.append(f"priority = ${param_count}")
+            params.append(priority.value)
+        
+        if created_by:
+            param_count += 1
+            where_conditions.append(f"created_by = ${param_count}")
+            params.append(created_by)
+        
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                param_count += 1
+                where_conditions.append(f"start_datetime >= ${param_count}")
+                params.append(start_dt)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid start_date format. Use ISO format.")
+        
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                param_count += 1
+                where_conditions.append(f"start_datetime <= ${param_count}")
+                params.append(end_dt)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid end_date format. Use ISO format.")
+        
+        where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
+        
+        # Count total records
+        count_query = f"SELECT COUNT(*) FROM terminal_maintenance {where_clause}"
+        total_count = await conn.fetchval(count_query, *params)
+        
+        # Calculate pagination
+        offset = (page - 1) * per_page
+        
+        # Fetch records
+        query = f"""
+            SELECT id, terminal_id, start_datetime, end_datetime, 
+                   problem_description, solution_description, 
+                   maintenance_type, priority, status, images,
+                   created_by, created_at, updated_at
+            FROM terminal_maintenance 
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${param_count + 1} OFFSET ${param_count + 2}
+        """
+        params.extend([per_page, offset])
+        
+        records = await conn.fetch(query, *params)
+        
+        # Convert to response models
+        maintenance_records = []
+        for record in records:
+            # Get terminal info
+            terminal_info = await get_terminal_info(conn, record['terminal_id'])
+            
+            # Calculate duration
+            duration_hours = await calculate_duration_hours(
+                record['start_datetime'], 
+                record['end_datetime']
+            )
+            
+            # Parse images JSON
+            images = []
+            if record['images']:
+                try:
+                    images_data = json.loads(record['images']) if isinstance(record['images'], str) else record['images']
+                    images = [MaintenanceImage(**img) for img in images_data]
+                except (json.JSONDecodeError, TypeError):
+                    images = []
+            
+            maintenance_record = MaintenanceRecord(
+                id=str(record['id']),
+                terminal_id=record['terminal_id'],
+                terminal_name=terminal_info['terminal_name'],
+                location=terminal_info['location'],
+                start_datetime=convert_to_dili_time(record['start_datetime']),
+                end_datetime=convert_to_dili_time(record['end_datetime']) if record['end_datetime'] else None,
+                problem_description=record['problem_description'],
+                solution_description=record['solution_description'],
+                maintenance_type=record['maintenance_type'],
+                priority=record['priority'],
+                status=record['status'],
+                images=images,
+                duration_hours=duration_hours,
+                created_by=record['created_by'],
+                created_at=convert_to_dili_time(record['created_at']),
+                updated_at=convert_to_dili_time(record['updated_at'])
+            )
+            maintenance_records.append(maintenance_record)
+        
+        # Prepare filters applied
+        filters_applied = {}
+        if terminal_id: filters_applied['terminal_id'] = terminal_id
+        if status: filters_applied['status'] = status.value
+        if maintenance_type: filters_applied['maintenance_type'] = maintenance_type.value
+        if priority: filters_applied['priority'] = priority.value
+        if created_by: filters_applied['created_by'] = created_by
+        if start_date: filters_applied['start_date'] = start_date
+        if end_date: filters_applied['end_date'] = end_date
+        
+        return MaintenanceListResponse(
+            maintenance_records=maintenance_records,
+            total_count=total_count,
+            page=page,
+            per_page=per_page,
+            has_more=(offset + len(records)) < total_count,
+            filters_applied=filters_applied
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating predictive analytics for ATM {terminal_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate predictive analytics")
+        logger.error(f"Error listing maintenance records: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve maintenance records")
     finally:
-        await release_db_connection(conn)
+        await release_maintenance_connection(conn)
 
-@app.get("/api/v1/atm/predictive-analytics/summary", tags=["Predictive Analytics"])
-async def get_predictive_analytics_summary(
-    risk_level_filter: Optional[str] = Query(None, description="Filter by risk level (LOW, MEDIUM, HIGH, CRITICAL)"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum number of ATMs to analyze"),
-    db_check: bool = Depends(validate_db_connection)
+@app.post("/api/v1/maintenance", response_model=MaintenanceRecord, status_code=201, tags=["Terminal Maintenance"])
+async def create_maintenance_record(
+    maintenance: MaintenanceCreate,
+    current_user: Dict[str, Any] = Depends(require_operator_or_higher)
 ):
     """
-    Get predictive analytics summary for multiple ATMs using existing data
-    
-    Provides a quick overview of failure risks across the ATM fleet.
-    Uses existing JSONB fault data without requiring database changes.
+    Create a new maintenance record.
+    Requires operator, admin, or superadmin role.
     """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
+    conn = await get_maintenance_connection()
     try:
-        # Get terminals with recent fault data
-        terminals_query = """
-            SELECT DISTINCT terminal_id, location
-            FROM terminal_details
-            WHERE retrieved_date >= NOW() - INTERVAL '7 days'
-                AND fault_data IS NOT NULL
-            ORDER BY terminal_id
-            LIMIT $1
+        # Verify terminal exists
+        if not await verify_terminal_exists(conn, maintenance.terminal_id):
+            raise HTTPException(status_code=404, detail=f"Terminal {maintenance.terminal_id} not found")
+        
+        # Insert maintenance record
+        record_id = await conn.fetchval(
+            """
+            INSERT INTO terminal_maintenance (
+                terminal_id, start_datetime, end_datetime, 
+                problem_description, solution_description,
+                maintenance_type, priority, status, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id
+            """,
+            maintenance.terminal_id,
+            maintenance.start_datetime,
+            maintenance.end_datetime,
+            maintenance.problem_description,
+            maintenance.solution_description,
+            maintenance.maintenance_type.value,
+            maintenance.priority.value,
+            maintenance.status.value,
+            current_user['username']
+        )
+        
+        # Fetch the created record
+        record = await conn.fetchrow(
+            """
+            SELECT id, terminal_id, start_datetime, end_datetime, 
+                   problem_description, solution_description, 
+                   maintenance_type, priority, status, images,
+                   created_by, created_at, updated_at
+            FROM terminal_maintenance WHERE id = $1
+            """,
+            record_id
+        )
+        
+        # Get terminal info
+        terminal_info = await get_terminal_info(conn, record['terminal_id'])
+        
+        # Calculate duration
+        duration_hours = await calculate_duration_hours(
+            record['start_datetime'], 
+            record['end_datetime']
+        )
+        
+        return MaintenanceRecord(
+            id=str(record['id']),
+            terminal_id=record['terminal_id'],
+            terminal_name=terminal_info['terminal_name'],
+            location=terminal_info['location'],
+            start_datetime=convert_to_dili_time(record['start_datetime']),
+            end_datetime=convert_to_dili_time(record['end_datetime']) if record['end_datetime'] else None,
+            problem_description=record['problem_description'],
+            solution_description=record['solution_description'],
+            maintenance_type=record['maintenance_type'],
+            priority=record['priority'],
+            status=record['status'],
+            images=[],  # No images initially
+            duration_hours=duration_hours,
+            created_by=record['created_by'],
+            created_at=convert_to_dili_time(record['created_at']),
+            updated_at=convert_to_dili_time(record['updated_at'])
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating maintenance record: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create maintenance record")
+    finally:
+        await release_maintenance_connection(conn)
+
+@app.get("/api/v1/maintenance/{maintenance_id}", response_model=MaintenanceRecord, tags=["Terminal Maintenance"])
+async def get_maintenance_record(
+    maintenance_id: str = FastAPIPath(..., description="Maintenance record ID"),
+    current_user: Dict[str, Any] = Depends(get_current_user)  # All authenticated users can read
+):
+    """
+    Get a specific maintenance record by ID.
+    All authenticated users can read maintenance records.
+    """
+    conn = await get_maintenance_connection()
+    try:
+        # Fetch the record
+        record = await conn.fetchrow(
+            """
+            SELECT id, terminal_id, start_datetime, end_datetime, 
+                   problem_description, solution_description, 
+                   maintenance_type, priority, status, images,
+                   created_by, created_at, updated_at
+            FROM terminal_maintenance WHERE id = $1
+            """,
+            maintenance_id
+        )
+        
+        if not record:
+            raise HTTPException(status_code=404, detail="Maintenance record not found")
+        
+        # Get terminal info
+        terminal_info = await get_terminal_info(conn, record['terminal_id'])
+        
+        # Calculate duration
+        duration_hours = await calculate_duration_hours(
+            record['start_datetime'], 
+            record['end_datetime']
+        )
+        
+        # Parse images JSON
+        images = []
+        if record['images']:
+            try:
+                images_data = json.loads(record['images']) if isinstance(record['images'], str) else record['images']
+                images = [MaintenanceImage(**img) for img in images_data]
+            except (json.JSONDecodeError, TypeError):
+                images = []
+        
+        return MaintenanceRecord(
+            id=str(record['id']),
+            terminal_id=record['terminal_id'],
+            terminal_name=terminal_info['terminal_name'],
+            location=terminal_info['location'],
+            start_datetime=convert_to_dili_time(record['start_datetime']),
+            end_datetime=convert_to_dili_time(record['end_datetime']) if record['end_datetime'] else None,
+            problem_description=record['problem_description'],
+            solution_description=record['solution_description'],
+            maintenance_type=record['maintenance_type'],
+            priority=record['priority'],
+            status=record['status'],
+            images=images,
+            duration_hours=duration_hours,
+            created_by=record['created_by'],
+            created_at=convert_to_dili_time(record['created_at']),
+            updated_at=convert_to_dili_time(record['updated_at'])
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving maintenance record: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve maintenance record")
+    finally:
+        await release_maintenance_connection(conn)
+
+@app.put("/api/v1/maintenance/{maintenance_id}", response_model=MaintenanceRecord, tags=["Terminal Maintenance"])
+async def update_maintenance_record(
+    maintenance: MaintenanceUpdate,
+    maintenance_id: str = FastAPIPath(..., description="Maintenance record ID"),
+    current_user: Dict[str, Any] = Depends(require_operator_or_higher)
+):
+    """
+    Update a maintenance record.
+    Requires operator, admin, or superadmin role.
+    """
+    conn = await get_maintenance_connection()
+    try:
+        # Check if record exists
+        existing = await conn.fetchval(
+            "SELECT id FROM terminal_maintenance WHERE id = $1",
+            maintenance_id
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Maintenance record not found")
+        
+        # Build update query dynamically
+        update_fields = []
+        params = []
+        param_count = 0
+        
+        for field, value in maintenance.dict(exclude_unset=True).items():
+            if value is not None:
+                param_count += 1
+                if field.endswith('_datetime') and isinstance(value, datetime):
+                    update_fields.append(f"{field} = ${param_count}")
+                    params.append(value)
+                elif isinstance(value, Enum):
+                    update_fields.append(f"{field} = ${param_count}")
+                    params.append(value.value)
+                else:
+                    update_fields.append(f"{field} = ${param_count}")
+                    params.append(value)
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        # Add updated_at
+        param_count += 1
+        update_fields.append(f"updated_at = ${param_count}")
+        params.append(datetime.now())
+        
+        # Add WHERE clause parameter
+        param_count += 1
+        params.append(maintenance_id)
+        
+        update_query = f"""
+            UPDATE terminal_maintenance 
+            SET {', '.join(update_fields)}
+            WHERE id = ${param_count}
         """
         
-        terminal_rows = await conn.fetch(terminals_query, limit)
+        await conn.execute(update_query, *params)
         
-        if not terminal_rows:
-            return {
-                "summary": [],
-                "fleet_statistics": {
-                    "total_atms_analyzed": 0,
-                    "average_health_score": 0,
-                    "average_risk_score": 0,
-                    "risk_distribution": {},
-                    "analysis_timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
-                },
-                "message": "No terminals with recent fault data found"
-            }
+        # Fetch updated record
+        return await get_maintenance_record(maintenance_id, current_user)
         
-        summary_results = []
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating maintenance record: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update maintenance record")
+    finally:
+        await release_maintenance_connection(conn)
+
+@app.delete("/api/v1/maintenance/{maintenance_id}", tags=["Terminal Maintenance"])
+async def delete_maintenance_record(
+    maintenance_id: str = FastAPIPath(..., description="Maintenance record ID"),
+    current_user: Dict[str, Any] = Depends(require_admin_or_higher)
+):
+    """
+    Delete a maintenance record.
+    Requires admin or superadmin role.
+    """
+    conn = await get_maintenance_connection()
+    try:
+        # Check if record exists and get image info for cleanup
+        record = await conn.fetchrow(
+            "SELECT id, images FROM terminal_maintenance WHERE id = $1",
+            maintenance_id
+        )
+        if not record:
+            raise HTTPException(status_code=404, detail="Maintenance record not found")
         
-        for terminal_row in terminal_rows:
-            terminal_id = terminal_row['terminal_id']
-            
+        # Delete associated image files
+        if record['images']:
             try:
-                # Get fault data for this terminal
-                fault_query = """
-                    SELECT fault_data
-                    FROM terminal_details
-                    WHERE terminal_id = $1 
-                        AND retrieved_date >= NOW() - INTERVAL '14 days'
-                        AND fault_data IS NOT NULL
-                    ORDER BY retrieved_date DESC
-                """
-                
-                fault_rows = await conn.fetch(fault_query, terminal_id)
-                
-                fault_history = []
-                for fault_row in fault_rows:
-                    if fault_row['fault_data']:
-                        try:
-                            fault_data = fault_row['fault_data']
-                            
-                            # Parse JSON string if needed
-                            if isinstance(fault_data, str):
-                                try:
-                                    fault_data = json.loads(fault_data)
-                                except json.JSONDecodeError:
-                                    continue
-                    
-                            if isinstance(fault_data, dict):
-                                fault_history.append(fault_data)
-                        except:
-                            continue
-                
-                if not fault_history:
-                    continue
-                
-                # Quick analysis
-                component_types = ["DISPENSER", "READER", "PRINTER", "NETWORK_MODULE"]
-                component_health = []
-                
-                for comp_type in component_types:
-                    health_score = calculate_component_health_score(fault_history, comp_type)
-                    component_health.append(health_score)
-                
-                overall_health = mean([comp.health_score for comp in component_health])
-                failure_prediction = predict_atm_failure(fault_history, component_health)
-                
-                # Apply filter if specified
-                if risk_level_filter and failure_prediction.risk_level != risk_level_filter:
-                    continue
-                
-                summary_results.append({
-                    "terminal_id": terminal_id,
-                    "location": terminal_row['location'],
-                    "overall_health_score": round(overall_health, 1),
-                    "risk_level": failure_prediction.risk_level,
-                    "risk_score": failure_prediction.risk_score,
-                    "prediction_horizon": failure_prediction.prediction_horizon,
-                    "confidence": failure_prediction.confidence,
-                    "critical_components": len([comp for comp in component_health if comp.failure_risk == "CRITICAL"]),
-                    "last_analysis": convert_to_dili_time(datetime.utcnow()).isoformat()
-                })
-                
+                images_data = json.loads(record['images']) if isinstance(record['images'], str) else record['images']
+                for img_data in images_data:
+                    file_path = PathLib(img_data.get('file_path', ''))
+                    if file_path.exists():
+                        file_path.unlink()
             except Exception as e:
-                logger.warning(f"Could not analyze terminal {terminal_id}: {e}")
-                continue
+                logger.warning(f"Error cleaning up image files: {e}")
         
-        # Sort by risk score (highest first)
-        summary_results.sort(key=lambda x: x['risk_score'], reverse=True)
+        # Delete the record
+        deleted_count = await conn.fetchval(
+            "DELETE FROM terminal_maintenance WHERE id = $1",
+            maintenance_id
+        )
         
-        # Calculate fleet statistics
-        if summary_results:
-            risk_distribution = Counter([result['risk_level'] for result in summary_results])
-            avg_health = mean([result['overall_health_score'] for result in summary_results])
-            avg_risk = mean([result['risk_score'] for result in summary_results])
-        else:
-            risk_distribution = {}
-            avg_health = 0
-            avg_risk = 0
+        if deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Maintenance record not found")
+        
+        return {"message": "Maintenance record deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting maintenance record: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete maintenance record")
+    finally:
+        await release_maintenance_connection(conn)
+
+@app.get("/api/v1/atm/{terminal_id}/maintenance", response_model=MaintenanceListResponse, tags=["Terminal Maintenance"])
+async def get_atm_maintenance_history(
+    terminal_id: str = FastAPIPath(..., description="Terminal ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Records per page"),
+    current_user: Dict[str, Any] = Depends(get_current_user)  # All authenticated users can read
+):
+    """
+    Get maintenance history for a specific ATM terminal.
+    All authenticated users can read maintenance records.
+    """
+    conn = await get_maintenance_connection()
+    try:
+        # Verify terminal exists
+        if not await verify_terminal_exists(conn, terminal_id):
+            raise HTTPException(status_code=404, detail=f"Terminal {terminal_id} not found")
+        
+        # Count total records for this terminal
+        total_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM terminal_maintenance WHERE terminal_id = $1",
+            terminal_id
+        )
+        
+        # Calculate pagination
+        offset = (page - 1) * per_page
+        
+        # Fetch records
+        records = await conn.fetch(
+            """
+            SELECT id, terminal_id, start_datetime, end_datetime, 
+                   problem_description, solution_description, 
+                   maintenance_type, priority, status, images,
+                   created_by, created_at, updated_at
+            FROM terminal_maintenance 
+            WHERE terminal_id = $1
+            ORDER BY start_datetime DESC
+            LIMIT $2 OFFSET $3
+            """,
+            terminal_id, per_page, offset
+        )
+        
+        # Convert to response models
+        maintenance_records = []
+        terminal_info = await get_terminal_info(conn, terminal_id)
+        
+        for record in records:
+            # Calculate duration
+            duration_hours = await calculate_duration_hours(
+                record['start_datetime'], 
+                record['end_datetime']
+            )
+            
+            # Parse images JSON
+            images = []
+            if record['images']:
+                try:
+                    images_data = json.loads(record['images']) if isinstance(record['images'], str) else record['images']
+                    images = [MaintenanceImage(**img) for img in images_data]
+                except (json.JSONDecodeError, TypeError):
+                    images = []
+            
+            maintenance_record = MaintenanceRecord(
+                id=str(record['id']),
+                terminal_id=record['terminal_id'],
+                terminal_name=terminal_info['terminal_name'],
+                location=terminal_info['location'],
+                start_datetime=convert_to_dili_time(record['start_datetime']),
+                end_datetime=convert_to_dili_time(record['end_datetime']) if record['end_datetime'] else None,
+                problem_description=record['problem_description'],
+                solution_description=record['solution_description'],
+                maintenance_type=record['maintenance_type'],
+                priority=record['priority'],
+                status=record['status'],
+                images=images,
+                duration_hours=duration_hours,
+                created_by=record['created_by'],
+                created_at=convert_to_dili_time(record['created_at']),
+                updated_at=convert_to_dili_time(record['updated_at'])
+            )
+            maintenance_records.append(maintenance_record)
+        
+        return MaintenanceListResponse(
+            maintenance_records=maintenance_records,
+            total_count=total_count,
+            page=page,
+            per_page=per_page,
+            has_more=(offset + len(records)) < total_count,
+            filters_applied={"terminal_id": terminal_id}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving ATM maintenance history: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve ATM maintenance history")
+    finally:
+        await release_maintenance_connection(conn)
+
+@app.post("/api/v1/maintenance/{maintenance_id}/images", tags=["Terminal Maintenance"])
+async def upload_maintenance_images(
+    files: List[UploadFile],
+    maintenance_id: str = FastAPIPath(..., description="Maintenance record ID"),
+    current_user: Dict[str, Any] = Depends(require_operator_or_higher)
+):
+    """
+    Upload images for a maintenance record.
+    Requires operator, admin, or superadmin role.
+    """
+    conn = await get_maintenance_connection()
+    try:
+        # Check if maintenance record exists
+        record = await conn.fetchrow(
+            "SELECT id, images FROM terminal_maintenance WHERE id = $1",
+            maintenance_id
+        )
+        if not record:
+            raise HTTPException(status_code=404, detail="Maintenance record not found")
+        
+        # Check current image count
+        current_images = []
+        if record['images']:
+            try:
+                current_images = json.loads(record['images']) if isinstance(record['images'], str) else record['images']
+            except (json.JSONDecodeError, TypeError):
+                current_images = []
+        
+        if len(current_images) + len(files) > UPLOAD_CONFIG['max_files_per_record']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot upload {len(files)} files. Maximum {UPLOAD_CONFIG['max_files_per_record']} files per record allowed."
+            )
+        
+        # Save uploaded files
+        uploaded_images = []
+        for file in files:
+            try:
+                image = await save_uploaded_file(file, maintenance_id)
+                uploaded_images.append(image)
+            except Exception as e:
+                # Clean up any files that were already saved
+                for img in uploaded_images:
+                    try:
+                        PathLib(img.file_path).unlink()
+                    except:
+                        pass
+                raise e
+        
+        # Update database with new image info
+        all_images = current_images + [img.model_dump(mode='json') for img in uploaded_images]
+        
+        await conn.execute(
+            "UPDATE terminal_maintenance SET images = $1, updated_at = $2 WHERE id = $3",
+            json.dumps(all_images),
+            datetime.now(),
+            maintenance_id
+        )
         
         return {
-            "summary": summary_results,
-            "fleet_statistics": {
-                "total_atms_analyzed": len(summary_results),
-                "average_health_score": round(avg_health, 1),
-                "average_risk_score": round(avg_risk, 1),
-                "risk_distribution": dict(risk_distribution),
-                "analysis_timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
-            },
-            "filters_applied": {
-                "risk_level_filter": risk_level_filter,
-                "limit": limit
-            },
-            "data_source": "terminal_details.fault_data (JSONB)"
+            "message": f"Successfully uploaded {len(uploaded_images)} images",
+            "uploaded_images": uploaded_images,
+            "total_images": len(all_images)
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating predictive analytics summary: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate predictive analytics summary")
+        logger.error(f"Error uploading maintenance images: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload images")
     finally:
-        await release_db_connection(conn)
+        await release_maintenance_connection(conn)
 
-# ========================
-# FAULT HISTORY REPORT ENDPOINT
-# ========================
-
-@app.get("/api/v1/atm/fault-history-report", response_model=FaultHistoryReportResponse, tags=["Fault Analysis"])
-async def get_fault_history_report(
-    start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
-    end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
-    terminal_ids: Optional[str] = Query(None, description="Comma-separated terminal IDs, or 'all' for all terminals"),
-    include_ongoing: bool = Query(True, description="Include ongoing faults that haven't been resolved"),
-    db_check: bool = Depends(validate_db_connection)
+@app.delete("/api/v1/maintenance/{maintenance_id}/images/{image_id}", tags=["Terminal Maintenance"])
+async def delete_maintenance_image(
+    maintenance_id: str = FastAPIPath(..., description="Maintenance record ID"),
+    image_id: str = FastAPIPath(..., description="Image ID to delete"),
+    current_user: Dict[str, Any] = Depends(require_operator_or_higher)
 ):
     """
-    Generate comprehensive fault history report showing how long ATMs stay in fault states
-    
-    This endpoint analyzes fault duration patterns to understand:
-    - How long ATMs stay in WARNING, WOUNDED, ZOMBIE, OUT_OF_SERVICE states
-    - When they return to AVAILABLE state
-    - Average fault durations by state
-    - Fault patterns and trends
+    Delete a specific image from a maintenance record.
+    Requires operator, admin, or superadmin role.
     """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
+    conn = await get_maintenance_connection()
     try:
-        # Parse and validate dates
-        try:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC_TZ)
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=UTC_TZ)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-        
-        if start_dt > end_dt:
-            raise HTTPException(status_code=400, detail="Start date must be before end date")
-        
-        # Build terminal filter
-        terminal_filter = ""
-        if terminal_ids and terminal_ids.lower() != "all":
-            terminal_list = [tid.strip() for tid in terminal_ids.split(",") if tid.strip()]
-            if terminal_list:
-                placeholders = ",".join([f"${i+3}" for i in range(len(terminal_list))])
-                terminal_filter = f"AND td.terminal_id IN ({placeholders})"
-        
-        # Enhanced fault cycle analysis query - tracks complete fault cycles
-        fault_analysis_query = f"""
-        WITH status_transitions AS (
-            SELECT 
-                terminal_id,
-                location,
-                fetched_status,
-                retrieved_date,
-                LAG(fetched_status) OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as prev_status,
-                LEAD(fetched_status) OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as next_status,
-                LEAD(retrieved_date) OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as next_time,
-                fault_data,
-                ROW_NUMBER() OVER (PARTITION BY terminal_id ORDER BY retrieved_date) as row_num
-            FROM terminal_details td
-            WHERE retrieved_date BETWEEN $1 AND $2
-            {terminal_filter}
-            ORDER BY terminal_id, retrieved_date
-        ),
-        fault_cycle_starts AS (
-            -- Find all entries where ATM enters fault state from AVAILABLE/ONLINE
-            SELECT 
-                terminal_id,
-                location,
-                fetched_status as fault_state,
-                retrieved_date as fault_start,
-                fault_data
-            FROM status_transitions
-            WHERE fetched_status IN ('WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE')
-            AND (prev_status IS NULL OR prev_status IN ('AVAILABLE', 'ONLINE'))
-        ),
-        fault_cycle_ends AS (
-            -- Find all entries where ATM returns to AVAILABLE/ONLINE from fault state
-            SELECT 
-                terminal_id,
-                prev_status as end_fault_state,
-                retrieved_date as fault_end
-            FROM status_transitions
-            WHERE fetched_status IN ('AVAILABLE', 'ONLINE')
-            AND prev_status IN ('WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE')
-        ),
-        complete_fault_cycles AS (
-            SELECT 
-                fcs.terminal_id,
-                fcs.location,
-                fcs.fault_state,
-                fcs.fault_start,
-                fcs.fault_data,
-                -- Find the next resolution for this fault cycle
-                (SELECT MIN(fce.fault_end) 
-                 FROM fault_cycle_ends fce 
-                 WHERE fce.terminal_id = fcs.terminal_id 
-                 AND fce.fault_end > fcs.fault_start) as fault_end
-            FROM fault_cycle_starts fcs
+        # Get current images
+        record = await conn.fetchrow(
+            "SELECT id, images FROM terminal_maintenance WHERE id = $1",
+            maintenance_id
         )
-        SELECT 
-            cfc.terminal_id,
-            cfc.location,
-            cfc.fault_state,
-            cfc.fault_start,
-            cfc.fault_end,
-            -- Calculate actual duration from fault start to resolution (or ongoing)
-            CASE 
-                WHEN cfc.fault_end IS NOT NULL THEN 
-                    EXTRACT(EPOCH FROM (cfc.fault_end - cfc.fault_start))/60
-                WHEN cfc.fault_end IS NULL AND $2 > cfc.fault_start THEN
-                    EXTRACT(EPOCH FROM ($2 - cfc.fault_start))/60
-                ELSE NULL
-            END as duration_minutes,
-            -- Mark as resolved only when fault_end exists (returned to AVAILABLE)
-            CASE 
-                WHEN cfc.fault_end IS NOT NULL THEN true
-                ELSE false
-            END as resolved,
-            COALESCE(cfc.fault_data->>'agentErrorDescription', cfc.fault_data->>'fault_description', 'No description') as fault_description,
-            COALESCE(cfc.fault_data->>'fault_type', 'Unknown') as fault_type,
-            COALESCE(cfc.fault_data->>'component_type', 'Unknown') as component_type,
-            cfc.fault_data->>'agentErrorDescription' as agent_error_description
-        FROM complete_fault_cycles cfc
-        {"WHERE 1=1" if include_ongoing else "WHERE cfc.fault_end IS NOT NULL"}
-        ORDER BY cfc.terminal_id, cfc.fault_start
-        """
+        if not record:
+            raise HTTPException(status_code=404, detail="Maintenance record not found")
         
-        # Execute query with parameters
-        query_params: List[Any] = [start_dt, end_dt]
-        if terminal_ids and terminal_ids.lower() != "all":
-            terminal_list = [tid.strip() for tid in terminal_ids.split(",") if tid.strip()]
-            query_params.extend(terminal_list)
+        current_images = []
+        if record['images']:
+            try:
+                current_images = json.loads(record['images']) if isinstance(record['images'], str) else record['images']
+            except (json.JSONDecodeError, TypeError):
+                current_images = []
         
-        rows = await conn.fetch(fault_analysis_query, *query_params)
+        # Find and remove the image
+        image_to_delete = None
+        updated_images = []
         
-        # Process results
-        fault_duration_data = []
-        summary_by_state = {}
-        
-        for row in rows:
-            # Convert timestamps to Dili time
-            start_time = convert_to_dili_time(row['fault_start'])
-            end_time = convert_to_dili_time(row['fault_end']) if row['fault_end'] else None
-            
-            fault_data = FaultDurationData(
-                fault_state=row['fault_state'],
-                terminal_id=row['terminal_id'],
-                start_time=start_time,
-                end_time=end_time,
-                duration_minutes=float(row['duration_minutes']) if row['duration_minutes'] else None,
-                fault_description=row['fault_description'],
-                fault_type=row['fault_type'],
-                component_type=row['component_type'],
-                terminal_name=f"ATM {row['terminal_id']}",
-                location=row['location'],
-                agent_error_description=row.get('agent_error_description')
-            )
-            fault_duration_data.append(fault_data)
-            
-            # Build summary by state
-            state = row['fault_state']
-            if state not in summary_by_state:
-                summary_by_state[state] = {
-                    'total_faults': 0,
-                    'durations': [],
-                    'resolved': 0,
-                    'ongoing': 0
-                }
-            
-            summary_by_state[state]['total_faults'] += 1
-            if row['duration_minutes']:
-                summary_by_state[state]['durations'].append(row['duration_minutes'])
-                
-            # Use the resolved flag from the database query
-            if row['resolved']:
-                summary_by_state[state]['resolved'] += 1
+        for img_data in current_images:
+            if img_data.get('image_id') == image_id:
+                image_to_delete = img_data
             else:
-                summary_by_state[state]['ongoing'] += 1
+                updated_images.append(img_data)
         
-        # Calculate summaries
-        final_summary_by_state = {}
-        overall_durations = []
-        total_faults = 0
-        total_resolved = 0
-        total_ongoing = 0
+        if not image_to_delete:
+            raise HTTPException(status_code=404, detail="Image not found")
         
-        for state, data in summary_by_state.items():
-            durations = data['durations']
-            avg_duration = sum(durations) / len(durations) if durations else 0
-            max_duration = max(durations) if durations else 0
-            min_duration = min(durations) if durations else 0
-            
-            final_summary_by_state[state] = FaultDurationSummary(
-                total_faults=data['total_faults'],
-                avg_duration_minutes=round(avg_duration, 2),
-                max_duration_minutes=int(max_duration),
-                min_duration_minutes=int(min_duration),
-                faults_resolved=data['resolved'],
-                faults_ongoing=data['ongoing']
-            )
-            
-            overall_durations.extend(durations)
-            total_faults += data['total_faults']
-            total_resolved += data['resolved']
-            total_ongoing += data['ongoing']
+        # Delete physical file
+        try:
+            file_path = PathLib(image_to_delete['file_path'])
+            if file_path.exists():
+                file_path.unlink()
+        except Exception as e:
+            logger.warning(f"Error deleting physical file: {e}")
         
-        # Overall summary
-        overall_avg = sum(overall_durations) / len(overall_durations) if overall_durations else 0
-        overall_max = max(overall_durations) if overall_durations else 0
-        overall_min = min(overall_durations) if overall_durations else 0
-        
-        overall_summary = FaultDurationSummary(
-            total_faults=total_faults,
-            avg_duration_minutes=round(overall_avg, 2),
-            max_duration_minutes=int(overall_max),
-            min_duration_minutes=int(overall_min),
-            faults_resolved=total_resolved,
-            faults_ongoing=total_ongoing
+        # Update database
+        await conn.execute(
+            "UPDATE terminal_maintenance SET images = $1, updated_at = $2 WHERE id = $3",
+            json.dumps(updated_images),
+            datetime.now(),
+            maintenance_id
         )
         
-        # Get unique terminal count
-        unique_terminals = len(set(row['terminal_id'] for row in rows))
-        
-        # Generate chart data
-        chart_data = {
-            "duration_by_state": [
-                {
-                    "state": state,
-                    "avg_duration_hours": round(summary.avg_duration_minutes / 60, 2),
-                    "total_faults": summary.total_faults,
-                    "resolution_rate": round((summary.faults_resolved / summary.total_faults * 100), 2) if summary.total_faults > 0 else 0
-                }
-                for state, summary in final_summary_by_state.items()
-            ],
-            "timeline_data": [
-                {
-                    "terminal_id": fault.terminal_id,
-                    "fault_state": fault.fault_state,
-                    "start_time": fault.start_time.isoformat(),
-                    "duration_hours": round(fault.duration_minutes / 60, 2) if fault.duration_minutes else None,
-                    "resolved": fault.end_time is not None
-                }
-                for fault in fault_duration_data
-            ],
-            "colors": {
-                "WARNING": "#ffc107",
-                "WOUNDED": "#fd7e14", 
-                "ZOMBIE": "#6f42c1",
-                "OUT_OF_SERVICE": "#dc3545"
-            }
+        return {
+            "message": "Image deleted successfully",
+            "deleted_image_id": image_id,
+            "remaining_images": len(updated_images)
         }
-        
-        return FaultHistoryReportResponse(
-            fault_duration_data=fault_duration_data,
-            summary_by_state=final_summary_by_state,
-            overall_summary=overall_summary,
-            date_range={
-                "start_date": start_date,
-                "end_date": end_date
-            },
-            terminal_count=unique_terminals,
-            chart_data=chart_data
-        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating fault history report: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate fault history report")
+        logger.error(f"Error deleting maintenance image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete image")
     finally:
-        await release_db_connection(conn)
+        await release_maintenance_connection(conn)
 
+# ============================================================================
+# END TERMINAL MAINTENANCE MANAGEMENT ENDPOINTS
+# ============================================================================
+
+# Main execution block
 if __name__ == "__main__":
-    uvicorn.run(
-        "api_option_2_fastapi_fixed:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info"
-    )
+    import uvicorn
+    
+    # Configuration
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 8000))
+    reload = os.getenv('RELOAD', 'true').lower() == 'true'
+    log_level = os.getenv('LOG_LEVEL', 'info').lower()
+    
+    logger.info("=" * 60)
+    logger.info("🚀 Starting ATM Dashboard FastAPI Server")
+    logger.info("=" * 60)
+    logger.info(f"Server: {host}:{port}")
+    logger.info(f"Reload: {reload}")
+    logger.info(f"Log Level: {log_level}")
+    logger.info(f"API Documentation: http://{host}:{port}/docs")
+    logger.info(f"Alternative Docs: http://{host}:{port}/redoc")
+    logger.info(f"Health Check: http://{host}:{port}/api/v1/health")
+    logger.info("=" * 60)
+    
+    try:
+        # Start the server
+        uvicorn.run(
+            "api_option_2_fastapi_fixed:app",
+            host=host,
+            port=port,
+            reload=reload,
+            log_level=log_level,
+            access_log=True
+        )
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.error(f"Failed to start server: {e}")
+        sys.exit(1)

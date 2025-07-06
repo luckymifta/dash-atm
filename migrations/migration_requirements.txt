@@ -1,0 +1,5 @@
+# Requirements for database migration script
+# Install with: pip install -r migration_requirements.txt
+
+asyncpg>=0.29.0
+python-dotenv>=1.0.0

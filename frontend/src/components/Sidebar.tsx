@@ -17,7 +17,8 @@ import {
   TrendingUp,
   ClipboardList,
   BarChart3,
-  FolderOpen
+  FolderOpen,
+  Wrench
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,6 +52,11 @@ const menuItems: MenuItem[] = [
     name: 'ATM Information',
     href: '/atm-information',
     icon: Landmark,
+  },
+  {
+    name: 'ATM Maintenance',
+    href: '/maintenance',
+    icon: Wrench,
   },
   {
     name: 'Reports',
