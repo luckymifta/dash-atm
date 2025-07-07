@@ -43,11 +43,10 @@ export function ImageUpload({ maintenanceId, onSuccess, onCancel }: ImageUploadP
 
     fileArray.forEach((file, index) => {
       const validation = validateFile(file);
-      const fileWithPreview: FileWithPreview = {
-        ...file,
+      const fileWithPreview: FileWithPreview = Object.assign(file, {
         id: `${Date.now()}_${index}`,
         error: validation.valid ? undefined : validation.error
-      };
+      });
 
       // Create preview for images
       if (file.type.startsWith('image/')) {

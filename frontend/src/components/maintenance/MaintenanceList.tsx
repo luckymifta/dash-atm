@@ -10,7 +10,7 @@ import {
   MaintenancePriorityEnum,
   MaintenanceTypeEnum
 } from '@/services/maintenanceApi';
-import { atmApiService, ATMListItem } from '@/services/atmApi';
+import { ATMListItem } from '@/services/atmApi';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { TerminalDropdown } from '@/components/TerminalDropdown';
 import Pagination from '@/components/Pagination';
@@ -97,25 +97,16 @@ export function MaintenanceList() {
           ...(createdByFilter && { created_by: createdByFilter }),
         };
         
-        const [maintenanceResponse, terminalResponse] = await Promise.all([
-          MaintenanceApi.listMaintenanceRecords(params),
-          atmApiService.getATMList(undefined, undefined, 1000) // Fetch all terminals
-        ]);
+        // Fetch maintenance records only for now (optimize terminal fetching later)
+        const maintenanceResponse = await MaintenanceApi.listMaintenanceRecords(params);
         
-        // Create a map of terminal IDs to terminal details for quick lookup
-        const terminalMap = new Map(
-          terminalResponse.atms.map(terminal => [terminal.terminal_id, terminal])
-        );
-        
-        // Enhance maintenance records with terminal location data
-        const enhancedRecords: EnhancedMaintenanceRecord[] = maintenanceResponse.maintenance_records.map(record => {
-          const terminalDetails = terminalMap.get(record.terminal_id);
-          return {
-            ...record,
-            terminal_location: terminalDetails?.location || record.location,
-            terminal_details: terminalDetails
-          };
-        });
+        // For now, just use the maintenance records without terminal details
+        // TODO: Optimize terminal data fetching to avoid timeout issues
+        const enhancedRecords: EnhancedMaintenanceRecord[] = maintenanceResponse.maintenance_records.map(record => ({
+          ...record,
+          terminal_location: record.location || `Terminal ${record.terminal_id}`,
+          terminal_details: undefined
+        }));
         
         setRecords(enhancedRecords);
         setTotalCount(maintenanceResponse.total_count);
@@ -144,23 +135,16 @@ export function MaintenanceList() {
         ...(createdByFilter && { created_by: createdByFilter }),
       };
       
-      const [maintenanceResponse, terminalResponse] = await Promise.all([
-        MaintenanceApi.listMaintenanceRecords(params),
-        atmApiService.getATMList(undefined, undefined, 1000)
-      ]);
+      // Fetch maintenance records only for now (optimize terminal fetching later)
+      const maintenanceResponse = await MaintenanceApi.listMaintenanceRecords(params);
       
-      const terminalMap = new Map(
-        terminalResponse.atms.map(terminal => [terminal.terminal_id, terminal])
-      );
-      
-      const enhancedRecords: EnhancedMaintenanceRecord[] = maintenanceResponse.maintenance_records.map(record => {
-        const terminalDetails = terminalMap.get(record.terminal_id);
-        return {
-          ...record,
-          terminal_location: terminalDetails?.location || record.location,
-          terminal_details: terminalDetails
-        };
-      });
+      // For now, just use the maintenance records without terminal details
+      // TODO: Optimize terminal data fetching to avoid timeout issues
+      const enhancedRecords: EnhancedMaintenanceRecord[] = maintenanceResponse.maintenance_records.map(record => ({
+        ...record,
+        terminal_location: record.location || `Terminal ${record.terminal_id}`,
+        terminal_details: undefined
+      }));
       
       setRecords(enhancedRecords);
       setTotalCount(maintenanceResponse.total_count);
@@ -242,9 +226,17 @@ export function MaintenanceList() {
         <p className="text-red-600 mb-4">{error}</p>
         <button
           onClick={loadRecords}
-          className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+          disabled={loading}
+          className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
         >
-          Try Again
+          {loading ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Retrying...
+            </>
+          ) : (
+            'Try Again'
+          )}
         </button>
       </div>
     );

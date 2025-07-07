@@ -281,12 +281,19 @@ export class MaintenanceApi {
       formData.append('files', file);
     });
     
+    // Get the auth token for the Authorization header
+    const token = Cookies.get('auth_token');
+    const headers: HeadersInit = {};
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // Don't set Content-Type for FormData, let browser set it with boundary
+    
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        // Don't set Content-Type for FormData, let browser set it with boundary
-        // 'Authorization': `Bearer ${token}`,
-      },
+      headers,
       body: formData,
       signal: AbortSignal.timeout(30000), // Longer timeout for file uploads
     });
@@ -338,6 +345,11 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
  * Format file size for display
  */
 export function formatFileSize(bytes: number): string {
+  // Handle invalid inputs
+  if (typeof bytes !== 'number' || isNaN(bytes) || bytes < 0) {
+    return 'Unknown size';
+  }
+  
   if (bytes === 0) return '0 Bytes';
   
   const k = 1024;

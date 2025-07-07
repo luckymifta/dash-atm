@@ -57,6 +57,9 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
+# Uploaded files
+uploads/
+
 # API keys and secrets
 config.json
 secrets.json

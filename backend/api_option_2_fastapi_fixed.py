@@ -54,7 +54,8 @@ import jwt
 from fastapi import FastAPI, HTTPException, Query, Path as FastAPIPath, Depends, BackgroundTasks, UploadFile, File, Form, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 import uvicorn
 
@@ -122,7 +123,7 @@ DB_CONFIG = {
 
 # File upload configuration for maintenance system
 UPLOAD_CONFIG = {
-    'upload_directory': os.getenv('UPLOAD_DIRECTORY', './uploads/maintenance'),
+    'upload_directory': os.getenv('UPLOAD_DIRECTORY', '../uploads/maintenance'),
     'max_file_size': int(os.getenv('MAX_FILE_SIZE', 10 * 1024 * 1024)),  # 10MB default
     'max_files_per_record': int(os.getenv('MAX_FILES_PER_RECORD', 10)),
     'allowed_extensions': ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.txt', '.doc', '.docx']
@@ -513,6 +514,12 @@ app.add_middleware(
     allow_methods=cors_methods,
     allow_headers=["*"],
 )
+
+# Mount static files directory for image serving
+import os
+upload_directory = os.getenv('UPLOAD_DIRECTORY', '../uploads/maintenance')
+if os.path.exists(upload_directory):
+    app.mount("/uploads", StaticFiles(directory=upload_directory), name="uploads")
 
 # Global variables
 app_start_time = datetime.now()
@@ -2721,6 +2728,48 @@ async def upload_maintenance_images(
         raise HTTPException(status_code=500, detail="Failed to upload images")
     finally:
         await release_maintenance_connection(conn)
+
+@app.get("/api/v1/maintenance/images/{maintenance_id}/{image_id}", tags=["Terminal Maintenance"])
+async def get_maintenance_image(
+    maintenance_id: str = FastAPIPath(..., description="Maintenance record ID"),
+    image_id: str = FastAPIPath(..., description="Image ID")
+):
+    """
+    Serve a maintenance image file.
+    Returns the actual image file.
+    """
+    try:
+        # Construct the file path based on the upload structure
+        upload_dir = PathLib(UPLOAD_CONFIG['upload_directory']) / maintenance_id
+        
+        # Find the file with the matching image_id (could have different extensions)
+        image_file = None
+        for ext in UPLOAD_CONFIG['allowed_extensions']:
+            potential_file = upload_dir / f"{image_id}{ext}"
+            if potential_file.exists():
+                image_file = potential_file
+                break
+        
+        if not image_file:
+            raise HTTPException(status_code=404, detail="Image not found")
+        
+        # Return the file
+        return FileResponse(
+            path=str(image_file),
+            media_type=f"image/{image_file.suffix[1:]}",  # Use proper MIME type
+            headers={
+                "Content-Disposition": "inline",  # Display inline instead of attachment
+                "Access-Control-Allow-Origin": "*",  # Allow all origins for images
+                "Access-Control-Allow-Methods": "GET",
+                "Access-Control-Allow-Headers": "*"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving maintenance image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to serve image")
 
 @app.delete("/api/v1/maintenance/{maintenance_id}/images/{image_id}", tags=["Terminal Maintenance"])
 async def delete_maintenance_image(

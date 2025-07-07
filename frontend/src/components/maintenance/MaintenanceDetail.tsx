@@ -71,6 +71,8 @@ export function MaintenanceDetail({ maintenanceId, onEdit, onDelete }: Maintenan
         setLoading(true);
         setError(null);
         const data = await MaintenanceApi.getMaintenanceRecord(maintenanceId);
+        console.log('Loaded maintenance record:', data);
+        console.log('Images data:', data.images);
         setRecord(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load maintenance record');
@@ -158,7 +160,37 @@ export function MaintenanceDetail({ maintenanceId, onEdit, onDelete }: Maintenan
     document.body.removeChild(link);
   };
 
-  const getImageUrl = (image: { file_path?: string; url?: string }) => {
+  const getImageUrl = (image: { image_id?: string; file_path?: string; url?: string }) => {
+    console.log('getImageUrl called with image:', image);
+    console.log('record?.id:', record?.id);
+    
+    // Use static file mounting - much simpler and more reliable
+    if (image.image_id && record?.id) {
+      // Find the file extension from the file_path if available
+      let extension = '.png'; // default
+      if (image.file_path) {
+        const match = image.file_path.match(/\.(jpg|jpeg|png|gif|pdf|txt|doc|docx)$/i);
+        if (match) {
+          extension = match[0];
+        }
+      }
+      
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace('/api', '') || 'http://localhost:8000';
+      const url = `${baseUrl}/uploads/${record.id}/${image.image_id}${extension}`;
+      console.log('Generated static file URL:', url);
+      return url;
+    }
+    
+    // Fallback: try the API endpoint
+    if (image.image_id && record?.id) {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace('/api', '') || 'http://localhost:8000';
+      const url = `${baseUrl}/api/v1/maintenance/images/${record.id}/${image.image_id}`;
+      console.log('Generated API URL:', url);
+      return url;
+    }
+    
+    // Final fallback to direct file path or url
+    console.log('Fallback image URL:', image.file_path || image.url || '');
     return image.file_path || image.url || '';
   };
 
@@ -361,8 +393,27 @@ export function MaintenanceDetail({ maintenanceId, onEdit, onDelete }: Maintenan
                   <img
                     src={getImageUrl(image)}
                     alt={image.filename}
-                    className="w-full h-full object-cover cursor-pointer transition-transform group-hover:scale-105"
+                    className="w-full h-full cursor-pointer transition-transform group-hover:scale-105"
+                    style={{ objectFit: 'cover' }}
                     onClick={() => setSelectedImage(getImageUrl(image))}
+                    onError={(e) => {
+                      console.error('Image failed to load:', getImageUrl(image));
+                      console.error('Error event:', e);
+                      const target = e.target as HTMLImageElement;
+                      target.style.backgroundColor = '#fee2e2';
+                      target.style.color = '#dc2626';
+                      target.style.fontSize = '12px';
+                      target.style.padding = '8px';
+                      target.style.textAlign = 'center';
+                      target.style.display = 'flex';
+                      target.style.alignItems = 'center';
+                      target.style.justifyContent = 'center';
+                      target.alt = 'Failed to load image';
+                      target.innerHTML = 'Image load failed';
+                    }}
+                    onLoad={() => {
+                      console.log('Image loaded successfully:', getImageUrl(image));
+                    }}
                   />
                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity flex items-center justify-center">
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">

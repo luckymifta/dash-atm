@@ -14,7 +14,7 @@ export const API_CONFIG = {
   },
   
   // Request timeouts (in milliseconds)
-  TIMEOUT: 10000,
+  TIMEOUT: 30000, // Increased to 30 seconds
   
   // Refresh intervals (in milliseconds)
   REFRESH_INTERVAL: 30000, // 30 seconds
