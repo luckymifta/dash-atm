@@ -15,10 +15,11 @@ database_schema_analysis_*.json
 *_old.py
 *_backup.py
 
-# Test files
+# Test files (but allow important connection tests)
 test_*.py
 check_*.py
 debug_*.py
+!test_db_connection_simple.py
 
 # Shell scripts for testing
 test_*.sh
