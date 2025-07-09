@@ -1,0 +1,75 @@
+
+--- Schema for table: terminal_details ---
+Column                    Type                 Nullable   Default
+----------------------------------------------------------------------
+id                        integer              NO         nextval('terminal_details_id_seq'::regclass)
+unique_request_id         uuid                 NO         gen_random_uuid()
+terminal_id               character varying    NO         None
+location                  text                 YES        None
+issue_state_name          character varying    YES        None
+serial_number             character varying    YES        None
+retrieved_date            timestamp with time zone NO         None
+fetched_status            character varying    NO         None
+raw_terminal_data         jsonb                NO         None
+fault_data                jsonb                YES        None
+metadata                  jsonb                YES        None
+created_at                timestamp with time zone YES        CURRENT_TIMESTAMP
+updated_at                timestamp with time zone YES        CURRENT_TIMESTAMP
+
+--- Schema for table: regional_atm_counts ---
+Column                    Type                 Nullable   Default
+----------------------------------------------------------------------
+id                        integer              NO         nextval('regional_atm_counts_id_seq'::regclass)
+unique_request_id         uuid                 NO         gen_random_uuid()
+region_code               character varying    NO         None
+count_available           integer              YES        0
+count_warning             integer              YES        0
+count_zombie              integer              YES        0
+count_wounded             integer              YES        0
+count_out_of_service      integer              YES        0
+date_creation             timestamp with time zone YES        CURRENT_TIMESTAMP
+total_atms_in_region      integer              YES        0
+percentage_available      numeric              YES        0.0
+percentage_warning        numeric              YES        0.0
+percentage_zombie         numeric              YES        0.0
+percentage_wounded        numeric              YES        0.0
+percentage_out_of_service numeric              YES        0.0
+
+--- Schema for table: atm_cash_info ---
+Table 'atm_cash_info' does not exist or has no columns.
+
+--- Schema for table: regional_data ---
+Column                    Type                 Nullable   Default
+----------------------------------------------------------------------
+id                        integer              NO         nextval('regional_data_id_seq'::regclass)
+unique_request_id         uuid                 NO         gen_random_uuid()
+region_code               character varying    NO         None
+retrieval_timestamp       timestamp with time zone YES        CURRENT_TIMESTAMP
+raw_regional_data         jsonb                NO         None
+count_available           integer              YES        0
+count_warning             integer              YES        0
+count_zombie              integer              YES        0
+count_wounded             integer              YES        0
+count_out_of_service      integer              YES        0
+total_atms_in_region      integer              YES        0
+created_at                timestamp with time zone YES        CURRENT_TIMESTAMP
+updated_at                timestamp with time zone YES        CURRENT_TIMESTAMP
+
+--- Schema for table: terminal_cash_information ---
+Column                    Type                 Nullable   Default
+----------------------------------------------------------------------
+id                        integer              NO         nextval('terminal_cash_information_id_seq'::regclass)
+unique_request_id         uuid                 NO         gen_random_uuid()
+terminal_id               character varying    NO         None
+business_code             character varying    YES        None
+technical_code            character varying    YES        None
+external_id               character varying    YES        None
+retrieval_timestamp       timestamp with time zone YES        CURRENT_TIMESTAMP
+event_date                timestamp with time zone YES        None
+total_cash_amount         numeric              YES        0.00
+total_currency            character varying    YES        None
+cassettes_data            jsonb                NO         None
+raw_cash_data             jsonb                YES        None
+cassette_count            integer              YES        0
+has_low_cash_warning      boolean              YES        false
+has_cash_errors           boolean              YES        false

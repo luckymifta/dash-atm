@@ -61,13 +61,23 @@ EXPECTED_TERMINAL_IDS = [
 # Database Configuration
 def get_db_config() -> Dict[str, str]:
     """Get database configuration from environment variables"""
-    return {
+    # Check for both DB_PASSWORD and DB_PASS for compatibility
+    password = os.environ.get("DB_PASSWORD") or os.environ.get("DB_PASS", "")
+    
+    config = {
         "host": os.environ.get("DB_HOST", "localhost"),
         "port": os.environ.get("DB_PORT", "5432"),
         "database": os.environ.get("DB_NAME", "atm_monitor"),
         "user": os.environ.get("DB_USER", "postgres"),
-        "password": os.environ.get("DB_PASSWORD", "")
+        "password": password
     }
+    
+    # Log configuration (without password) for debugging
+    config_debug = {k: v for k, v in config.items() if k != "password"}
+    config_debug["password"] = "***" if password else "NOT SET"
+    print(f"Database config: {config_debug}")
+    
+    return config
 
 # Timeout Settings
 DEFAULT_TIMEOUT = 30

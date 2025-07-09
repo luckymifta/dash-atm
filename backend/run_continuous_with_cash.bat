@@ -10,6 +10,22 @@ echo ATM Data Retrieval - Continuous Operation (15-minute interval)
 echo Includes Cash Information and Database Storage
 echo ===================================================
 echo.
+
+REM Check if .env file exists
+if not exist ".env" (
+    echo ❌ ERROR: .env file not found!
+    echo.
+    echo Please run setup_windows.bat first to configure your database credentials.
+    echo Or create a .env file manually with your database settings.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo ✅ .env file found
+echo Starting ATM data retrieval...
+echo ===================================================
+echo.
 echo Starting continuous operation at %TIME% on %DATE%
 echo Press CTRL+C to stop the script
 echo.
