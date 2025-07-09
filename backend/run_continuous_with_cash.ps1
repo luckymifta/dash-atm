@@ -23,7 +23,7 @@ $logFile = "continuous_retrieval_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
 # Run the script with appropriate parameters
 try {
-    & $pythonCmd combined_atm_retrieval_script.py --continuous --interval 900 --include-cash --save-to-db --log-file $logFile
+    & $pythonCmd combined_atm_retrieval_script.py --continuous --interval 900 --log-file $logFile
 } catch {
     Write-Host "Error running script: $_" -ForegroundColor Red
     Write-Host "Check that Python is installed and in your PATH" -ForegroundColor Red

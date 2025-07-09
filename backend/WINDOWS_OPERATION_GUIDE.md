@@ -40,8 +40,10 @@ This guide explains how to run the ATM data retrieval script in continuous mode 
 If you need to customize the parameters, you can run the Python script directly:
 
 ```
-python combined_atm_retrieval_script.py --continuous --interval 900 --include-cash --save-to-db
+python combined_atm_retrieval_script.py --continuous --interval 900
 ```
+
+Note: Cash information and database saving are enabled by default. Use `--no-cash` or `--no-db` to disable them if needed.
 
 ## Configuration Parameters
 
@@ -51,8 +53,8 @@ The script supports the following command-line parameters:
 |-----------|-------------|
 | `--continuous` | Run in continuous operation mode |
 | `--interval 900` | Set the interval to 15 minutes (900 seconds) |
-| `--include-cash` or `--no-cash` | Include or exclude cash information retrieval |
-| `--save-to-db` or `--no-db` | Enable or disable saving to the database |
+| `--no-cash` | Exclude cash information retrieval (cash is included by default) |
+| `--no-db` | Disable saving to the database (database saving is enabled by default) |
 | `--output-file FILENAME` | Specify a custom output JSON filename |
 | `--verbose` | Enable verbose logging |
 | `--demo` | Run in demo mode using sample data instead of real API calls |
@@ -70,7 +72,7 @@ For long-term deployment, it's recommended to run the script as a Windows servic
    ```
 3. In the dialog that appears:
    - Set the "Path" to your Python executable (e.g., `C:\Python39\python.exe`)
-   - Set "Arguments" to `combined_atm_retrieval_script.py --continuous --interval 900 --include-cash --save-to-db`
+   - Set "Arguments" to `combined_atm_retrieval_script.py --continuous --interval 900`
    - Set "Startup directory" to your backend directory path
    - Configure other options as needed (log files, etc.)
 4. Start the service:

@@ -18,7 +18,8 @@ REM Set Python executable - adjust path if needed
 set PYTHON_CMD=python
 
 REM Run the script with appropriate parameters
-%PYTHON_CMD% combined_atm_retrieval_script.py --continuous --interval 900 --include-cash --save-to-db
+REM Note: --no-cash and --no-db are used to disable features, so we omit them to enable cash and DB
+%PYTHON_CMD% combined_atm_retrieval_script.py --continuous --interval 900
 
 echo.
 echo Script terminated at %TIME% on %DATE%
