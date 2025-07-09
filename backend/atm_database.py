@@ -11,6 +11,10 @@ import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 import pytz
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from atm_config import get_db_config, DILI_TIMEZONE
 

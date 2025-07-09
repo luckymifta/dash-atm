@@ -30,10 +30,13 @@ import json
 import os
 from collections import deque
 import urllib3
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Suppress InsecureRequestWarning globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-from collections import deque
 
 # Import our modular components
 from atm_config import (

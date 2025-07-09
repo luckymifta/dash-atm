@@ -8,6 +8,10 @@ for the ATM monitoring and retrieval system.
 
 import os
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # API Endpoints
 LOGIN_URL = "https://172.31.1.46/sigit/user/login?language=EN"

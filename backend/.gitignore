@@ -1,0 +1,30 @@
+# Temporary ATM data files
+atm_data_*.json
+latest_*.json
+combined_atm_data_*.json
+database_schema_analysis_*.json
+
+# Log files
+*.log
+
+# Environment files (keep as template but ignore actual .env)
+.env.local
+.env.production
+
+# Backup files
+*_old.py
+*_backup.py
+
+# Test files
+test_*.py
+check_*.py
+debug_*.py
+
+# Shell scripts for testing
+test_*.sh
+run_*.sh
+check_*.sh
+
+# Temporary files
+*.tmp
+*.temp
