@@ -13,7 +13,7 @@ echo.
 
 REM Check if .env file exists
 if not exist ".env" (
-    echo ❌ ERROR: .env file not found!
+    echo ERROR: .env file not found!
     echo.
     echo Please run setup_windows.bat first to configure your database credentials.
     echo Or create a .env file manually with your database settings.
@@ -22,7 +22,7 @@ if not exist ".env" (
     exit /b 1
 )
 
-echo ✅ .env file found
+echo SUCCESS: .env file found
 echo Starting ATM data retrieval...
 echo ===================================================
 echo.

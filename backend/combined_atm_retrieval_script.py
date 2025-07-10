@@ -138,9 +138,9 @@ class ATMOrchestrator:
             log.info("Step 2: Retrieving regional data...")
             regional_data = self.data_retriever.fetch_regional_data()
             if not regional_data:
-                log.error("Failed to retrieve regional data")
+                log.error("ERROR: Failed to retrieve regional data")
                 return False
-            log.info(f"Retrieved {len(regional_data)} regional records")
+            log.info(f"SUCCESS: Retrieved {len(regional_data)} regional records")
             
             # Step 3: Process regional data
             log.info("Step 3: Processing regional data...")
@@ -149,7 +149,7 @@ class ATMOrchestrator:
             # Step 4: Retrieve terminal status for comprehensive search
             log.info("Step 4: Performing comprehensive terminal search...")
             all_terminals, status_counts = self.data_retriever.comprehensive_terminal_search()
-            log.info(f"Found {len(all_terminals)} terminals")
+            log.info(f"SUCCESS: Found {len(all_terminals)} terminals")
             
             # Step 5: Retrieve terminal details for each terminal
             log.info("Step 5: Retrieving terminal details...")
@@ -165,6 +165,9 @@ class ATMOrchestrator:
                             terminal_data, terminal_id, terminal.get('fetched_status', 'UNKNOWN')
                         )
                         all_terminal_details.extend(details)
+            
+            log.info(f"SUCCESS: Retrieved {len(all_terminal_details)} terminal details")
+            log.info(f"Retrieved {len(all_terminal_details)} terminal details")
             
             # Recalculate regional data based on actual terminal details
             log.info("Recalculating regional data based on actual terminal details...")
@@ -183,16 +186,16 @@ class ATMOrchestrator:
                 log.info("Step 6: Retrieving cash information...")
                 cash_records = self.cash_processor.retrieve_cash_for_terminals(all_terminals)
                 self.all_data['cash_info'] = cash_records
-                log.info(f"Retrieved cash information for {len(cash_records)} terminals")
+                log.info(f"SUCCESS: Retrieved cash information for {len(cash_records)} terminals")
             
             # Step 7: Save to database (if requested)
             if self.save_to_db:
                 log.info("Step 7: Saving data to database...")
                 save_success = self.database_manager.save_all_data(self.all_data, use_new_tables)
                 if not save_success:
-                    log.error("Failed to save data to database")
+                    log.error("ERROR: Failed to save data to database")
                     return False
-                log.info("Data saved to database successfully")
+                log.info("SUCCESS: Data saved to database successfully")
             
             # Step 8: Generate summary
             self.generate_summary()
@@ -201,12 +204,12 @@ class ATMOrchestrator:
             self.save_to_json()
             
             elapsed_time = time.time() - start_time
-            log.info(f"Full retrieval process completed successfully in {elapsed_time:.2f} seconds")
+            log.info(f"SUCCESS: Full retrieval process completed in {elapsed_time:.2f} seconds")
             
             return True
             
         except Exception as e:
-            log.error(f"Error in full retrieval process: {e}")
+            log.error(f"ERROR: Full retrieval process failed: {e}")
             return False
         finally:
             # Always logout
@@ -229,9 +232,9 @@ class ATMOrchestrator:
             missing_ids = expected_ids - retrieved_ids
             
             if missing_ids:
-                log.warning(f"Missing expected terminals: {sorted(missing_ids)}")
+                log.warning(f"MISSING expected terminals: {sorted(missing_ids)}")
             else:
-                log.info("All expected terminals retrieved")
+                log.info("SUCCESS: All expected terminals retrieved")
         
         if 'cash_info' in self.all_data:
             log.info(f"Cash Information: {len(self.all_data['cash_info'])} cash records")
@@ -268,10 +271,10 @@ class ATMOrchestrator:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(json_data, f, indent=2, ensure_ascii=False)
             
-            log.info(f"Data saved to JSON file: {filepath}")
+            log.info(f"SUCCESS: Data saved to JSON file: {filepath}")
             
         except Exception as e:
-            log.error(f"Error saving to JSON file: {e}")
+            log.error(f"ERROR: Failed to save JSON file: {e}")
     
     def _prepare_data_for_json(self, data):
         """
@@ -310,6 +313,7 @@ class ATMOrchestrator:
             # Get basic terminal info
             all_terminals, status_counts = self.data_retriever.comprehensive_terminal_search()
             if not all_terminals:
+                log.warning("WARNING: No terminals found")
                 return {}
             
             # Process and return status info
@@ -327,10 +331,11 @@ class ATMOrchestrator:
                 ]
             }
             
+            log.info(f"SUCCESS: Retrieved status for {len(all_terminals)} terminals")
             return status_info
             
         except Exception as e:
-            log.error(f"Error getting terminal status: {e}")
+            log.error(f"ERROR: Failed to get terminal status: {e}")
             return {}
         finally:
             if self.authenticator.user_token:
@@ -355,10 +360,10 @@ class ATMOrchestrator:
             if success:
                 execution_stats['successful_cycles'] += 1
                 execution_stats['last_success'] = datetime.now()
-                log.info("Retrieval cycle completed successfully")
+                log.info("SUCCESS: Retrieval cycle completed successfully")
             else:
                 execution_stats['failed_cycles'] += 1
-                log.error("Retrieval cycle failed")
+                log.error("ERROR: Retrieval cycle failed")
             
             # Log execution statistics
             self.log_execution_statistics()
