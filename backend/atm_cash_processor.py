@@ -157,19 +157,19 @@ class ATMCashProcessor:
             Processed cash information record or None if failed
         """
         try:
-            current_time = datetime.now(self.dili_tz)
+            # Removed timestamp generation - let database handle retrieval_timestamp for consistency
             body = cash_data.get('body', [])
             
             if not body or not isinstance(body, list):
                 log.warning(f"No body data found for terminal {terminal_id} - returning null record")
-                return self._create_null_cash_record(terminal_id, current_time, cash_data, "No body data")
+                return self._create_null_cash_record(terminal_id, cash_data, "No body data")
             
             terminal_info = body[0]  # Get first (and usually only) terminal info
             cash_info = terminal_info.get('terminalCashInfo', {})
             
             if not cash_info:
                 log.warning(f"No terminalCashInfo found for terminal {terminal_id} - returning null record")
-                return self._create_null_cash_record(terminal_id, current_time, cash_data, "No cash info", terminal_info)
+                return self._create_null_cash_record(terminal_id, cash_data, "No cash info", terminal_info)
             
             # Extract cash information
             cassettes_raw = cash_info.get('cashInfo', [])
@@ -178,7 +178,7 @@ class ATMCashProcessor:
             # Check if cassettes data is empty or null
             if not cassettes_raw or not isinstance(cassettes_raw, list):
                 log.warning(f"No cassette data found for terminal {terminal_id} - returning null record")
-                return self._create_null_cash_record(terminal_id, current_time, cash_data, "No cassette data", terminal_info)
+                return self._create_null_cash_record(terminal_id, cash_data, "No cassette data", terminal_info)
             
             # Process cassettes data
             processed_cassettes = []
@@ -219,20 +219,25 @@ class ATMCashProcessor:
             # If all cassettes were invalid, return null record
             if not processed_cassettes:
                 log.warning(f"All cassette data invalid for terminal {terminal_id} - returning null record")
-                return self._create_null_cash_record(terminal_id, current_time, cash_data, "Invalid cassette data", terminal_info)
+                return self._create_null_cash_record(terminal_id, cash_data, "Invalid cassette data", terminal_info)
             
-            # Create event_date from API data or use current time
-            event_datetime = datetime.fromtimestamp(cassettes_raw[0].get('eventDate', 0) / 1000, tz=self.dili_tz) if cassettes_raw and cassettes_raw[0].get('eventDate') else current_time
+            # Create event_date from API data or use None (database will set to current time)
+            event_datetime = None
+            if cassettes_raw and cassettes_raw[0].get('eventDate'):
+                try:
+                    event_datetime = datetime.fromtimestamp(cassettes_raw[0].get('eventDate', 0) / 1000, tz=self.dili_tz)
+                except:
+                    event_datetime = None
             
             # Create final record (removed unique_request_id as DB auto-generates)
-            # Convert datetime objects to timezone-aware strings for JSON serialization
+            # Remove timestamp fields - database will set them consistently
             record = {
                 'terminal_id': str(terminal_id),
                 'business_code': terminal_info.get('businessId', ''),
                 'technical_code': terminal_info.get('technicalCode', ''),
                 'external_id': terminal_info.get('externalId', ''),
-                'retrieval_timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S %z'),
-                'event_date': event_datetime.strftime('%Y-%m-%d %H:%M:%S %z'),
+                # retrieval_timestamp removed - database will set this consistently
+                'event_date': event_datetime.strftime('%Y-%m-%d %H:%M:%S %z') if event_datetime else None,
                 'total_cash_amount': float(total_cash) if total_cash is not None else 0.0,
                 'total_currency': 'USD',  # Default currency
                 'cassettes_data': processed_cassettes,
@@ -249,10 +254,9 @@ class ATMCashProcessor:
             
         except Exception as e:
             log.error(f"❌ Error processing cash information for terminal {terminal_id}: {str(e)}")
-            current_time = datetime.now(self.dili_tz)
-            return self._create_null_cash_record(terminal_id, current_time, cash_data, f"Processing error: {str(e)}")
+            return self._create_null_cash_record(terminal_id, cash_data, f"Processing error: {str(e)}")
     
-    def _create_null_cash_record(self, terminal_id: str, current_time: datetime, 
+    def _create_null_cash_record(self, terminal_id: str, 
                                 cash_data: Dict[str, Any], reason: str, 
                                 terminal_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -260,13 +264,12 @@ class ATMCashProcessor:
         
         Args:
             terminal_id: Terminal ID
-            current_time: Current timestamp
             cash_data: Raw cash data (for debugging)
             reason: Reason why cash info is null
             terminal_info: Optional terminal info from API response
             
         Returns:
-            Null cash record with metadata
+            Null cash record with metadata (database will set timestamps)
         """
         log.info(f"📭 Creating null cash record for terminal {terminal_id}: {reason}")
         
@@ -275,8 +278,8 @@ class ATMCashProcessor:
             'business_code': terminal_info.get('businessId', '') if terminal_info else '',
             'technical_code': terminal_info.get('technicalCode', '') if terminal_info else '',
             'external_id': terminal_info.get('externalId', '') if terminal_info else '',
-            'retrieval_timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S %z'),
-            'event_date': current_time.strftime('%Y-%m-%d %H:%M:%S %z'),  # Use current time as fallback
+            # retrieval_timestamp removed - database will set this consistently
+            # event_date removed - database will set this consistently 
             'total_cash_amount': None,  # Explicitly null
             'total_currency': None,     # Explicitly null
             'cassettes_data': [],       # Empty array
@@ -324,9 +327,8 @@ class ATMCashProcessor:
                     cash_records.append(processed_cash_record)
             else:
                 # Create a null record for terminals without cash data
-                current_time = datetime.now(self.dili_tz)
                 null_record = self._create_null_cash_record(
-                    terminal_id, current_time, {}, "Failed to fetch cash information"
+                    terminal_id, {}, "Failed to fetch cash information"
                 )
                 cash_records.append(null_record)
             

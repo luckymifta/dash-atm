@@ -148,7 +148,7 @@ class ATMDataProcessor:
             List of processed terminal detail records
         """
         processed_details = []
-        current_time = datetime.now(self.dili_tz)
+        # Removed timestamp generation - let database handle retrievedDate for consistency
         # Removed unique_request_id generation as DB auto-generates
         
         # Extract details from response body
@@ -168,13 +168,14 @@ class ATMDataProcessor:
             # If it's empty, fall back to the fetched_status
             final_status = actual_status if actual_status else fetched_status
             
-            # Create processed terminal detail record (removed unique_request_id)
+            # Create processed terminal detail record (removed unique_request_id and retrievedDate)
+            # Database will handle retrievedDate consistently with created_at/updated_at
             detail_record = {
                 'terminalId': item.get('terminalId', terminal_id),
                 'location': item.get('location', ''),
                 'issueStateName': actual_status,
                 'serialNumber': item.get('serialNumber', ''),
-                'retrievedDate': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                # retrievedDate removed - database will set this consistently
                 'year': item.get('year', ''),
                 'month': item.get('month', ''),
                 'day': item.get('day', ''),
@@ -240,7 +241,7 @@ class ATMDataProcessor:
                 'location': location,
                 'issueStateName': "OUT_OF_SERVICE",
                 'serialNumber': serial_number,
-                'retrievedDate': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                # retrievedDate removed - database will set this consistently
                 'year': "",
                 'month': "",
                 'day': "",

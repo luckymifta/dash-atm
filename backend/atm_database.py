@@ -260,19 +260,9 @@ class ATMDatabaseManager:
             current_dili_time = self._get_dili_timestamp()
             
             for terminal in terminal_details:
-                # Convert retrieved_date to Dili timezone if present, otherwise use current time
-                retrieved_date = terminal.get('retrievedDate')
-                if isinstance(retrieved_date, str):
-                    try:
-                        # Try to parse the date string and convert to Dili timezone
-                        retrieved_date = datetime.fromisoformat(retrieved_date.replace('Z', '+00:00'))
-                        retrieved_date = self._convert_to_dili_tz(retrieved_date)
-                    except:
-                        retrieved_date = current_dili_time
-                elif isinstance(retrieved_date, datetime):
-                    retrieved_date = self._convert_to_dili_tz(retrieved_date)
-                else:
-                    retrieved_date = current_dili_time
+                # Use consistent database timestamp for retrieved_date, created_at, and updated_at
+                # This ensures all timestamps match exactly
+                retrieved_date = current_dili_time
                 
                 # Prepare fault data
                 fault_data = {
@@ -384,18 +374,8 @@ class ATMDatabaseManager:
                     if event_date:
                         event_date = self._convert_to_dili_tz(event_date)
                 
-                # Handle retrieval_timestamp
-                retrieval_timestamp = cash.get('retrieval_timestamp', current_dili_time)
-                if isinstance(retrieval_timestamp, str):
-                    try:
-                        retrieval_timestamp = datetime.fromisoformat(retrieval_timestamp.replace('Z', '+00:00'))
-                        retrieval_timestamp = self._convert_to_dili_tz(retrieval_timestamp)
-                    except:
-                        retrieval_timestamp = current_dili_time
-                elif isinstance(retrieval_timestamp, datetime):
-                    retrieval_timestamp = self._convert_to_dili_tz(retrieval_timestamp)
-                else:
-                    retrieval_timestamp = current_dili_time
+                # Handle retrieval_timestamp - use consistent database timestamp
+                retrieval_timestamp = current_dili_time  # Always use database timestamp for consistency
                 
                 # Calculate additional fields for the enhanced schema
                 cassettes = cash.get('cassettes_data', [])
