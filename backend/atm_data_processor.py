@@ -176,14 +176,45 @@ class ATMDataProcessor:
                 'issueStateName': actual_status,
                 'serialNumber': item.get('serialNumber', ''),
                 # retrievedDate removed - database will set this consistently
-                'year': item.get('year', ''),
-                'month': item.get('month', ''),
-                'day': item.get('day', ''),
-                'externalFaultId': item.get('externalFaultId', ''),
-                'agentErrorDescription': item.get('agentErrorDescription', ''),
-                'creationDate': item.get('creationDate', ''),
                 'fetched_status': final_status  # Set fetched_status to match issueStateName
             }
+            
+            # Extract fault details from faultList if available (like main branch)
+            fault_list = item.get('faultList', [])
+            if fault_list and isinstance(fault_list, list) and len(fault_list) > 0:
+                # Get the first fault in the list (most recent)
+                fault = fault_list[0]
+                detail_record.update({
+                    'year': fault.get('year', ''),
+                    'month': fault.get('month', ''),
+                    'day': fault.get('day', ''),
+                    'externalFaultId': fault.get('externalFaultId', ''),
+                    'agentErrorDescription': fault.get('agentErrorDescription', '')
+                })
+                
+                # Add creationDate from faultList with proper formatting (like main branch)
+                creation_timestamp = fault.get('creationDate', None)
+                if creation_timestamp:
+                    try:
+                        # Convert Unix timestamp (milliseconds) to datetime
+                        creation_dt = datetime.fromtimestamp(creation_timestamp / 1000, tz=self.dili_tz)
+                        # Format as dd:mm:YYYY hh:mm:ss (same as main branch)
+                        detail_record['creationDate'] = creation_dt.strftime('%d:%m:%Y %H:%M:%S')
+                    except (ValueError, TypeError) as e:
+                        log.warning(f"Error converting creationDate for terminal {terminal_id}: {e}")
+                        detail_record['creationDate'] = ''
+                else:
+                    detail_record['creationDate'] = ''
+            else:
+                # Set default values if no fault information is available (like main branch)
+                detail_record.update({
+                    'year': '',
+                    'month': '',
+                    'day': '',
+                    'externalFaultId': '',
+                    'agentErrorDescription': '',
+                    'creationDate': ''
+                })
             
             processed_details.append(detail_record)
         
@@ -242,12 +273,12 @@ class ATMDataProcessor:
                 'issueStateName': "OUT_OF_SERVICE",
                 'serialNumber': serial_number,
                 # retrievedDate removed - database will set this consistently
-                'year': "",
-                'month': "",
-                'day': "",
+                'year': str(current_time.year),
+                'month': str(current_time.month).zfill(2),
+                'day': str(current_time.day).zfill(2),
                 'externalFaultId': fault_id,
                 'agentErrorDescription': error_description,
-                'creationDate': current_time.strftime('%d:%m:%Y %H:%M:%S'),
+                'creationDate': current_time.strftime('%d:%m:%Y %H:%M:%S'),  # Use same format as main branch
                 'fetched_status': "OUT_OF_SERVICE"
             }
             terminal_details_data.append(terminal_detail)
