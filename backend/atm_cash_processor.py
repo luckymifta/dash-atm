@@ -221,9 +221,8 @@ class ATMCashProcessor:
                 log.warning(f"All cassette data invalid for terminal {terminal_id} - returning null record")
                 return self._create_null_cash_record(terminal_id, current_time, cash_data, "Invalid cassette data", terminal_info)
             
-            # Create final record
+            # Create final record (removed unique_request_id as DB auto-generates)
             record = {
-                'unique_request_id': str(uuid.uuid4()),
                 'terminal_id': str(terminal_id),
                 'business_code': terminal_info.get('businessId', ''),
                 'technical_code': terminal_info.get('technicalCode', ''),
@@ -268,7 +267,6 @@ class ATMCashProcessor:
         log.info(f"📭 Creating null cash record for terminal {terminal_id}: {reason}")
         
         return {
-            'unique_request_id': str(uuid.uuid4()),
             'terminal_id': str(terminal_id),
             'business_code': terminal_info.get('businessId', '') if terminal_info else '',
             'technical_code': terminal_info.get('technicalCode', '') if terminal_info else '',

@@ -113,9 +113,8 @@ class ATMDataProcessor:
                     percentage = 0.0
                 percentages[field_name.replace('count_', 'percentage_')] = percentage
             
-            # Create the processed record
+            # Create the processed record (removed unique_request_id as DB auto-generates)
             record = {
-                'unique_request_id': str(uuid.uuid4()),
                 'region_code': region_code,
                 'date_creation': current_time,
                 'total_atms_in_region': total_atms_in_region,
@@ -150,7 +149,7 @@ class ATMDataProcessor:
         """
         processed_details = []
         current_time = datetime.now(self.dili_tz)
-        unique_request_id = str(uuid.uuid4())
+        # Removed unique_request_id generation as DB auto-generates
         
         # Extract details from response body
         body = terminal_data.get('body', [])
@@ -169,9 +168,8 @@ class ATMDataProcessor:
             # If it's empty, fall back to the fetched_status
             final_status = actual_status if actual_status else fetched_status
             
-            # Create processed terminal detail record
+            # Create processed terminal detail record (removed unique_request_id)
             detail_record = {
-                'unique_request_id': unique_request_id,
                 'terminalId': item.get('terminalId', terminal_id),
                 'location': item.get('location', ''),
                 'issueStateName': actual_status,
@@ -204,9 +202,8 @@ class ATMDataProcessor:
         
         current_time = datetime.now(self.dili_tz)
         
-        # Generate regional data showing all ATMs as out of service
+        # Generate regional data showing all ATMs as out of service (removed unique_request_id)
         regional_data = [{
-            'unique_request_id': str(uuid.uuid4()),
             'region_code': "TL-DL",
             'count_available': 0,
             'count_warning': 0,
@@ -239,7 +236,6 @@ class ATMDataProcessor:
                 error_description = "Authentication failure to monitoring system"
             
             terminal_detail = {
-                'unique_request_id': str(uuid.uuid4()),
                 'terminalId': terminal_id,
                 'location': location,
                 'issueStateName': "OUT_OF_SERVICE",

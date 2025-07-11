@@ -1,8 +1,9 @@
+#!/usr/bin/env python3
 """
-ATM Database Operations Module (Simplified)
+Database Timezone Fix for ATM System
 
-Handles all database operations including saving regional data,
-terminal details, and cash information to PostgreSQL database.
+This script fixes timezone handling inconsistencies in database operations.
+It ensures all timestamps are handled consistently with Dili timezone (+09:00).
 """
 
 import logging
@@ -13,7 +14,7 @@ from typing import Dict, List, Any, Optional
 import pytz
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 from atm_config import get_db_config, DILI_TIMEZONE
@@ -23,6 +24,7 @@ log = logging.getLogger(__name__)
 # Check for database availability
 try:
     import psycopg2
+    import psycopg2.extras
     from psycopg2 import sql
     DB_AVAILABLE = True
 except ImportError:
@@ -30,8 +32,8 @@ except ImportError:
     DB_AVAILABLE = False
     psycopg2 = None
 
-class ATMDatabaseManager:
-    """Handles database operations for ATM monitoring data"""
+class FixedATMDatabaseManager:
+    """Enhanced database manager with proper timezone handling"""
     
     def __init__(self, demo_mode: bool = False):
         self.demo_mode = demo_mode
@@ -40,6 +42,19 @@ class ATMDatabaseManager:
         self.db_config = get_db_config()
         
         log.info(f"Database Manager initialized with Dili timezone: {DILI_TIMEZONE}")
+    
+    def _get_connection(self):
+        """Get database connection with proper parameter handling"""
+        if not DB_AVAILABLE or not psycopg2:
+            raise ValueError("Database not available")
+        
+        return psycopg2.connect(
+            host=self.db_config["host"],
+            port=self.db_config["port"], 
+            database=self.db_config["database"],
+            user=self.db_config["user"],
+            password=self.db_config["password"]
+        )
     
     def _get_dili_timestamp(self) -> datetime:
         """Get current timestamp in Dili timezone"""
@@ -56,30 +71,9 @@ class ATMDatabaseManager:
         
         return dt.astimezone(self.dili_tz)
     
-    def _get_connection(self):
-        """Get database connection with proper parameter handling and timezone setup"""
-        if not DB_AVAILABLE or not psycopg2:
-            raise ValueError("Database not available")
-        
-        # Use proper connection parameters - explicit parameter names
-        conn = psycopg2.connect(
-            host=self.db_config["host"],
-            port=self.db_config["port"], 
-            database=self.db_config["database"],
-            user=self.db_config["user"],
-            password=self.db_config["password"]
-        )
-        
-        # Set session timezone to Dili
-        cursor = conn.cursor()
-        cursor.execute("SET timezone = 'Asia/Dili';")
-        cursor.close()
-        
-        return conn
-    
     def save_all_data(self, all_data: Dict[str, Any], use_new_tables: bool = False) -> bool:
         """
-        Save all data to database (regional, terminal details, and cash information)
+        Save all data to database with proper timezone handling
         
         Args:
             all_data: Dictionary containing all retrieved data
@@ -101,26 +95,26 @@ class ATMDatabaseManager:
         try:
             # Save regional data
             if 'regional_data' in all_data:
-                success &= self.save_regional_data(all_data['regional_data'])
+                success &= self.save_regional_data_fixed(all_data['regional_data'])
             
             # Save terminal details
             if 'terminal_details' in all_data:
-                success &= self.save_terminal_details(all_data['terminal_details'])
+                success &= self.save_terminal_details_fixed(all_data['terminal_details'])
             
             # Save cash information
             if 'cash_info' in all_data:
-                success &= self.save_cash_info(all_data['cash_info'])
+                success &= self.save_cash_info_fixed(all_data['cash_info'])
             
             log.info(f"Data save completed {'successfully' if success else 'with errors'}")
             return success
             
         except Exception as e:
-            log.error(f"Error saving all data: {e}")
+            log.error(f"ERROR: Failed to save all data: {e}")
             return False
     
-    def save_regional_data(self, regional_data: List[Dict[str, Any]]) -> bool:
+    def save_regional_data_fixed(self, regional_data: List[Dict[str, Any]]) -> bool:
         """
-        Save regional data to database using the correct schema
+        Save regional data with fixed timezone handling
         
         Args:
             regional_data: List of regional data dictionaries
@@ -143,13 +137,13 @@ class ATMDatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # Create table if not exists - using regional_data table with JSONB support
+            # Create table if not exists with proper timezone columns
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS regional_data (
                     id SERIAL PRIMARY KEY,
                     unique_request_id UUID NOT NULL DEFAULT gen_random_uuid(),
                     region_code VARCHAR(10) NOT NULL,
-                    retrieval_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    retrieval_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
                     raw_regional_data JSONB NOT NULL DEFAULT '{}'::jsonb,
                     count_available INTEGER DEFAULT 0,
                     count_warning INTEGER DEFAULT 0,
@@ -173,21 +167,23 @@ class ATMDatabaseManager:
                 ON regional_data USING GIN(raw_regional_data)
             """)
             
-            # Insert data using the updated schema
+            # Get current Dili timestamp for all records
+            current_dili_time = self._get_dili_timestamp()
+            
+            # Insert data with consistent timezone handling
             for region in regional_data:
-                # Prepare raw data as a JSON object
-                raw_json_data = json.dumps(region)
-                
-                # Use consistent Dili timezone timestamp
-                current_dili_time = self._get_dili_timestamp()
+                # Use current Dili time for retrieval_timestamp
+                # Use JSON dumps for JSONB data to avoid psycopg2.extras dependency
+                raw_data_json = json.dumps(region) if region else '{}'
                 
                 cursor.execute("""
                     INSERT INTO regional_data (
-                        region_code, count_available, count_warning,
+                        unique_request_id, region_code, count_available, count_warning,
                         count_zombie, count_wounded, count_out_of_service,
                         total_atms_in_region, retrieval_timestamp, raw_regional_data
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
+                    region.get('unique_request_id'),
                     region.get('region_code'),
                     region.get('count_available', 0),
                     region.get('count_warning', 0),
@@ -196,15 +192,15 @@ class ATMDatabaseManager:
                     region.get('count_out_of_service', 0),
                     region.get('total_atms_in_region', 0),
                     current_dili_time,  # Consistent Dili timestamp
-                    raw_json_data
+                    raw_data_json  # JSON string for JSONB column
                 ))
             
             conn.commit()
-            log.info(f"SUCCESS: Saved {len(regional_data)} regional data records with Dili timezone (+09:00)")
+            log.info(f"SUCCESS: Saved {len(regional_data)} regional data records with Dili timezone")
             return True
             
         except Exception as e:
-            log.error(f"Error saving regional data: {e}")
+            log.error(f"ERROR: Failed to save regional data: {e}")
             if conn:
                 conn.rollback()
             return False
@@ -214,9 +210,9 @@ class ATMDatabaseManager:
             if conn:
                 conn.close()
     
-    def save_terminal_details(self, terminal_details: List[Dict[str, Any]]) -> bool:
+    def save_terminal_details_fixed(self, terminal_details: List[Dict[str, Any]]) -> bool:
         """
-        Save terminal details to database
+        Save terminal details with fixed timezone handling
         
         Args:
             terminal_details: List of terminal detail dictionaries
@@ -239,7 +235,7 @@ class ATMDatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # Create table if not exists - matching the new terminal_details schema
+            # Create table if not exists with proper timezone handling
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS terminal_details (
                     id SERIAL PRIMARY KEY,
@@ -252,13 +248,15 @@ class ATMDatabaseManager:
                     fetched_status VARCHAR(50) NOT NULL,
                     raw_terminal_data JSONB NOT NULL,
                     fault_data JSONB,
-                    metadata JSONB
+                    metadata JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
-            # Insert data matching the actual terminal details structure
+            # Get current Dili timestamp
             current_dili_time = self._get_dili_timestamp()
             
+            # Insert data with proper timezone handling
             for terminal in terminal_details:
                 # Convert retrieved_date to Dili timezone if present, otherwise use current time
                 retrieved_date = terminal.get('retrievedDate')
@@ -274,7 +272,7 @@ class ATMDatabaseManager:
                 else:
                     retrieved_date = current_dili_time
                 
-                # Prepare fault data
+                # Prepare fault data with proper structure
                 fault_data = {
                     'year': terminal.get('year', ''),
                     'month': terminal.get('month', ''),
@@ -284,36 +282,38 @@ class ATMDatabaseManager:
                     'creationDate': terminal.get('creationDate', '')
                 }
                 
-                # Prepare metadata with timezone info
+                # Prepare metadata
                 metadata = {
                     'retrieval_timestamp': current_dili_time.isoformat(),
+                    'unique_request_id': terminal.get('unique_request_id'),
                     'timezone': DILI_TIMEZONE
                 }
                 
                 cursor.execute("""
                     INSERT INTO terminal_details 
-                    (terminal_id, location, issue_state_name, 
+                    (unique_request_id, terminal_id, location, issue_state_name, 
                      serial_number, retrieved_date, fetched_status, raw_terminal_data, 
                      fault_data, metadata) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
+                    terminal.get('unique_request_id'),
                     terminal.get('terminalId'),
                     terminal.get('location'),
                     terminal.get('issueStateName'),
                     terminal.get('serialNumber'),
-                    retrieved_date,  # Properly converted timestamp with Dili timezone
+                    retrieved_date,  # Properly converted timestamp
                     terminal.get('fetched_status'),
-                    json.dumps(terminal),  # Store the complete terminal data
-                    json.dumps(fault_data),
-                    json.dumps(metadata)
+                    json.dumps(terminal),  # JSON string for JSONB column
+                    json.dumps(fault_data),  # JSON string for JSONB column
+                    json.dumps(metadata)  # JSON string for JSONB column
                 ))
             
             conn.commit()
-            log.info(f"SUCCESS: Saved {len(terminal_details)} terminal detail records with Dili timezone (+09:00)")
+            log.info(f"SUCCESS: Saved {len(terminal_details)} terminal detail records with proper timezone handling")
             return True
             
         except Exception as e:
-            log.error(f"Error saving terminal details: {e}")
+            log.error(f"ERROR: Failed to save terminal details: {e}")
             if conn:
                 conn.rollback()
             return False
@@ -323,9 +323,9 @@ class ATMDatabaseManager:
             if conn:
                 conn.close()
     
-    def save_cash_info(self, cash_info: List[Dict[str, Any]]) -> bool:
+    def save_cash_info_fixed(self, cash_info: List[Dict[str, Any]]) -> bool:
         """
-        Save cash information to database using terminal_cash_information table
+        Save cash information with fixed timezone handling
         
         Args:
             cash_info: List of terminal cash information dictionaries
@@ -348,7 +348,7 @@ class ATMDatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # Create table if not exists - using the terminal_cash_information schema
+            # Create table if not exists with proper timezone handling
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS terminal_cash_information (
                     id SERIAL PRIMARY KEY,
@@ -357,7 +357,7 @@ class ATMDatabaseManager:
                     business_code VARCHAR(20),
                     technical_code VARCHAR(20),
                     external_id VARCHAR(20),
-                    retrieval_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    retrieval_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
                     event_date TIMESTAMP WITH TIME ZONE,
                     total_cash_amount DECIMAL(15,2) DEFAULT 0.00,
                     total_currency VARCHAR(10),
@@ -365,13 +365,15 @@ class ATMDatabaseManager:
                     raw_cash_data JSONB,
                     cassette_count INTEGER DEFAULT 0,
                     has_low_cash_warning BOOLEAN DEFAULT false,
-                    has_cash_errors BOOLEAN DEFAULT false
+                    has_cash_errors BOOLEAN DEFAULT false,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
-            # Insert data using the terminal_cash_information schema with proper timezone handling
+            # Get current Dili timestamp
             current_dili_time = self._get_dili_timestamp()
             
+            # Insert data with proper timezone handling
             for cash in cash_info:
                 # Handle event_date timezone conversion
                 event_date = cash.get('event_date')
@@ -405,6 +407,7 @@ class ATMDatabaseManager:
                 
                 cursor.execute("""
                     INSERT INTO terminal_cash_information (
+                        unique_request_id,
                         terminal_id,
                         business_code,
                         technical_code,
@@ -418,94 +421,33 @@ class ATMDatabaseManager:
                         cassette_count,
                         has_low_cash_warning,
                         has_cash_errors
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
+                    cash.get('unique_request_id'),
                     cash.get('terminal_id'),
                     cash.get('business_code'),
                     cash.get('technical_code'),
                     cash.get('external_id'),
-                    retrieval_timestamp,  # Properly converted timestamp with Dili timezone
-                    event_date,  # Properly converted timestamp with Dili timezone
+                    retrieval_timestamp,  # Properly converted timestamp
+                    event_date,  # Properly converted timestamp
                     cash.get('total_cash_amount'),
                     cash.get('total_currency'),
-                    json.dumps(cassettes),
-                    json.dumps(cash),  # Store complete cash data
+                    json.dumps(cassettes),  # JSON string for JSONB column
+                    json.dumps(cash),  # Store complete cash data as JSON string
                     cassette_count,
                     has_low_cash_warning,
                     has_cash_errors
                 ))
             
             conn.commit()
-            log.info(f"Successfully saved {len(cash_info)} cash information records to terminal_cash_information")
+            log.info(f"SUCCESS: Saved {len(cash_info)} cash information records with proper timezone handling")
             return True
             
         except Exception as e:
-            log.error(f"Error saving cash information: {e}")
+            log.error(f"ERROR: Failed to save cash information: {e}")
             if conn:
                 conn.rollback()
             return False
-        finally:
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
-    
-    def get_terminal_status_summary(self) -> Dict[str, Any]:
-        """
-        Get terminal status summary from database
-        
-        Returns:
-            Dict containing status summary
-        """
-        if not DB_AVAILABLE:
-            log.warning("Database not available - returning empty summary")
-            return {}
-        
-        conn = None
-        cursor = None
-        
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            # Get latest regional data
-            cursor.execute("""
-                SELECT region_code, region_code as region_name, total_atms_in_region as terminal_count, 
-                       json_build_object(
-                           'available', count_available,
-                           'warning', count_warning,
-                           'zombie', count_zombie,
-                           'wounded', count_wounded,
-                           'out_of_service', count_out_of_service
-                       ) as status_summary
-                FROM regional_data 
-                WHERE retrieval_timestamp = (
-                    SELECT MAX(retrieval_timestamp) FROM regional_data
-                )
-            """)
-            
-            regions = cursor.fetchall()
-            
-            summary = {
-                'total_regions': len(regions),
-                'total_terminals': sum(r[2] for r in regions),
-                'regions': [],
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            for region in regions:
-                summary['regions'].append({
-                    'region_id': region[0],
-                    'region_name': region[1],
-                    'terminal_count': region[2],
-                    'status_summary': json.loads(region[3]) if region[3] else {}
-                })
-            
-            return summary
-            
-        except Exception as e:
-            log.error(f"Error getting terminal status summary: {e}")
-            return {}
         finally:
             if cursor:
                 cursor.close()
