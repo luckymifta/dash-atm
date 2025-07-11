@@ -221,14 +221,18 @@ class ATMCashProcessor:
                 log.warning(f"All cassette data invalid for terminal {terminal_id} - returning null record")
                 return self._create_null_cash_record(terminal_id, current_time, cash_data, "Invalid cassette data", terminal_info)
             
+            # Create event_date from API data or use current time
+            event_datetime = datetime.fromtimestamp(cassettes_raw[0].get('eventDate', 0) / 1000, tz=self.dili_tz) if cassettes_raw and cassettes_raw[0].get('eventDate') else current_time
+            
             # Create final record (removed unique_request_id as DB auto-generates)
+            # Convert datetime objects to timezone-aware strings for JSON serialization
             record = {
                 'terminal_id': str(terminal_id),
                 'business_code': terminal_info.get('businessId', ''),
                 'technical_code': terminal_info.get('technicalCode', ''),
                 'external_id': terminal_info.get('externalId', ''),
-                'retrieval_timestamp': current_time,
-                'event_date': datetime.fromtimestamp(cassettes_raw[0].get('eventDate', 0) / 1000, tz=self.dili_tz) if cassettes_raw and cassettes_raw[0].get('eventDate') else current_time,
+                'retrieval_timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S %z'),
+                'event_date': event_datetime.strftime('%Y-%m-%d %H:%M:%S %z'),
                 'total_cash_amount': float(total_cash) if total_cash is not None else 0.0,
                 'total_currency': 'USD',  # Default currency
                 'cassettes_data': processed_cassettes,
@@ -271,8 +275,8 @@ class ATMCashProcessor:
             'business_code': terminal_info.get('businessId', '') if terminal_info else '',
             'technical_code': terminal_info.get('technicalCode', '') if terminal_info else '',
             'external_id': terminal_info.get('externalId', '') if terminal_info else '',
-            'retrieval_timestamp': current_time,
-            'event_date': current_time,  # Use current time as fallback
+            'retrieval_timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S %z'),
+            'event_date': current_time.strftime('%Y-%m-%d %H:%M:%S %z'),  # Use current time as fallback
             'total_cash_amount': None,  # Explicitly null
             'total_currency': None,     # Explicitly null
             'cassettes_data': [],       # Empty array
