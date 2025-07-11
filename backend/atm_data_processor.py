@@ -124,7 +124,7 @@ class ATMDataProcessor:
             
             processed_records.append(record)
             
-            log.info(f"✅ Processed region {region_code}: {total_atms_in_region} total ATMs")
+            log.info(f"[SUCCESS] Processed region {region_code}: {total_atms_in_region} total ATMs")
             log.info(f"   Available: {counts['count_available']} ({percentages['percentage_available']*100:.1f}%)")
             log.info(f"   Warning: {counts['count_warning']} ({percentages['percentage_warning']*100:.1f}%)")
             log.info(f"   Wounded: {counts['count_wounded']} ({percentages['percentage_wounded']*100:.1f}%)")
@@ -372,7 +372,7 @@ class ATMDataProcessor:
             **percentages
         }
         
-        log.info(f"✅ Recalculated regional data based on {total_terminals} terminals:")
+        log.info(f"[SUCCESS] Recalculated regional data based on {total_terminals} terminals:")
         log.info(f"  Available: {counts['count_available']} ({percentages['percentage_available']}%)")
         log.info(f"  Warning: {counts['count_warning']} ({percentages['percentage_warning']}%)")
         log.info(f"  Wounded: {counts['count_wounded']} ({percentages['percentage_wounded']}%)")

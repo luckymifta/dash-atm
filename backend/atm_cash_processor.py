@@ -112,7 +112,7 @@ class ATMCashProcessor:
                 if "user_token" in header:
                     self.authenticator.user_token = header["user_token"]
                 
-                log.debug(f"✅ Successfully fetched cash information for terminal {terminal_id}")
+                log.debug(f"[SUCCESS] Successfully fetched cash information for terminal {terminal_id}")
                 return cash_data
                 
             except requests.exceptions.RequestException as ex:
@@ -130,17 +130,17 @@ class ATMCashProcessor:
                 
                 retry_count += 1
                 if retry_count >= max_retries:
-                    log.error(f"❌ Failed to fetch cash info for terminal {terminal_id} after {max_retries} attempts")
+                    log.error(f"[ERROR] Failed to fetch cash info for terminal {terminal_id} after {max_retries} attempts")
                     return None
                 
                 time.sleep(2)  # Wait before retry
                 
             except json.JSONDecodeError as ex:
-                log.error(f"❌ Cash info response for terminal {terminal_id} not valid JSON: {str(ex)}")
+                log.error(f"[ERROR] Cash info response for terminal {terminal_id} not valid JSON: {str(ex)}")
                 return None
                 
             except Exception as ex:
-                log.error(f"❌ Unexpected error fetching cash info for terminal {terminal_id}: {str(ex)}")
+                log.error(f"[ERROR] Unexpected error fetching cash info for terminal {terminal_id}: {str(ex)}")
                 return None
         
         return None
@@ -253,7 +253,7 @@ class ATMCashProcessor:
             return record
             
         except Exception as e:
-            log.error(f"❌ Error processing cash information for terminal {terminal_id}: {str(e)}")
+            log.error(f"[ERROR] Error processing cash information for terminal {terminal_id}: {str(e)}")
             return self._create_null_cash_record(terminal_id, cash_data, f"Processing error: {str(e)}")
     
     def _create_null_cash_record(self, terminal_id: str, 
@@ -271,7 +271,7 @@ class ATMCashProcessor:
         Returns:
             Null cash record with metadata (database will set timestamps)
         """
-        log.info(f"📭 Creating null cash record for terminal {terminal_id}: {reason}")
+        log.info(f"[NULL] Creating null cash record for terminal {terminal_id}: {reason}")
         
         return {
             'terminal_id': str(terminal_id),
@@ -336,5 +336,5 @@ class ATMCashProcessor:
             if not self.demo_mode:
                 time.sleep(0.5)
         
-        log.info(f"✅ Cash information retrieved for {len(cash_records)} terminals")
+        log.info(f"[SUCCESS] Cash information retrieved for {len(cash_records)} terminals")
         return cash_records
