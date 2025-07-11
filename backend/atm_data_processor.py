@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 import pytz
 
-from atm_config import DILI_TIMEZONE, EXPECTED_TERMINAL_IDS
+from atm_config import DILI_TIMEZONE, EXPECTED_TERMINAL_IDS, STATUS_MAPPING
 
 log = logging.getLogger(__name__)
 
@@ -163,6 +163,9 @@ class ATMDataProcessor:
             
             # Get the actual status from the API response (issueStateName)
             actual_status = item.get('issueStateName', '')
+            
+            # Apply status mapping for consistent data representation
+            actual_status = STATUS_MAPPING.get(actual_status, actual_status)
             
             # Use the actual status from the API as the authoritative status
             # If it's empty, fall back to the fetched_status

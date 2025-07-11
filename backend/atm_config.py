@@ -52,6 +52,19 @@ PARAMETER_VALUES = [
     "CASH", "UNAVAILABLE", "ZOMBIE"
 ]
 
+# Status Mapping Configuration
+# Maps API status values to consistent internal status values
+STATUS_MAPPING = {
+    'MAINTENANCE': 'OUT_OF_SERVICE',  # Map MAINTENANCE to OUT_OF_SERVICE for consistency
+    # Add other mappings here if needed in the future
+}
+
+# Final normalized status values after mapping
+NORMALIZED_STATUS_VALUES = [
+    "AVAILABLE", "WARNING", "WOUNDED", "HARD", 
+    "CASH", "UNAVAILABLE", "ZOMBIE", "OUT_OF_SERVICE"
+]
+
 # Expected Terminal IDs (baseline)
 EXPECTED_TERMINAL_IDS = [
     '83', '2603', '88', '147', '87', '169', 
