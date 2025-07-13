@@ -118,6 +118,86 @@ DB_CONFIG = {
     'password': os.getenv('DB_PASSWORD', 'timlesdev')
 }
 
+# Global variables for database connection management
+db_pool = None
+refresh_jobs = {}
+app_start_time = datetime.utcnow()
+
+# Database connection functions
+async def get_db_connection():
+    """Get a database connection from the pool"""
+    global db_pool
+    if db_pool is None:
+        try:
+            db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=1, max_size=10)
+        except Exception as e:
+            logger.error(f"Failed to create database pool: {e}")
+            return None
+    
+    try:
+        return await db_pool.acquire()
+    except Exception as e:
+        logger.error(f"Failed to acquire database connection: {e}")
+        return None
+
+async def release_db_connection(conn):
+    """Release a database connection back to the pool"""
+    global db_pool
+    if conn and db_pool:
+        try:
+            await db_pool.release(conn)
+        except Exception as e:
+            logger.error(f"Error releasing database connection: {e}")
+
+async def validate_db_connection():
+    """Dependency function to validate database connectivity"""
+    conn = await get_db_connection()
+    if conn is None:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    await release_db_connection(conn)
+    return True
+
+# Application lifespan manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle - startup and shutdown"""
+    # Startup
+    logger.info("Starting FastAPI ATM Status API...")
+    global db_pool
+    try:
+        # Create database connection pool
+        db_pool = await asyncpg.create_pool(**DB_CONFIG, min_size=1, max_size=10)
+        logger.info("Database connection pool created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database pool: {e}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down FastAPI ATM Status API...")
+    if db_pool:
+        await db_pool.close()
+        logger.info("Database connection pool closed")
+
+# FastAPI Application
+app = FastAPI(
+    title="ATM Status Monitoring API",
+    description="REST API for ATM status monitoring with real-time data and historical analysis",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan
+)
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific domains
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Timezone configuration
 DILI_TZ = pytz.timezone('Asia/Dili')  # UTC+9
 UTC_TZ = pytz.UTC
@@ -295,1382 +375,546 @@ class FaultHistoryReportResponse(BaseModel):
     terminal_count: int = Field(..., description="Number of terminals included")
     chart_data: Dict[str, Any] = Field(..., description="Chart configuration and data")
 
-# Global job tracking
-refresh_jobs: Dict[str, RefreshJobResponse] = {}
-job_executor = ThreadPoolExecutor(max_workers=2)  # Limit concurrent refresh jobs
+# ========================
+# CASH INFORMATION ENDPOINTS
+# ========================
 
-# Lifespan management
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Starting ATM FastAPI application...")
-    await create_db_pool()
-    
-    # Start background notification checker
-    background_task = None
-    if NotificationService is not None:
-        async def notification_checker():
-            """Background task to check for ATM status changes"""
-            while True:
-                try:
-                    service = await get_notification_service()
-                    changes = await service.check_status_changes()
-                    if changes:
-                        logger.info(f"Background check found {len(changes)} status changes")
-                except Exception as e:
-                    logger.error(f"Error in background notification checker: {e}")
-                
-                # Wait 5 minutes before next check
-                await asyncio.sleep(300)
-        
-        background_task = asyncio.create_task(notification_checker())
-        logger.info("Background notification checker started (5-minute interval)")
-    
-    yield
-    
-    # Shutdown
-    if background_task:
-        background_task.cancel()
-        try:
-            await background_task
-        except asyncio.CancelledError:
-            logger.info("Background notification checker stopped")
-    
-    global db_pool
-    if db_pool:
-        await db_pool.close()
-        logger.info("Database connection pool closed")
+# Pydantic models for cash information
+class CashInformationData(BaseModel):
+    terminal_id: str = Field(..., description="Terminal identifier")
+    business_code: Optional[str] = Field(None, description="Business code")
+    technical_code: Optional[str] = Field(None, description="Technical code")
+    external_id: Optional[str] = Field(None, description="External identifier")
+    total_cash_amount: Optional[float] = Field(None, description="Total cash amount in the ATM")
+    total_currency: Optional[str] = Field(None, description="Currency type")
+    cassette_count: Optional[int] = Field(None, description="Number of cassettes")
+    cassettes_data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Field(None, description="Cassettes information (JSONB)")
+    has_low_cash_warning: Optional[bool] = Field(None, description="Low cash warning flag")
+    has_cash_errors: Optional[bool] = Field(None, description="Cash errors flag")
+    retrieval_timestamp: Optional[datetime] = Field(None, description="When cash data was retrieved")
+    event_date: Optional[datetime] = Field(None, description="Event timestamp")
+    raw_cash_data: Optional[Dict[str, Any]] = Field(None, description="Raw cash data from API")
 
-# FastAPI app initialization
-app = FastAPI(
-    title="ATM Status Monitoring API",
-    description="FastAPI-based REST API for ATM status counts and monitoring",
-    version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/api/v1/openapi.json",
-    lifespan=lifespan
-)
+class CashInformationResponse(BaseModel):
+    cash_data: List[CashInformationData]
+    total_count: int = Field(..., ge=0, description="Total number of cash records")
+    summary: Dict[str, Any] = Field(..., description="Summary statistics")
+    filters_applied: Dict[str, Any] = Field(..., description="Applied filters")
+    timestamp: str = Field(..., description="Response timestamp")
 
-# CORS middleware - Production-ready configuration
-cors_origins = os.getenv('CORS_ORIGINS', '["http://localhost:3000"]')
-if isinstance(cors_origins, str):
-    import json
-    try:
-        cors_origins = json.loads(cors_origins)
-    except json.JSONDecodeError:
-        cors_origins = ["http://localhost:3000"]
-
-cors_methods = os.getenv('CORS_ALLOW_METHODS', '["GET", "POST", "PUT", "DELETE", "OPTIONS"]')
-if isinstance(cors_methods, str):
-    try:
-        cors_methods = json.loads(cors_methods)
-    except json.JSONDecodeError:
-        cors_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=bool(os.getenv('CORS_ALLOW_CREDENTIALS', 'true').lower() == 'true'),
-    allow_methods=cors_methods,
-    allow_headers=["*"],
-)
-
-# Global variables
-app_start_time = datetime.now()
-db_pool = None
-
-# Database connection functions
-async def create_db_pool():
-    """Create database connection pool"""
-    global db_pool
-    try:
-        db_pool = await asyncpg.create_pool(
-            host=DB_CONFIG['host'],
-            port=DB_CONFIG['port'],
-            database=DB_CONFIG['database'],
-            user=DB_CONFIG['user'],
-            password=DB_CONFIG['password'],
-            min_size=2,
-            max_size=10,
-            command_timeout=30
-        )
-        logger.info("Database connection pool created successfully")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to create database pool: {e}")
-        return False
-
-async def get_db_connection() -> Optional[asyncpg.Connection]:
-    """Get database connection from pool"""
-    global db_pool
-    if not db_pool:
-        await create_db_pool()
-    
-    if db_pool:
-        try:
-            return await db_pool.acquire()
-        except Exception as e:
-            logger.error(f"Failed to acquire database connection: {e}")
-            return None
-    return None
-
-async def release_db_connection(conn: Optional[asyncpg.Connection]):
-    """Release database connection back to pool"""
-    global db_pool
-    if db_pool and conn:
-        try:
-            await db_pool.release(conn)
-        except Exception as e:
-            logger.error(f"Failed to release database connection: {e}")
-
-# Utility functions
-def calculate_health_status(availability_percentage: float) -> HealthStatusEnum:
-    """Calculate health status based on availability percentage"""
-    if availability_percentage >= 85:
-        return HealthStatusEnum.HEALTHY
-    elif availability_percentage >= 70:
-        return HealthStatusEnum.ATTENTION
-    elif availability_percentage >= 50:
-        return HealthStatusEnum.WARNING
-    else:
-        return HealthStatusEnum.CRITICAL
-
-# Dependency functions
-async def validate_db_connection():
-    """Dependency to validate database connection"""
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        # Test connection
-        await conn.fetchval("SELECT 1")
-        await release_db_connection(conn)
-        return True
-    except Exception as e:
-        await release_db_connection(conn)
-        logger.error(f"Database connection test failed: {e}")
-        raise HTTPException(status_code=503, detail="Database connection test failed")
-
-# API Endpoints
-
-@app.get("/api/v1/health", response_model=HealthResponse, tags=["System"])
-async def health_check():
-    """
-    API health check endpoint
-    
-    Returns the current status of the API and database connectivity.
-    """
-    try:
-        # Test database connection
-        conn = await get_db_connection()
-        db_connected = False
-        
-        if conn:
-            try:
-                await conn.fetchval("SELECT 1")
-                db_connected = True
-            except Exception as e:
-                logger.warning(f"Database health check failed: {e}")
-            finally:
-                await release_db_connection(conn)
-        
-        uptime = (datetime.now() - app_start_time).total_seconds()
-        
-        return HealthResponse(
-            database_connected=db_connected,
-            uptime_seconds=uptime
-        )
-        
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=500, detail="Health check failed")
-
-@app.get("/api/v1/atm/status/summary", response_model=ATMSummaryResponse, tags=["ATM Status"])
-async def get_atm_summary(
-    table_type: TableTypeEnum = Query(TableTypeEnum.LEGACY, description="Database table to query"),
+@app.get("/api/v1/atm/cash-information", response_model=CashInformationResponse, tags=["Cash Information"])
+async def get_terminal_cash_information(
+    terminal_id: Optional[str] = Query(None, description="Filter by specific terminal ID"),
+    location_filter: Optional[str] = Query(None, description="Filter by location (partial match)"),
+    cash_status: Optional[str] = Query(None, description="Filter by cash status (LOW, NORMAL, HIGH)"),
+    hours_back: int = Query(24, ge=1, le=720, description="Hours to look back for data (1-720)"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    include_raw_data: bool = Query(False, description="Include raw cash data in response"),
     db_check: bool = Depends(validate_db_connection)
 ):
     """
-    Get overall ATM status summary across all regions
+    Get terminal cash information from the terminal_cash_information table
     
-    Returns aggregated counts and percentages for all ATM statuses.
-    Availability includes both AVAILABLE and WARNING ATMs as they are operational.
+    Returns cash information including:
+    - Cassette counts and denominations for each cassette (1-4)
+    - Total cash amount calculations
+    - Cash status indicators
+    - Last replenishment information
+    - Raw cash data (optional)
     
-    NOTE: Now uses terminal_details table to match ATM Information page data source
+    Supports filtering by terminal ID, location, cash status, and time range.
     """
     conn = await get_db_connection()
     if not conn:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     
     try:
-        # Use terminal_details table as single source of truth (EXACTLY like ATM Information page)
-        # This fixes the data discrepancy between dashboard cards and ATM info page
-        # Use identical query logic to ATM information endpoint for perfect consistency
-        query = """
-            SELECT DISTINCT ON (terminal_id)
-                terminal_id, fetched_status, retrieved_date
-            FROM terminal_details
-            WHERE retrieved_date >= NOW() - INTERVAL '24 hours'
-            ORDER BY terminal_id, retrieved_date DESC
-        """
-        
-        rows = await conn.fetch(query)
-        
-        # Enhanced fallback logic: if no data found for 24h, try longer periods
-        actual_hours_used = 24
-        if not rows:
-            # Try progressively longer periods
-            fallback_periods = [48, 72, 168, 336, 720]  # 2 days, 3 days, 1 week, 2 weeks, 1 month
-            
-            logger.info(f"No data found for 24h period in summary, trying longer fallback periods: {fallback_periods}")
-            
-            for fallback_hours in fallback_periods:
-                fallback_query = """
-                    SELECT DISTINCT ON (terminal_id)
-                        terminal_id, fetched_status, retrieved_date
-                    FROM terminal_details
-                    WHERE retrieved_date >= NOW() - INTERVAL '%s hours'
-                    ORDER BY terminal_id, retrieved_date DESC
-                """ % fallback_hours
-                
-                rows = await conn.fetch(fallback_query)
-                if rows:
-                    actual_hours_used = fallback_hours
-                    logger.info(f"Found {len(rows)} ATM records using {fallback_hours}h fallback period")
-                    break
-        
-        if not rows:
-            raise HTTPException(status_code=404, detail="No ATM data found")
-        
-        # Count statuses exactly like ATM information page does
-        status_counts = {}
-        last_updated = None
-        
-        for row in rows:
-            status = row['fetched_status'] or 'UNKNOWN'
-            status_counts[status] = status_counts.get(status, 0) + 1
-            
-            # Track latest update time
-            if not last_updated or (row['retrieved_date'] and row['retrieved_date'] > last_updated):
-                last_updated = row['retrieved_date']
-        
-        # Map status counts with same logic as status mapping, but handle additional statuses
-        available = status_counts.get('AVAILABLE', 0)
-        warning = status_counts.get('WARNING', 0)
-        # Map WOUNDED, HARD, CASH to wounded category
-        wounded = status_counts.get('WOUNDED', 0) + status_counts.get('HARD', 0) + status_counts.get('CASH', 0)
-        zombie = status_counts.get('ZOMBIE', 0)
-        # Map OUT_OF_SERVICE, UNAVAILABLE to out_of_service category  
-        out_of_service = status_counts.get('OUT_OF_SERVICE', 0) + status_counts.get('UNAVAILABLE', 0)
-        
-        total_atms = len(rows)  # Count actual rows, not calculated sum
-        
-        # Calculate availability including both AVAILABLE and WARNING ATMs
-        operational_atms = available + warning
-        availability_percentage = (operational_atms / total_atms * 100) if total_atms > 0 else 0
-        
-        status_counts = ATMStatusCounts(
-            available=available,
-            warning=warning,
-            zombie=zombie,
-            wounded=wounded,
-            out_of_service=out_of_service,
-            total=total_atms
-        )
-        
-        return ATMSummaryResponse(
-            total_atms=total_atms,
-            status_counts=status_counts,
-            overall_availability=round(availability_percentage, 2),
-            total_regions=1,  # Using terminal details, so we don't have regional breakdown
-            last_updated=last_updated if last_updated else datetime.utcnow(),
-            data_source="terminal_details"  # Updated to reflect actual data source
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching ATM summary: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch ATM summary data")
-    finally:
-        await release_db_connection(conn)
-
-@app.get("/api/v1/atm/status/regional", response_model=RegionalResponse, tags=["ATM Status"])
-async def get_regional_data(
-    region_code: Optional[str] = Query(None, description="Filter by specific region code"),
-    table_type: TableTypeEnum = Query(TableTypeEnum.LEGACY, description="Database table to query"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get regional breakdown of ATM status counts
-    
-    Returns detailed breakdown by region with health status classification.
-    Availability includes both AVAILABLE and WARNING ATMs as they are operational.
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        # Build query based on table type - TL-DL region only
-        if table_type == TableTypeEnum.LEGACY:
-            base_query = """
-                WITH latest_regional AS (
-                    SELECT DISTINCT ON (region_code)
-                        region_code, count_available, count_warning, count_zombie,
-                        count_wounded, count_out_of_service, total_atms_in_region, retrieval_timestamp
-                    FROM regional_data
-                    WHERE region_code = 'TL-DL'
-                    ORDER BY region_code, retrieval_timestamp DESC
-                )
-                SELECT 
-                    region_code, count_available, count_warning, count_zombie,
-                    count_wounded, count_out_of_service, total_atms_in_region,
-                    retrieval_timestamp as date_creation
-                FROM latest_regional
-            """
-        else:
-            # Query new table (regional_data) - TL-DL region only
-            base_query = """
-                WITH latest_regional AS (
-                    SELECT DISTINCT ON (region_code)
-                        region_code, count_available, count_warning, count_zombie,
-                        count_wounded, count_out_of_service, total_atms_in_region, 
-                        retrieval_timestamp
-                    FROM regional_data
-                    WHERE region_code = 'TL-DL'
-                    ORDER BY region_code, retrieval_timestamp DESC
-                )
-                SELECT 
-                    region_code, count_available, count_warning, count_zombie,
-                    count_wounded, count_out_of_service, total_atms_in_region,
-                    retrieval_timestamp as date_creation
-                FROM latest_regional
-            """
-        
-        # Add region filter if specified (but force TL-DL if none specified)
-        if region_code and region_code == 'TL-DL':
-            base_query += f" WHERE region_code = $1"
-            rows = await conn.fetch(base_query, region_code)
-        elif region_code and region_code != 'TL-DL':
-            # If someone requests a different region, return empty data
-            rows = []
-        else:
-            # Default to TL-DL only
-            rows = await conn.fetch(base_query)
-        
-        if not rows:
-            raise HTTPException(status_code=404, detail="No regional data found")
-        
-        regional_data = []
-        total_summary = {
-            'available': 0, 'warning': 0, 'zombie': 0, 
-            'wounded': 0, 'out_of_service': 0, 'total': 0
-        }
-        last_updated = None
-        
-        for row in rows:
-            available = row['count_available'] or 0
-            warning = row['count_warning'] or 0
-            zombie = row['count_zombie'] or 0
-            wounded = row['count_wounded'] or 0
-            out_of_service = row['count_out_of_service'] or 0
-            total_region = available + warning + zombie + wounded + out_of_service
-            
-            # Calculate availability including both AVAILABLE and WARNING ATMs
-            operational_atms = available + warning
-            availability_pct = (operational_atms / total_region * 100) if total_region > 0 else 0
-            
-            status_counts = ATMStatusCounts(
-                available=available,
-                warning=warning,
-                zombie=zombie,
-                wounded=wounded,
-                out_of_service=out_of_service,
-                total=total_region
-            )
-            
-            # Update summary totals
-            total_summary['available'] += available
-            total_summary['warning'] += warning
-            total_summary['zombie'] += zombie
-            total_summary['wounded'] += wounded
-            total_summary['out_of_service'] += out_of_service
-            total_summary['total'] += total_region
-            
-            if not last_updated or row['date_creation'] > last_updated:
-                last_updated = row['date_creation']
-            
-            regional_data.append(RegionalData(
-                region_code=row['region_code'],
-                status_counts=status_counts,
-                availability_percentage=round(availability_pct, 2),
-                last_updated=convert_to_dili_time(row['date_creation']) if row['date_creation'] else convert_to_dili_time(datetime.utcnow()),
-                health_status=calculate_health_status(availability_pct)
-            ))
-        
-        summary_counts = ATMStatusCounts(
-            available=total_summary['available'],
-            warning=total_summary['warning'],
-            zombie=total_summary['zombie'],
-            wounded=total_summary['wounded'],
-            out_of_service=total_summary['out_of_service'],
-            total=total_summary['total']
-        )
-        
-        return RegionalResponse(
-            regional_data=regional_data,
-            total_regions=len(rows),
-            summary=summary_counts,
-            last_updated=convert_to_dili_time(last_updated) if last_updated else convert_to_dili_time(datetime.utcnow())
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching regional data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch regional data")
-    finally:
-        await release_db_connection(conn)
-
-@app.get("/api/v1/atm/status/trends/overall", response_model=TrendResponse, tags=["ATM Status"])
-async def get_overall_atm_trends(
-    hours: int = Query(24, ge=1, le=720, description="Number of hours to look back (1-720)"),
-    interval_minutes: int = Query(60, ge=15, le=360, description="Data aggregation interval in minutes (15-360)"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get historical trends for overall ATM availability using real ATM data
-    
-    Returns time-series data showing aggregated ATM status changes over time from all individual ATMs.
-    This endpoint uses terminal_details table (real ATM data) instead of regional aggregates,
-    ensuring consistency with the dashboard summary that uses the same data source.
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        # Query terminal_details table to get time-series data for all ATMs
-        # Group by time intervals to aggregate the data points
-        query = """
-            WITH time_intervals AS (
-                SELECT generate_series(
-                    date_trunc('hour', NOW() - INTERVAL '%s hours'),
-                    date_trunc('hour', NOW()),
-                    INTERVAL '%s minutes'
-                ) AS interval_start
-            ),
-            atm_status_at_intervals AS (
-                SELECT 
-                    ti.interval_start,
-                    td.terminal_id,
-                    td.fetched_status,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY ti.interval_start, td.terminal_id 
-                        ORDER BY td.retrieved_date DESC
-                    ) as rn
-                FROM time_intervals ti
-                LEFT JOIN terminal_details td ON 
-                    td.retrieved_date >= ti.interval_start 
-                    AND td.retrieved_date < ti.interval_start + INTERVAL '%s minutes'
-                WHERE td.retrieved_date >= NOW() - INTERVAL '%s hours'
-            ),
-            latest_status_per_interval AS (
-                SELECT 
-                    interval_start,
-                    terminal_id,
-                    COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
-                FROM atm_status_at_intervals 
-                WHERE rn = 1 OR fetched_status IS NULL
-            )
-            SELECT 
-                interval_start,
-                COUNT(*) as total_atms,
-                COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
-                COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
-                COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
-                COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
-                COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
-            FROM latest_status_per_interval
-            GROUP BY interval_start
-            HAVING COUNT(*) > 0
-            ORDER BY interval_start ASC
-        """ % (hours, interval_minutes, interval_minutes, hours)
-        
-        rows = await conn.fetch(query)
-        
-        # Enhanced fallback logic: if no data found for requested period, try shorter periods
-        actual_hours_used = hours
-        fallback_message = None
-        
-        if not rows:
-            # Define fallback periods to try in descending order (shorter periods)
-            fallback_periods = [12, 6, 3, 1]  # 12h, 6h, 3h, 1h
-            fallback_periods = [period for period in fallback_periods if period < hours]
-            
-            logger.info(f"No data found for {hours}h period in overall trends, trying shorter fallback periods: {fallback_periods}")
-            
-            for fallback_hours in fallback_periods:
-                fallback_query = """
-                    WITH time_intervals AS (
-                        SELECT generate_series(
-                            date_trunc('hour', NOW() - INTERVAL '%s hours'),
-                            date_trunc('hour', NOW()),
-                            INTERVAL '%s minutes'
-                        ) AS interval_start
-                    ),
-                    atm_status_at_intervals AS (
-                        SELECT 
-                            ti.interval_start,
-                            td.terminal_id,
-                            td.fetched_status,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY ti.interval_start, td.terminal_id 
-                                ORDER BY td.retrieved_date DESC
-                            ) as rn
-                        FROM time_intervals ti
-                        LEFT JOIN terminal_details td ON 
-                            td.retrieved_date >= ti.interval_start 
-                            AND td.retrieved_date < ti.interval_start + INTERVAL '%s minutes'
-                        WHERE td.retrieved_date >= NOW() - INTERVAL '%s hours'
-                    ),
-                    latest_status_per_interval AS (
-                        SELECT 
-                            interval_start,
-                            terminal_id,
-                            COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
-                        FROM atm_status_at_intervals 
-                        WHERE rn = 1 OR fetched_status IS NULL
-                    )
-                    SELECT 
-                        interval_start,
-                        COUNT(*) as total_atms,
-                        COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
-                        COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
-                        COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
-                        COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
-                        COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
-                    FROM latest_status_per_interval
-                    GROUP BY interval_start
-                    HAVING COUNT(*) > 0
-                    ORDER BY interval_start ASC
-                """ % (fallback_hours, interval_minutes, interval_minutes, fallback_hours)
-                
-                rows = await conn.fetch(fallback_query)
-                if rows:
-                    actual_hours_used = fallback_hours
-                    fallback_message = f"Requested {hours}h data unavailable, showing available {fallback_hours}h data instead"
-                    logger.info(f"Found {len(rows)} data points for {fallback_hours}h fallback period")
-                    break
-            
-            # If still no data found, raise 404
-            if not rows:
-                raise HTTPException(status_code=404, detail=f"No overall trend data found in any time period")
-        
-        trends = []
-        availability_values = []
-        
-        for row in rows:
-            available = row['count_available'] or 0
-            warning = row['count_warning'] or 0
-            zombie = row['count_zombie'] or 0
-            wounded = row['count_wounded'] or 0
-            out_of_service = row['count_out_of_service'] or 0
-            total = row['total_atms'] or 0
-            
-            # Calculate availability including both AVAILABLE and WARNING ATMs
-            operational_atms = available + warning
-            availability_pct = (operational_atms / total * 100) if total > 0 else 0
-            availability_values.append(availability_pct)
-            
-            status_counts = ATMStatusCounts(
-                available=available,
-                warning=warning,
-                zombie=zombie,
-                wounded=wounded,
-                out_of_service=out_of_service,
-                total=total
-            )
-            
-            trends.append(TrendPoint(
-                timestamp=convert_to_dili_time(row['interval_start']),
-                status_counts=status_counts,
-                availability_percentage=round(availability_pct, 2)
-            ))
-        
-        # Calculate summary statistics
-        summary_stats = {
-            'data_points': len(trends),
-            'time_range_hours': actual_hours_used,
-            'requested_hours': hours,
-            'interval_minutes': interval_minutes,
-            'avg_availability': round(sum(availability_values) / len(availability_values), 2) if availability_values else 0,
-            'min_availability': round(min(availability_values), 2) if availability_values else 0,
-            'max_availability': round(max(availability_values), 2) if availability_values else 0,
-            'first_reading': trends[0].timestamp.isoformat() if trends else None,
-            'last_reading': trends[-1].timestamp.isoformat() if trends else None,
-            'data_source': 'terminal_details',
-            'total_atms_tracked': trends[-1].status_counts.total if trends else 0
-        }
-        
-        # Add fallback message if applicable
-        if fallback_message:
-            summary_stats['fallback_message'] = fallback_message
-        
-        return TrendResponse(
-            region_code="OVERALL", 
-            time_period=f"{actual_hours_used} hours" + (f" (requested {hours}h)" if actual_hours_used != hours else ""),
-            trends=trends,
-            summary_stats=summary_stats
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching overall ATM trends: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch overall trend data")
-    finally:
-        await release_db_connection(conn)
-
-@app.get("/api/v1/atm/status/trends/overall/events", response_model=TrendResponse, tags=["ATM Status"])
-async def get_overall_atm_trends_events(
-    hours: int = Query(168, ge=1, le=2160, description="Number of hours to look back (1-2160, default 168=7 days)"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get historical trends for overall ATM availability using event-based status changes
-    
-    Returns time-series data showing actual ATM status change events across all ATMs,
-    similar to individual ATM history but aggregated. This provides event-driven timestamps
-    instead of fixed time intervals, making it consistent with individual ATM charts.
-    
-    This endpoint uses terminal_details table to collect all status change events
-    and calculates overall availability at each event timestamp.
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        # Query terminal_details table to get all status change events across all ATMs
-        # We'll get distinct timestamps when any ATM changed status, then calculate overall availability at each timestamp
-        query = """
-            WITH status_events AS (
-                SELECT DISTINCT retrieved_date
-                FROM terminal_details
-                WHERE retrieved_date >= NOW() - INTERVAL '%s hours'
-                ORDER BY retrieved_date ASC
-            ),
-            atm_status_at_events AS (
-                SELECT 
-                    se.retrieved_date as event_time,
-                    td.terminal_id,
-                    td.fetched_status,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY se.retrieved_date, td.terminal_id 
-                        ORDER BY td.retrieved_date DESC
-                    ) as rn
-                FROM status_events se
-                LEFT JOIN terminal_details td ON 
-                    td.retrieved_date <= se.retrieved_date
-                    AND td.retrieved_date >= NOW() - INTERVAL '%s hours'
-                WHERE td.terminal_id IS NOT NULL
-            ),
-            latest_status_per_event AS (
-                SELECT 
-                    event_time,
-                    terminal_id,
-                    COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
-                FROM atm_status_at_events 
-                WHERE rn = 1
-            )
-            SELECT 
-                event_time,
-                COUNT(*) as total_atms,
-                COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
-                COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
-                COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
-                COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
-                COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
-            FROM latest_status_per_event
-            GROUP BY event_time
-            HAVING COUNT(*) > 0
-            ORDER BY event_time ASC
-        """ % (hours, hours)
-        
-        rows = await conn.fetch(query)
-        
-        # Enhanced fallback logic: if no data found for requested period, try shorter periods
-        actual_hours_used = hours
-        fallback_message = None
-        
-        if not rows:
-            # Define fallback periods to try in descending order (shorter periods)
-            fallback_periods = [720, 168, 72, 24, 12, 6, 1]  # 30 days, 7 days, 3 days, 1 day, 12h, 6h, 1h
-            fallback_periods = [period for period in fallback_periods if period < hours]
-            
-            logger.info(f"No event data found for {hours}h period in overall trends, trying shorter fallback periods: {fallback_periods}")
-            
-            for fallback_hours in fallback_periods:
-                fallback_query = """
-                    WITH status_events AS (
-                        SELECT DISTINCT retrieved_date
-                        FROM terminal_details
-                        WHERE retrieved_date >= NOW() - INTERVAL '%s hours'
-                        ORDER BY retrieved_date ASC
-                    ),
-                    atm_status_at_events AS (
-                        SELECT 
-                            se.retrieved_date as event_time,
-                            td.terminal_id,
-                            td.fetched_status,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY se.retrieved_date, td.terminal_id 
-                                ORDER BY td.retrieved_date DESC
-                            ) as rn
-                        FROM status_events se
-                        LEFT JOIN terminal_details td ON 
-                            td.retrieved_date <= se.retrieved_date
-                            AND td.retrieved_date >= NOW() - INTERVAL '%s hours'
-                        WHERE td.terminal_id IS NOT NULL
-                    ),
-                    latest_status_per_event AS (
-                        SELECT 
-                            event_time,
-                            terminal_id,
-                            COALESCE(fetched_status, 'OUT_OF_SERVICE') as status
-                        FROM atm_status_at_events 
-                        WHERE rn = 1
-                    )
-                    SELECT 
-                        event_time,
-                        COUNT(*) as total_atms,
-                        COUNT(CASE WHEN status = 'AVAILABLE' THEN 1 END) as count_available,
-                        COUNT(CASE WHEN status = 'WARNING' THEN 1 END) as count_warning,
-                        COUNT(CASE WHEN status = 'ZOMBIE' THEN 1 END) as count_zombie,
-                        COUNT(CASE WHEN status IN ('WOUNDED', 'HARD', 'CASH') THEN 1 END) as count_wounded,
-                        COUNT(CASE WHEN status IN ('OUT_OF_SERVICE', 'UNAVAILABLE') THEN 1 END) as count_out_of_service
-                    FROM latest_status_per_event
-                    GROUP BY event_time
-                    HAVING COUNT(*) > 0
-                    ORDER BY event_time ASC
-                """ % (fallback_hours, fallback_hours)
-                
-                fallback_rows = await conn.fetch(fallback_query)
-                if fallback_rows:
-                    rows = fallback_rows
-                    actual_hours_used = fallback_hours
-                    fallback_message = f"Data for {hours}h unavailable, showing {fallback_hours}h"
-                    logger.info(f"Using fallback period of {fallback_hours}h for overall event trends")
-                    break
-        
-        if not rows:
-            logger.warning("No overall event trend data found even after fallback attempts")
-            return TrendResponse(
-                region_code="OVERALL",
-                time_period=f"{hours} hours (no data)",
-                trends=[],
-                summary_stats={
-                    'data_points': 0,
-                    'time_range_hours': 0,
-                    'requested_hours': hours,
-                    'interval_minutes': None,  # Event-based, no fixed interval
-                    'avg_availability': 0,
-                    'min_availability': 0,
-                    'max_availability': 0,
-                    'first_reading': None,
-                    'last_reading': None,
-                    'data_source': 'terminal_details_events',
-                    'total_atms_tracked': 0,
-                    'fallback_message': 'No event data available for any period'
-                }
-            )
-        
-        # Convert query results to trend points
-        trends = []
-        availability_values = []
-        
-        for row in rows:
-            available = row['count_available'] or 0
-            warning = row['count_warning'] or 0
-            zombie = row['count_zombie'] or 0
-            wounded = row['count_wounded'] or 0
-            out_of_service = row['count_out_of_service'] or 0
-            total = row['total_atms'] or 0
-            
-            # Calculate availability including both AVAILABLE and WARNING ATMs
-            operational_atms = available + warning
-            availability_pct = (operational_atms / total * 100) if total > 0 else 0
-            availability_values.append(availability_pct)
-            
-            status_counts = ATMStatusCounts(
-                available=available,
-                warning=warning,
-                zombie=zombie,
-                wounded=wounded,
-                out_of_service=out_of_service,
-                total=total
-            )
-            
-            trends.append(TrendPoint(
-                timestamp=convert_to_dili_time(row['event_time']),
-                status_counts=status_counts,
-                availability_percentage=round(availability_pct, 2)
-            ))
-        
-        # Calculate summary statistics
-        summary_stats = {
-            'data_points': len(trends),
-            'time_range_hours': actual_hours_used,
-            'requested_hours': hours,
-            'interval_minutes': None,  # Event-based, no fixed interval
-            'avg_availability': round(sum(availability_values) / len(availability_values), 2) if availability_values else 0,
-            'min_availability': round(min(availability_values), 2) if availability_values else 0,
-            'max_availability': round(max(availability_values), 2) if availability_values else 0,
-            'first_reading': trends[0].timestamp.isoformat() if trends else None,
-            'last_reading': trends[-1].timestamp.isoformat() if trends else None,
-            'data_source': 'terminal_details_events',
-            'total_atms_tracked': trends[-1].status_counts.total if trends else 0
-        }
-        
-        # Add fallback message if applicable
-        if fallback_message:
-            summary_stats['fallback_message'] = fallback_message
-        
-        return TrendResponse(
-            region_code="OVERALL", 
-            time_period=f"{actual_hours_used} hours" + (f" (requested {hours}h)" if actual_hours_used != hours else "") + " (events)",
-            trends=trends,
-            summary_stats=summary_stats
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching overall ATM event trends: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch overall event trend data")
-    finally:
-        await release_db_connection(conn)
-
-@app.get("/api/v1/atm/status/latest", tags=["ATM Status"])
-async def get_latest_data(
-    table_type: TableTypeEnum = Query(TableTypeEnum.BOTH, description="Database table to query"),
-    include_terminal_details: bool = Query(False, description="Include terminal details data"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get latest data from all available tables
-    
-    Returns the most recent data from specified database tables.
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        result: Dict[str, Any] = {"data_sources": []}
-        
-        # Legacy table data - TL-DL region only
-        if table_type in [TableTypeEnum.LEGACY, TableTypeEnum.BOTH]:
-            try:
-                legacy_query = """
-                    SELECT DISTINCT ON (region_code)
-                        region_code, count_available, count_warning, count_zombie,
-                        count_wounded, count_out_of_service, retrieval_timestamp
-                    FROM regional_data
-                    WHERE region_code = 'TL-DL'
-                    ORDER BY region_code, retrieval_timestamp DESC
-                """
-                legacy_rows = await conn.fetch(legacy_query)
-                
-                legacy_data = []
-                for row in legacy_rows:
-                    legacy_data.append({
-                        'region_name': row['region_code'],
-                        'count_available': row['count_available'],
-                        'count_warning': row['count_warning'],
-                        'count_zombie': row['count_zombie'],
-                        'count_wounded': row['count_wounded'],
-                        'count_out_of_service': row['count_out_of_service'],
-                        'last_updated': convert_to_dili_time(row['retrieval_timestamp']).isoformat() if row['retrieval_timestamp'] else None
-                    })
-                
-                result["data_sources"].append({
-                    "table": "regional_data",
-                    "type": "legacy",
-                    "records": len(legacy_data),
-                    "data": legacy_data
-                })
-                
-            except Exception as e:
-                logger.warning(f"Failed to fetch legacy table data: {e}")
-        
-        # New table data - TL-DL region only
-        if table_type in [TableTypeEnum.NEW, TableTypeEnum.BOTH]:
-            try:
-                new_query = """
-                    SELECT DISTINCT ON (region_code)
-                        region_code, raw_regional_data, retrieval_timestamp
-                    FROM regional_data
-                    WHERE region_code = 'TL-DL'
-                    ORDER BY region_code, retrieval_timestamp DESC
-                """
-                new_rows = await conn.fetch(new_query)
-                
-                new_data = []
-                for row in new_rows:
-                    new_data.append({
-                        'region_code': row['region_code'],
-                        'raw_regional_data': row['raw_regional_data'],
-                        'last_updated': convert_to_dili_time(row['retrieval_timestamp']).isoformat() if row['retrieval_timestamp'] else None
-                    })
-                
-                result["data_sources"].append({
-                    "table": "regional_data",
-                    "type": "new_jsonb",
-                    "records": len(new_data),
-                    "data": new_data
-                })
-                
-            except Exception as e:
-                logger.warning(f"Failed to fetch new table data: {e}")
-        
-        # Terminal details if requested
-        if include_terminal_details:
-            try:
-                terminal_query = """
-                    SELECT DISTINCT ON (terminal_id)
-                        terminal_id, location, issue_state_name, serial_number,
-                        fetched_status, retrieved_date, fault_data, metadata,
-                        raw_terminal_data
-                    FROM terminal_details
-                    WHERE retrieved_date >= NOW() - INTERVAL '24 hours'
-                    ORDER BY terminal_id, retrieved_date DESC
-                """
-                terminal_rows = await conn.fetch(terminal_query)
-                
-                # Enhanced fallback logic: if no terminal data found for 24h, try longer periods
-                actual_hours_used = 24
-                if not terminal_rows:
-                    # Try progressively longer periods
-                    fallback_periods = [48, 72, 168, 336, 720]  # 2 days, 3 days, 1 week, 2 weeks, 1 month
-                    
-                    logger.info(f"No terminal details found for 24h period, trying longer fallback periods: {fallback_periods}")
-                    
-                    for fallback_hours in fallback_periods:
-                        fallback_query = """
-                            SELECT DISTINCT ON (terminal_id)
-                                terminal_id, location, issue_state_name, serial_number,
-                                fetched_status, retrieved_date, fault_data, metadata,
-                                raw_terminal_data
-                            FROM terminal_details
-                            WHERE retrieved_date >= NOW() - INTERVAL '%s hours'
-                            ORDER BY terminal_id, retrieved_date DESC
-                        """ % fallback_hours
-                        
-                        terminal_rows = await conn.fetch(fallback_query)
-                        if terminal_rows:
-                            actual_hours_used = fallback_hours
-                            logger.info(f"Found {len(terminal_rows)} terminal records using {fallback_hours}h fallback period")
-                            break
-                
-                terminal_data = []
-                for row in terminal_rows:
-                    # Parse raw_terminal_data to extract additional fields
-                    additional_fields = {}
-                    if row['raw_terminal_data']:
-                        try:
-                            if isinstance(row['raw_terminal_data'], str):
-                                raw_data = json.loads(row['raw_terminal_data'])
-                            else:
-                                raw_data = row['raw_terminal_data']
-                            
-                            # Extract additional fields from raw data
-                            if isinstance(raw_data, dict):
-                                additional_fields.update({
-                                    'external_id': raw_data.get('externalId', row['terminal_id']),
-                                    'bank': raw_data.get('bank') if raw_data.get('bank') else None,  # Don't use 'Unknown' default
-                                    'brand': raw_data.get('brand'),
-                                    'model': raw_data.get('model'),
-                                    'city': raw_data.get('city'),
-                                    'region': raw_data.get('region'),
-                                })
-                        except (json.JSONDecodeError, AttributeError):
-                            logger.warning(f"Failed to parse raw_terminal_data for terminal {row['terminal_id']}")
-                    
-                    terminal_data.append({
-                        'terminal_id': str(row['terminal_id']),
-                        'external_id': additional_fields.get('external_id', str(row['terminal_id'])),
-                        'location': row['location'],
-                        'location_str': row['location'],  # Frontend expects location_str
-                        'city': additional_fields.get('city'),
-                        'region': additional_fields.get('region'),
-                        'bank': additional_fields.get('bank'),
-                        'brand': additional_fields.get('brand'),
-                        'model': additional_fields.get('model'),
-                        'issue_state_name': row['issue_state_name'],
-                        'status': row['fetched_status'],
-                        'fetched_status': row['fetched_status'],
-                        'serial_number': row['serial_number'],
-                        'retrieved_date': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None,
-                        'last_updated': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None,
-                        'fault_data': row['fault_data'],
-                        'metadata': row['metadata']
-                    })
-                
-                result["data_sources"].append({
-                    "table": "terminal_details",
-                    "type": "terminal_data",
-                    "records": len(terminal_data),
-                    "data": terminal_data
-                })
-                
-            except Exception as e:
-                logger.warning(f"Failed to fetch terminal details: {e}")
-        
-        if not result["data_sources"]:
-            raise HTTPException(status_code=404, detail="No data found in any table")
-        
-        result["summary"] = {
-            "total_tables_queried": len(result["data_sources"]),
-            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
-            "table_type_requested": table_type.value
-        }
-        
-        return result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching latest data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch latest data")
-    finally:
-        await release_db_connection(conn)
-
-@app.get("/api/v1/atm/{terminal_id}/history", response_model=ATMHistoricalResponse, tags=["ATM Historical"])
-async def get_atm_history(
-    terminal_id: str = Path(..., description="Terminal ID to get history for"),
-    hours: int = Query(168, ge=1, le=2160, description="Number of hours to look back (1-2160, default 168=7 days)"),
-    include_fault_details: bool = Query(True, description="Include fault descriptions in history"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get historical status data for a specific ATM terminal
-    
-    This endpoint provides time-series data for individual ATM status changes,
-    perfect for creating line charts showing ATM availability history.
-    
-    Returns:
-    - Chronological status points with timestamps
-    - Status transitions (AVAILABLE -> WARNING -> WOUNDED, etc.)
-    - Fault descriptions when status changes occur
-    - Chart configuration for frontend display
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        # Query terminal_details table for historical data of specific terminal
-        query = """
-            SELECT 
-                terminal_id,
-                location,
-                issue_state_name,
-                serial_number,
-                retrieved_date,
-                fetched_status,
-                fault_data,
-                raw_terminal_data
-            FROM terminal_details
-            WHERE terminal_id = $1 
-                AND retrieved_date >= NOW() - INTERVAL '%s hours'
-            ORDER BY retrieved_date ASC
-        """ % hours
-        
-        rows = await conn.fetch(query, terminal_id)
-        
-        # Enhanced fallback logic for individual ATM
-        actual_hours_used = hours
-        fallback_message = None
-        
-        if not rows:
-            # Try progressively shorter periods for this specific ATM
-            fallback_periods = [720, 168, 72, 24, 12, 6, 1]  # 30 days, 7 days, 3 days, 1 day, 12h, 6h, 1h
-            fallback_periods = [period for period in fallback_periods if period < hours]
-            
-            logger.info(f"No data found for ATM {terminal_id} in {hours}h period, trying fallback periods: {fallback_periods}")
-            
-            for fallback_hours in fallback_periods:
-                fallback_query = """
-                    SELECT 
-                        terminal_id,
-                        location,
-                        issue_state_name,
-                        serial_number,
-                        retrieved_date,
-                        fetched_status,
-                        fault_data,
-                        raw_terminal_data
-                    FROM terminal_details
-                    WHERE terminal_id = $1 
-                        AND retrieved_date >= NOW() - INTERVAL '%s hours'
-                    ORDER BY retrieved_date ASC
-                """ % fallback_hours
-                
-                rows = await conn.fetch(fallback_query, terminal_id)
-                if rows:
-                    actual_hours_used = fallback_hours
-                    fallback_message = f"Requested {hours}h data unavailable, showing available {fallback_hours}h data instead"
-                    logger.info(f"Found {len(rows)} data points for ATM {terminal_id} in {fallback_hours}h period")
-                    break
-            
-            # If still no data found, raise 404
-            if not rows:
-                raise HTTPException(status_code=404, detail=f"No historical data found for ATM {terminal_id} in any time period")
-        
-        # Process the historical data
-        historical_points = []
-        status_distribution = {}
-        terminal_info = None
-        
-        for row in rows:
-            # Extract fault description if available and requested
-            fault_description = None
-            if include_fault_details and row['fault_data']:
-                try:
-                    fault_data = row['fault_data']
-                    if isinstance(fault_data, dict):
-                        fault_description = fault_data.get('agentErrorDescription')
-                except Exception as e:
-                    logger.warning(f"Could not parse fault data for ATM {terminal_id}: {e}")
-            
-            # Map status to enum
-            status_value = row['fetched_status'] or row['issue_state_name'] or 'UNKNOWN'
-            
-            # Handle status mapping
-            if status_value == 'HARD':
-                status_value = 'WOUNDED'
-            elif status_value == 'CASH':
-                status_value = 'OUT_OF_SERVICE'
-            elif status_value == 'UNAVAILABLE':
-                status_value = 'OUT_OF_SERVICE'
-            
-            # Ensure status is valid
-            try:
-                status_enum = ATMStatusEnum(status_value)
-            except ValueError:
-                logger.warning(f"Unknown status '{status_value}' for ATM {terminal_id}, defaulting to OUT_OF_SERVICE")
-                status_enum = ATMStatusEnum.OUT_OF_SERVICE
-            
-            # Count status distribution
-            status_distribution[status_enum.value] = status_distribution.get(status_enum.value, 0) + 1
-            
-            # Create status point
-            status_point = ATMStatusPoint(
-                timestamp=convert_to_dili_time(row['retrieved_date']),
-                status=status_enum,
-                location=row['location'],
-                fault_description=fault_description,
-                serial_number=row['serial_number']
-            )
-            historical_points.append(status_point)
-            
-            # Store terminal info from latest record
-            if terminal_info is None:
-                terminal_info = {
-                    'location': row['location'],
-                    'serial_number': row['serial_number']
-                }
-        
-        # Calculate summary statistics
-        total_points = len(historical_points)
-        status_percentages = {
-            status: (count / total_points * 100) if total_points > 0 else 0
-            for status, count in status_distribution.items()
-        }
-        
-        # Calculate uptime (AVAILABLE + WARNING as operational)
-        operational_count = status_distribution.get('AVAILABLE', 0) + status_distribution.get('WARNING', 0)
-        uptime_percentage = (operational_count / total_points * 100) if total_points > 0 else 0
-        
-        summary_stats = {
-            'data_points': total_points,
-            'time_range_hours': actual_hours_used,
-            'requested_hours': hours,
-            'status_distribution': status_distribution,
-            'status_percentages': status_percentages,
-            'uptime_percentage': round(uptime_percentage, 2),
-            'first_reading': historical_points[0].timestamp.isoformat() if historical_points else None,
-            'last_reading': historical_points[-1].timestamp.isoformat() if historical_points else None,
-            'status_changes': len(set(point.status.value for point in historical_points)),
-            'has_fault_data': any(point.fault_description for point in historical_points)
-        }
-        
-        # Add fallback message if applicable
-        if fallback_message:
-            summary_stats['fallback_message'] = fallback_message
-        
-        # Create ATM historical data
-        atm_historical_data = ATMHistoricalData(
-            terminal_id=terminal_id,
-            terminal_name=None,  # We don't have terminal name in the database, so set to None
-            location=terminal_info['location'] if terminal_info else None,
-            serial_number=terminal_info['serial_number'] if terminal_info else None,
-            historical_points=historical_points,
-            time_period=f"{actual_hours_used} hours" + (f" (requested {hours}h)" if actual_hours_used != hours else ""),
-            summary_stats=summary_stats
-        )
-        
-        # Chart configuration for frontend
-        chart_config = {
-            'chart_type': 'line_chart',
-            'x_axis': {
-                'field': 'timestamp',
-                'label': 'Date & Time',
-                'format': 'datetime'
-            },
-            'y_axis': {
-                'field': 'status',
-                'label': 'ATM Status',
-                'categories': ['AVAILABLE', 'WARNING', 'WOUNDED', 'ZOMBIE', 'OUT_OF_SERVICE'],
-                'colors': {
-                    'AVAILABLE': '#28a745',      # Green
-                    'WARNING': '#ffc107',        # Yellow  
-                    'WOUNDED': '#fd7e14',        # Orange
-                    'ZOMBIE': '#6f42c1',         # Purple
-                    'OUT_OF_SERVICE': '#dc3545'  # Red
-                }
-            },
-            'tooltip': {
-                'include_fields': ['timestamp', 'status', 'fault_description'],
-                'timestamp_format': 'MMM DD, YYYY HH:mm'
-            },
-            'legend': {
-                'show': True,
-                'position': 'bottom'
-            }
-        }
-        
-        return ATMHistoricalResponse(
-            atm_data=atm_historical_data,
-            chart_config=chart_config
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching history for ATM {terminal_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch ATM historical data")
-    finally:
-        await release_db_connection(conn)
-
-@app.get("/api/v1/atm/list", tags=["ATM Historical"])
-async def get_atm_list(
-    region_code: Optional[str] = Query(None, description="Filter by region code"),
-    status_filter: Optional[ATMStatusEnum] = Query(None, description="Filter by current status"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of ATMs to return"),
-    db_check: bool = Depends(validate_db_connection)
-):
-    """
-    Get list of available ATMs for historical analysis
-    
-    Returns a list of ATMs that have historical data available,
-    useful for populating dropdown menus or selection lists.
-    """
-    conn = await get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
-    try:
-        # Build query to get latest status for each ATM
+        # Build query with dynamic filters
         base_query = """
-            WITH latest_atm_data AS (
-                SELECT DISTINCT ON (terminal_id)
-                    terminal_id,
-                    location,
-                    issue_state_name,
-                    serial_number,
-                    retrieved_date,
-                    fetched_status
-                FROM terminal_details
-                ORDER BY terminal_id, retrieved_date DESC
-            )
             SELECT 
                 terminal_id,
-                location,
-                issue_state_name,
-                serial_number,
-                retrieved_date,
-                fetched_status
-            FROM latest_atm_data
-        """
+                business_code,
+                technical_code,
+                external_id,
+                total_cash_amount,
+                total_currency,
+                cassette_count,
+                cassettes_data,
+                has_low_cash_warning,
+                has_cash_errors,
+                retrieval_timestamp,
+                event_date,
+                raw_cash_data
+            FROM terminal_cash_information
+            WHERE retrieval_timestamp >= NOW() - INTERVAL '%s hours'
+        """ % hours_back
         
         # Add filters
         conditions = []
         params = []
         
-        if region_code:
-            # For simplicity, we'll check if location contains region info
-            conditions.append("location ILIKE $" + str(len(params) + 1))
-            params.append(f"%{region_code}%")
+        if terminal_id:
+            conditions.append("terminal_id = $" + str(len(params) + 1))
+            params.append(terminal_id)
         
-        if status_filter:
-            # Handle status mapping
-            if status_filter == ATMStatusEnum.WOUNDED:
-                conditions.append("(fetched_status = $" + str(len(params) + 1) + " OR issue_state_name = 'HARD')")
-                params.append('WOUNDED')
-            elif status_filter == ATMStatusEnum.OUT_OF_SERVICE:
-                conditions.append("(fetched_status IN ($" + str(len(params) + 1) + ", $" + str(len(params) + 2) + ") OR issue_state_name IN ('CASH', 'UNAVAILABLE'))")
-                params.extend(['OUT_OF_SERVICE', 'UNAVAILABLE'])
-            else:
-                conditions.append("(fetched_status = $" + str(len(params) + 1) + " OR issue_state_name = $" + str(len(params) + 2) + ")")
-                params.extend([status_filter.value, status_filter.value])
+        if location_filter:
+            conditions.append("business_code ILIKE $" + str(len(params) + 1))
+            params.append(f"%{location_filter}%")
+        
+        if cash_status:
+            # Map cash_status to our warning system
+            if cash_status.upper() == "LOW":
+                conditions.append("has_low_cash_warning = true")
+            elif cash_status.upper() == "ERROR":
+                conditions.append("has_cash_errors = true")
         
         if conditions:
-            base_query += " WHERE " + " AND ".join(conditions)
+            base_query += " AND " + " AND ".join(conditions)
         
-        base_query += f" ORDER BY terminal_id LIMIT {limit}"
+        base_query += f" ORDER BY retrieval_timestamp DESC LIMIT {limit}"
         
         rows = await conn.fetch(base_query, *params)
         
-        atm_list = []
-        for row in rows:
-            # Map status
-            status_value = row['fetched_status'] or row['issue_state_name'] or 'UNKNOWN'
-            if status_value == 'HARD':
-                status_value = 'WOUNDED'
-            elif status_value in ['CASH', 'UNAVAILABLE']:
-                status_value = 'OUT_OF_SERVICE'
-                
-            atm_list.append({
-                'terminal_id': row['terminal_id'],
-                'location': row['location'],
-                'current_status': status_value,
-                'serial_number': row['serial_number'],
-                'last_updated': convert_to_dili_time(row['retrieved_date']).isoformat() if row['retrieved_date'] else None
-            })
+        if not rows:
+            return CashInformationResponse(
+                cash_data=[],
+                total_count=0,
+                summary={
+                    "total_terminals": 0,
+                    "average_cash_amount": 0,
+                    "cash_status_distribution": {},
+                    "total_cash_across_atms": 0
+                },
+                filters_applied={
+                    "terminal_id": terminal_id,
+                    "location_filter": location_filter,
+                    "cash_status": cash_status,
+                    "hours_back": hours_back,
+                    "limit": limit
+                },
+                timestamp=convert_to_dili_time(datetime.utcnow()).isoformat()
+            )
         
-        return {
-            'atms': atm_list,
-            'total_count': len(atm_list),
-            'filters_applied': {
-                'region_code': region_code,
-                'status_filter': status_filter.value if status_filter else None
-            }
+        # Process cash data
+        cash_data_list = []
+        total_cash_amount = 0
+        cash_status_counts = {}
+        
+        for row in rows:
+            # Parse raw cash data if needed
+            raw_cash_data = None
+            if include_raw_data and row['raw_cash_data']:
+                if isinstance(row['raw_cash_data'], str):
+                    try:
+                        raw_cash_data = json.loads(row['raw_cash_data'])
+                    except json.JSONDecodeError:
+                        raw_cash_data = {"error": "Could not parse raw data"}
+                else:
+                    raw_cash_data = row['raw_cash_data']
+            
+            # Parse cassettes data
+            cassettes_data = None
+            if row['cassettes_data']:
+                if isinstance(row['cassettes_data'], str):
+                    try:
+                        cassettes_data = json.loads(row['cassettes_data'])
+                    except json.JSONDecodeError:
+                        cassettes_data = {"error": "Could not parse cassettes data"}
+                else:
+                    cassettes_data = row['cassettes_data']
+            
+            # Convert timestamps to Dili timezone
+            retrieval_timestamp = convert_to_dili_time(row['retrieval_timestamp']) if row['retrieval_timestamp'] else None
+            event_date = convert_to_dili_time(row['event_date']) if row['event_date'] else None
+            
+            cash_info = CashInformationData(
+                terminal_id=row['terminal_id'],
+                business_code=row['business_code'],
+                technical_code=row['technical_code'],
+                external_id=row['external_id'],
+                total_cash_amount=row['total_cash_amount'],
+                total_currency=row['total_currency'],
+                cassette_count=row['cassette_count'],
+                cassettes_data=cassettes_data,
+                has_low_cash_warning=row['has_low_cash_warning'],
+                has_cash_errors=row['has_cash_errors'],
+                retrieval_timestamp=retrieval_timestamp,
+                event_date=event_date,
+                raw_cash_data=raw_cash_data if include_raw_data else None
+            )
+            
+            cash_data_list.append(cash_info)
+            
+            # Accumulate statistics
+            if row['total_cash_amount']:
+                total_cash_amount += float(row['total_cash_amount'])
+            
+            # Determine cash status from flags
+            if row['has_cash_errors']:
+                status = 'ERROR'
+            elif row['has_low_cash_warning']:
+                status = 'LOW'
+            else:
+                status = 'NORMAL'
+            cash_status_counts[status] = cash_status_counts.get(status, 0) + 1
+        
+        # Calculate summary statistics
+        unique_terminals = len(set(item.terminal_id for item in cash_data_list))
+        avg_cash_amount = total_cash_amount / len(cash_data_list) if cash_data_list else 0
+        
+        summary = {
+            "total_terminals": unique_terminals,
+            "total_records": len(cash_data_list),
+            "average_cash_amount": round(avg_cash_amount, 2),
+            "total_cash_across_atms": round(total_cash_amount, 2),
+            "cash_status_distribution": cash_status_counts,
+            "data_period_hours": hours_back,
+            "latest_update": cash_data_list[0].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[0].retrieval_timestamp else None,
+            "oldest_update": cash_data_list[-1].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[-1].retrieval_timestamp else None
         }
+        
+        return CashInformationResponse(
+            cash_data=cash_data_list,
+            total_count=len(cash_data_list),
+            summary=summary,
+            filters_applied={
+                "terminal_id": terminal_id,
+                "location_filter": location_filter,
+                "cash_status": cash_status,
+                "hours_back": hours_back,
+                "limit": limit,
+                "include_raw_data": include_raw_data
+            },
+            timestamp=convert_to_dili_time(datetime.utcnow()).isoformat()
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching ATM list: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch ATM list")
+        logger.error(f"Error fetching terminal cash information: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch terminal cash information")
     finally:
         await release_db_connection(conn)
 
+@app.get("/api/v1/atm/{terminal_id}/cash-information", response_model=CashInformationResponse, tags=["Cash Information"])
+async def get_specific_terminal_cash_information(
+    terminal_id: str = Path(..., description="Terminal ID to get cash information for"),
+    hours_back: int = Query(72, ge=1, le=720, description="Hours to look back for data (1-720, default 72)"),
+    include_raw_data: bool = Query(True, description="Include raw cash data in response"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get cash information for a specific terminal
+    
+    Returns detailed cash information for a single ATM terminal including:
+    - Historical cash levels over the specified time period
+    - Cassette-by-cassette breakdown
+    - Cash replenishment history
+    - Trends and patterns
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        query = """
+            SELECT 
+                terminal_id,
+                business_code,
+                technical_code,
+                external_id,
+                total_cash_amount,
+                total_currency,
+                cassette_count,
+                cassettes_data,
+                has_low_cash_warning,
+                has_cash_errors,
+                retrieval_timestamp,
+                event_date,
+                raw_cash_data
+            FROM terminal_cash_information
+            WHERE terminal_id = $1 
+                AND retrieval_timestamp >= NOW() - INTERVAL '%s hours'
+            ORDER BY retrieval_timestamp DESC
+        """ % hours_back
+        
+        rows = await conn.fetch(query, terminal_id)
+        
+        if not rows:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No cash information found for terminal {terminal_id} in the last {hours_back} hours"
+            )
+        
+        # Process cash data
+        cash_data_list = []
+        total_cash_amount = 0
+        cash_status_counts = {}
+        cash_amounts = []
+        
+        for row in rows:
+            # Parse raw cash data if needed
+            raw_cash_data = None
+            if include_raw_data and row['raw_cash_data']:
+                if isinstance(row['raw_cash_data'], str):
+                    try:
+                        raw_cash_data = json.loads(row['raw_cash_data'])
+                    except json.JSONDecodeError:
+                        raw_cash_data = {"error": "Could not parse raw data"}
+                else:
+                    raw_cash_data = row['raw_cash_data']
+            
+            # Parse cassettes data
+            cassettes_data = None
+            if row['cassettes_data']:
+                if isinstance(row['cassettes_data'], str):
+                    try:
+                        cassettes_data = json.loads(row['cassettes_data'])
+                    except json.JSONDecodeError:
+                        cassettes_data = {"error": "Could not parse cassettes data"}
+                else:
+                    cassettes_data = row['cassettes_data']
+            
+            # Convert timestamps to Dili timezone
+            retrieval_timestamp = convert_to_dili_time(row['retrieval_timestamp']) if row['retrieval_timestamp'] else None
+            event_date = convert_to_dili_time(row['event_date']) if row['event_date'] else None
+            
+            cash_info = CashInformationData(
+                terminal_id=row['terminal_id'],
+                business_code=row['business_code'],
+                technical_code=row['technical_code'],
+                external_id=row['external_id'],
+                total_cash_amount=row['total_cash_amount'],
+                total_currency=row['total_currency'],
+                cassette_count=row['cassette_count'],
+                cassettes_data=cassettes_data,
+                has_low_cash_warning=row['has_low_cash_warning'],
+                has_cash_errors=row['has_cash_errors'],
+                retrieval_timestamp=retrieval_timestamp,
+                event_date=event_date,
+                raw_cash_data=raw_cash_data if include_raw_data else None
+            )
+            
+            cash_data_list.append(cash_info)
+            
+            # Accumulate statistics
+            if row['total_cash_amount']:
+                amount = float(row['total_cash_amount'])
+                total_cash_amount += amount
+                cash_amounts.append(amount)
+            
+            # Determine cash status from flags
+            if row['has_cash_errors']:
+                status = 'ERROR'
+            elif row['has_low_cash_warning']:
+                status = 'LOW'
+            else:
+                status = 'NORMAL'
+            cash_status_counts[status] = cash_status_counts.get(status, 0) + 1
+        
+        # Calculate enhanced statistics for single terminal
+        avg_cash_amount = total_cash_amount / len(cash_data_list) if cash_data_list else 0
+        min_cash = min(cash_amounts) if cash_amounts else 0
+        max_cash = max(cash_amounts) if cash_amounts else 0
+        
+        # Calculate cash trend
+        cash_trend = "STABLE"
+        if len(cash_amounts) >= 2:
+            recent_avg = mean(cash_amounts[:len(cash_amounts)//2]) if len(cash_amounts) >= 4 else cash_amounts[0]
+            older_avg = mean(cash_amounts[len(cash_amounts)//2:]) if len(cash_amounts) >= 4 else cash_amounts[-1]
+            if recent_avg > older_avg * 1.1:
+                cash_trend = "INCREASING"
+            elif recent_avg < older_avg * 0.9:
+                cash_trend = "DECREASING"
+        
+        summary = {
+            "terminal_id": terminal_id,
+            "business_code": cash_data_list[0].business_code if cash_data_list else None,
+            "total_records": len(cash_data_list),
+            "data_period_hours": hours_back,
+            "cash_statistics": {
+                "current_amount": cash_amounts[0] if cash_amounts else 0,
+                "average_amount": round(avg_cash_amount, 2),
+                "minimum_amount": round(min_cash, 2),
+                "maximum_amount": round(max_cash, 2),
+                "cash_trend": cash_trend,
+                "currency": cash_data_list[0].total_currency if cash_data_list else None
+            },
+            "cash_status_distribution": cash_status_counts,
+            "latest_update": cash_data_list[0].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[0].retrieval_timestamp else None,
+            "oldest_update": cash_data_list[-1].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[-1].retrieval_timestamp else None,
+            "cassette_info": {
+                "cassette_count": cash_data_list[0].cassette_count if cash_data_list else None,
+                "has_low_cash_warning": cash_data_list[0].has_low_cash_warning if cash_data_list else None,
+                "has_cash_errors": cash_data_list[0].has_cash_errors if cash_data_list else None
+            }
+        }
+        
+        return CashInformationResponse(
+            cash_data=cash_data_list,
+            total_count=len(cash_data_list),
+            summary=summary,
+            filters_applied={
+                "terminal_id": terminal_id,
+                "hours_back": hours_back,
+                "include_raw_data": include_raw_data
+            },
+            timestamp=convert_to_dili_time(datetime.utcnow()).isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching cash information for terminal {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch cash information for terminal {terminal_id}")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/cash-information/summary", tags=["Cash Information"])
+async def get_cash_information_summary(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get summary statistics for all terminal cash information
+    
+    Returns fleet-wide cash statistics including:
+    - Total cash across all ATMs
+    - Average cash levels
+    - Cash status distribution
+    - Low cash alerts
+    - Recent replenishments
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Get latest cash information for each terminal
+        query = """
+            WITH latest_cash_data AS (
+                SELECT DISTINCT ON (terminal_id)
+                    terminal_id,
+                    business_code,
+                    technical_code,
+                    total_cash_amount,
+                    total_currency,
+                    has_low_cash_warning,
+                    has_cash_errors,
+                    retrieval_timestamp
+                FROM terminal_cash_information
+                WHERE retrieval_timestamp >= NOW() - INTERVAL '24 hours'
+                ORDER BY terminal_id, retrieval_timestamp DESC
+            )
+            SELECT 
+                COUNT(*) as total_terminals,
+                SUM(COALESCE(total_cash_amount, 0)) as total_fleet_cash,
+                AVG(COALESCE(total_cash_amount, 0)) as average_cash_per_atm,
+                MIN(COALESCE(total_cash_amount, 0)) as minimum_cash,
+                MAX(COALESCE(total_cash_amount, 0)) as maximum_cash,
+                COUNT(CASE WHEN has_low_cash_warning = true THEN 1 END) as low_cash_count,
+                COUNT(CASE WHEN has_cash_errors = true THEN 1 END) as error_cash_count,
+                COUNT(CASE WHEN has_low_cash_warning = false AND has_cash_errors = false THEN 1 END) as normal_cash_count,
+                COUNT(CASE WHEN total_currency = 'USD' THEN 1 END) as usd_terminals
+            FROM latest_cash_data
+        """
+        
+        result = await conn.fetchrow(query)
+        
+        if not result or result['total_terminals'] == 0:
+            return {
+                "summary": {
+                    "total_terminals_with_cash_data": 0,
+                    "total_fleet_cash": 0,
+                    "average_cash_per_atm": 0,
+                    "cash_range": {"minimum": 0, "maximum": 0},
+                    "cash_status_distribution": {
+                        "LOW": 0,
+                        "NORMAL": 0,
+                        "ERROR": 0
+                    },
+                    "currency_distribution": {
+                        "USD": 0
+                    }
+                },
+                "alerts": {
+                    "low_cash_terminals": 0,
+                    "error_terminals": 0,
+                    "terminals_needing_attention": []
+                },
+                "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
+                "data_source": "terminal_cash_information table (last 24 hours)"
+            }
+        
+        # Get specific terminals with low cash for alerts
+        low_cash_query = """
+            WITH latest_cash_data AS (
+                SELECT DISTINCT ON (terminal_id)
+                    terminal_id,
+                    business_code,
+                    total_cash_amount,
+                    has_low_cash_warning,
+                    has_cash_errors,
+                    retrieval_timestamp
+                FROM terminal_cash_information
+                WHERE retrieval_timestamp >= NOW() - INTERVAL '24 hours'
+                ORDER BY terminal_id, retrieval_timestamp DESC
+            )
+            SELECT terminal_id, business_code, total_cash_amount, retrieval_timestamp, has_low_cash_warning, has_cash_errors
+            FROM latest_cash_data
+            WHERE has_low_cash_warning = true OR has_cash_errors = true
+            ORDER BY total_cash_amount ASC
+            LIMIT 10
+        """
+        
+        terminals_needing_attention_rows = await conn.fetch(low_cash_query)
+        
+        terminals_needing_attention = []
+        for terminal in terminals_needing_attention_rows:
+            status = "ERROR" if terminal['has_cash_errors'] else "LOW" if terminal['has_low_cash_warning'] else "NORMAL"
+            terminals_needing_attention.append({
+                "terminal_id": terminal['terminal_id'],
+                "business_code": terminal['business_code'],
+                "cash_amount": float(terminal['total_cash_amount']) if terminal['total_cash_amount'] else 0,
+                "status": status,
+                "last_updated": convert_to_dili_time(terminal['retrieval_timestamp']).isoformat() if terminal['retrieval_timestamp'] else None
+            })
+        
+        summary = {
+            "total_terminals_with_cash_data": int(result['total_terminals']),
+            "total_fleet_cash": round(float(result['total_fleet_cash']), 2),
+            "average_cash_per_atm": round(float(result['average_cash_per_atm']), 2),
+            "cash_range": {
+                "minimum": round(float(result['minimum_cash']), 2),
+                "maximum": round(float(result['maximum_cash']), 2)
+            },
+            "cash_status_distribution": {
+                "LOW": int(result['low_cash_count']),
+                "NORMAL": int(result['normal_cash_count']),
+                "ERROR": int(result['error_cash_count'])
+            },
+            "currency_distribution": {
+                "USD": int(result['usd_terminals'])
+            }
+        }
+        
+        alerts = {
+            "low_cash_terminals": int(result['low_cash_count']),
+            "error_terminals": int(result['error_cash_count']),
+            "terminals_needing_attention": terminals_needing_attention
+        }
+        
+        return {
+            "summary": summary,
+            "alerts": alerts,
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
+            "data_source": "terminal_cash_information table (last 24 hours)"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching cash information summary: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch cash information summary")
+    finally:
+        await release_db_connection(conn)
 # ========================
 # NOTIFICATION ENDPOINTS
 # ========================
