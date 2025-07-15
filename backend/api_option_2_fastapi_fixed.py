@@ -1917,7 +1917,7 @@ async def get_unread_count(
 # Background task function for running the combined ATM retrieval script
 def run_atm_refresh_script(job_id: str, use_new_tables: bool = True):
     """
-   Background task function to run the combined ATM retrieval script
+  
     """
     try:
         # Update job status to running
@@ -2929,6 +2929,547 @@ async def get_fault_history_report(
     except Exception as e:
         logger.error(f"Error generating fault history report: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate fault history report")
+    finally:
+        await release_db_connection(conn)
+
+# ========================
+# CASH INFORMATION ENDPOINTS
+# ========================
+
+# Pydantic models for cash information
+class CashInformationData(BaseModel):
+    terminal_id: str = Field(..., description="Terminal identifier")
+    business_code: Optional[str] = Field(None, description="Business code")
+    technical_code: Optional[str] = Field(None, description="Technical code")
+    external_id: Optional[str] = Field(None, description="External identifier")
+    total_cash_amount: Optional[float] = Field(None, description="Total cash amount in the ATM")
+    total_currency: Optional[str] = Field(None, description="Currency type")
+    cassette_count: Optional[int] = Field(None, description="Number of cassettes")
+    cassettes_data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Field(None, description="Cassettes information (JSONB)")
+    has_low_cash_warning: Optional[bool] = Field(None, description="Low cash warning flag")
+    has_cash_errors: Optional[bool] = Field(None, description="Cash errors flag")
+    retrieval_timestamp: Optional[datetime] = Field(None, description="When cash data was retrieved")
+    event_date: Optional[datetime] = Field(None, description="Event timestamp")
+    raw_cash_data: Optional[Dict[str, Any]] = Field(None, description="Raw cash data from API")
+
+class CashInformationResponse(BaseModel):
+    cash_data: List[CashInformationData]
+    total_count: int = Field(..., ge=0, description="Total number of cash records")
+    summary: Dict[str, Any] = Field(..., description="Summary statistics")
+    filters_applied: Dict[str, Any] = Field(..., description="Applied filters")
+    timestamp: str = Field(..., description="Response timestamp")
+
+@app.get("/api/v1/atm/cash-information", response_model=CashInformationResponse, tags=["Cash Information"])
+async def get_terminal_cash_information(
+    terminal_id: Optional[str] = Query(None, description="Filter by specific terminal ID"),
+    location_filter: Optional[str] = Query(None, description="Filter by location (partial match)"),
+    cash_status: Optional[str] = Query(None, description="Filter by cash status (LOW, NORMAL, HIGH)"),
+    hours_back: int = Query(24, ge=1, le=720, description="Hours to look back for data (1-720)"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    include_raw_data: bool = Query(False, description="Include raw cash data in response"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get terminal cash information from the terminal_cash_information table
+    
+    Returns cash information including:
+    - Cassette counts and denominations for each cassette (1-4)
+    - Total cash amount calculations
+    - Cash status indicators
+    - Last replenishment information
+    - Raw cash data (optional)
+    
+    Supports filtering by terminal ID, location, cash status, and time range.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Build query with dynamic filters
+        base_query = """
+            SELECT 
+                terminal_id,
+                business_code,
+                technical_code,
+                external_id,
+                total_cash_amount,
+                total_currency,
+                cassette_count,
+                cassettes_data,
+                has_low_cash_warning,
+                has_cash_errors,
+                retrieval_timestamp,
+                event_date,
+                raw_cash_data
+            FROM terminal_cash_information
+            WHERE retrieval_timestamp >= NOW() - INTERVAL '%s hours'
+        """ % hours_back
+        
+        # Add filters
+        conditions = []
+        params = []
+        
+        if terminal_id:
+            conditions.append("terminal_id = $" + str(len(params) + 1))
+            params.append(terminal_id)
+        
+        if location_filter:
+            conditions.append("business_code ILIKE $" + str(len(params) + 1))
+            params.append(f"%{location_filter}%")
+        
+        if cash_status:
+            # Map cash_status to our warning system
+            if cash_status.upper() == "LOW":
+                conditions.append("has_low_cash_warning = true")
+            elif cash_status.upper() == "ERROR":
+                conditions.append("has_cash_errors = true")
+        
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        base_query += f" ORDER BY retrieval_timestamp DESC LIMIT {limit}"
+        
+        rows = await conn.fetch(base_query, *params)
+        
+        if not rows:
+            return CashInformationResponse(
+                cash_data=[],
+                total_count=0,
+                summary={
+                    "total_terminals": 0,
+                    "average_cash_amount": 0,
+                    "cash_status_distribution": {},
+                    "total_cash_across_atms": 0
+                },
+                filters_applied={
+                    "terminal_id": terminal_id,
+                    "location_filter": location_filter,
+                    "cash_status": cash_status,
+                    "hours_back": hours_back,
+                    "limit": limit
+                },
+                timestamp=convert_to_dili_time(datetime.utcnow()).isoformat()
+            )
+        
+        # Process cash data
+        cash_data_list = []
+        total_cash_amount = 0
+        cash_status_counts = {}
+        
+        for row in rows:
+            # Parse raw cash data if needed
+            raw_cash_data = None
+            if include_raw_data and row['raw_cash_data']:
+                if isinstance(row['raw_cash_data'], str):
+                    try:
+                        raw_cash_data = json.loads(row['raw_cash_data'])
+                    except json.JSONDecodeError:
+                        raw_cash_data = {"error": "Could not parse raw data"}
+                else:
+                    raw_cash_data = row['raw_cash_data']
+            
+            # Parse cassettes data
+            cassettes_data = None
+            if row['cassettes_data']:
+                if isinstance(row['cassettes_data'], str):
+                    try:
+                        cassettes_data = json.loads(row['cassettes_data'])
+                    except json.JSONDecodeError:
+                        cassettes_data = {"error": "Could not parse cassettes data"}
+                else:
+                    cassettes_data = row['cassettes_data']
+            
+            # Convert timestamps to Dili timezone
+            retrieval_timestamp = convert_to_dili_time(row['retrieval_timestamp']) if row['retrieval_timestamp'] else None
+            event_date = convert_to_dili_time(row['event_date']) if row['event_date'] else None
+            
+            cash_info = CashInformationData(
+                terminal_id=row['terminal_id'],
+                business_code=row['business_code'],
+                technical_code=row['technical_code'],
+                external_id=row['external_id'],
+                total_cash_amount=row['total_cash_amount'],
+                total_currency=row['total_currency'],
+                cassette_count=row['cassette_count'],
+                cassettes_data=cassettes_data,
+                has_low_cash_warning=row['has_low_cash_warning'],
+                has_cash_errors=row['has_cash_errors'],
+                retrieval_timestamp=retrieval_timestamp,
+                event_date=event_date,
+                raw_cash_data=raw_cash_data if include_raw_data else None
+            )
+            
+            cash_data_list.append(cash_info)
+            
+            # Accumulate statistics
+            if row['total_cash_amount']:
+                total_cash_amount += float(row['total_cash_amount'])
+            
+            # Determine cash status from flags
+            if row['has_cash_errors']:
+                status = 'ERROR'
+            elif row['has_low_cash_warning']:
+                status = 'LOW'
+            else:
+                status = 'NORMAL'
+            cash_status_counts[status] = cash_status_counts.get(status, 0) + 1
+        
+        # Calculate summary statistics
+        unique_terminals = len(set(item.terminal_id for item in cash_data_list))
+        avg_cash_amount = total_cash_amount / len(cash_data_list) if cash_data_list else 0
+        
+        summary = {
+            "total_terminals": unique_terminals,
+            "total_records": len(cash_data_list),
+            "average_cash_amount": round(avg_cash_amount, 2),
+            "total_cash_across_atms": round(total_cash_amount, 2),
+            "cash_status_distribution": cash_status_counts,
+            "data_period_hours": hours_back,
+            "latest_update": cash_data_list[0].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[0].retrieval_timestamp else None,
+            "oldest_update": cash_data_list[-1].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[-1].retrieval_timestamp else None
+        }
+        
+        return CashInformationResponse(
+            cash_data=cash_data_list,
+            total_count=len(cash_data_list),
+            summary=summary,
+            filters_applied={
+                "terminal_id": terminal_id,
+                "location_filter": location_filter,
+                "cash_status": cash_status,
+                "hours_back": hours_back,
+                "limit": limit,
+                "include_raw_data": include_raw_data
+            },
+            timestamp=convert_to_dili_time(datetime.utcnow()).isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching terminal cash information: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch terminal cash information")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/{terminal_id}/cash-information", response_model=CashInformationResponse, tags=["Cash Information"])
+async def get_specific_terminal_cash_information(
+    terminal_id: str = Path(..., description="Terminal ID to get cash information for"),
+    hours_back: int = Query(72, ge=1, le=720, description="Hours to look back for data (1-720, default 72)"),
+    include_raw_data: bool = Query(True, description="Include raw cash data in response"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get cash information for a specific terminal
+    
+    Returns detailed cash information for a single ATM terminal including:
+    - Historical cash levels over the specified time period
+    - Cassette-by-cassette breakdown
+    - Cash replenishment history
+    - Trends and patterns
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        query = """
+            SELECT 
+                terminal_id,
+                business_code,
+                technical_code,
+                external_id,
+                total_cash_amount,
+                total_currency,
+                cassette_count,
+                cassettes_data,
+                has_low_cash_warning,
+                has_cash_errors,
+                retrieval_timestamp,
+                event_date,
+                raw_cash_data
+            FROM terminal_cash_information
+            WHERE terminal_id = $1 
+                AND retrieval_timestamp >= NOW() - INTERVAL '%s hours'
+            ORDER BY retrieval_timestamp DESC
+        """ % hours_back
+        
+        rows = await conn.fetch(query, terminal_id)
+        
+        if not rows:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No cash information found for terminal {terminal_id} in the last {hours_back} hours"
+            )
+        
+        # Process cash data
+        cash_data_list = []
+        total_cash_amount = 0
+        cash_status_counts = {}
+        cash_amounts = []
+        
+        for row in rows:
+            # Parse raw cash data if needed
+            raw_cash_data = None
+            if include_raw_data and row['raw_cash_data']:
+                if isinstance(row['raw_cash_data'], str):
+                    try:
+                        raw_cash_data = json.loads(row['raw_cash_data'])
+                    except json.JSONDecodeError:
+                        raw_cash_data = {"error": "Could not parse raw data"}
+                else:
+                    raw_cash_data = row['raw_cash_data']
+            
+            # Parse cassettes data
+            cassettes_data = None
+            if row['cassettes_data']:
+                if isinstance(row['cassettes_data'], str):
+                    try:
+                        cassettes_data = json.loads(row['cassettes_data'])
+                    except json.JSONDecodeError:
+                        cassettes_data = {"error": "Could not parse cassettes data"}
+                else:
+                    cassettes_data = row['cassettes_data']
+            
+            # Convert timestamps to Dili timezone
+            retrieval_timestamp = convert_to_dili_time(row['retrieval_timestamp']) if row['retrieval_timestamp'] else None
+            event_date = convert_to_dili_time(row['event_date']) if row['event_date'] else None
+            
+            cash_info = CashInformationData(
+                terminal_id=row['terminal_id'],
+                business_code=row['business_code'],
+                technical_code=row['technical_code'],
+                external_id=row['external_id'],
+                total_cash_amount=row['total_cash_amount'],
+                total_currency=row['total_currency'],
+                cassette_count=row['cassette_count'],
+                cassettes_data=cassettes_data,
+                has_low_cash_warning=row['has_low_cash_warning'],
+                has_cash_errors=row['has_cash_errors'],
+                retrieval_timestamp=retrieval_timestamp,
+                event_date=event_date,
+                raw_cash_data=raw_cash_data if include_raw_data else None
+            )
+            
+            cash_data_list.append(cash_info)
+            
+            # Accumulate statistics
+            if row['total_cash_amount']:
+                amount = float(row['total_cash_amount'])
+                total_cash_amount += amount
+                cash_amounts.append(amount)
+            
+            # Determine cash status from flags
+            if row['has_cash_errors']:
+                status = 'ERROR'
+            elif row['has_low_cash_warning']:
+                status = 'LOW'
+            else:
+                status = 'NORMAL'
+            cash_status_counts[status] = cash_status_counts.get(status, 0) + 1
+        
+        # Calculate enhanced statistics for single terminal
+        avg_cash_amount = total_cash_amount / len(cash_data_list) if cash_data_list else 0
+        min_cash = min(cash_amounts) if cash_amounts else 0
+        max_cash = max(cash_amounts) if cash_amounts else 0
+        
+        # Calculate cash trend
+        cash_trend = "STABLE"
+        if len(cash_amounts) >= 2:
+            recent_avg = mean(cash_amounts[:len(cash_amounts)//2]) if len(cash_amounts) >= 4 else cash_amounts[0]
+            older_avg = mean(cash_amounts[len(cash_amounts)//2:]) if len(cash_amounts) >= 4 else cash_amounts[-1]
+            if recent_avg > older_avg * 1.1:
+                cash_trend = "INCREASING"
+            elif recent_avg < older_avg * 0.9:
+                cash_trend = "DECREASING"
+        
+        summary = {
+            "terminal_id": terminal_id,
+            "business_code": cash_data_list[0].business_code if cash_data_list else None,
+            "total_records": len(cash_data_list),
+            "data_period_hours": hours_back,
+            "cash_statistics": {
+                "current_amount": cash_amounts[0] if cash_amounts else 0,
+                "average_amount": round(avg_cash_amount, 2),
+                "minimum_amount": round(min_cash, 2),
+                "maximum_amount": round(max_cash, 2),
+                "cash_trend": cash_trend,
+                "currency": cash_data_list[0].total_currency if cash_data_list else None
+            },
+            "cash_status_distribution": cash_status_counts,
+            "latest_update": cash_data_list[0].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[0].retrieval_timestamp else None,
+            "oldest_update": cash_data_list[-1].retrieval_timestamp.isoformat() if cash_data_list and cash_data_list[-1].retrieval_timestamp else None,
+            "cassette_info": {
+                "cassette_count": cash_data_list[0].cassette_count if cash_data_list else None,
+                "has_low_cash_warning": cash_data_list[0].has_low_cash_warning if cash_data_list else None,
+                "has_cash_errors": cash_data_list[0].has_cash_errors if cash_data_list else None
+            }
+        }
+        
+        return CashInformationResponse(
+            cash_data=cash_data_list,
+            total_count=len(cash_data_list),
+            summary=summary,
+            filters_applied={
+                "terminal_id": terminal_id,
+                "hours_back": hours_back,
+                "include_raw_data": include_raw_data
+            },
+            timestamp=convert_to_dili_time(datetime.utcnow()).isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching cash information for terminal {terminal_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch cash information for terminal {terminal_id}")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/cash-information/summary", tags=["Cash Information"])
+async def get_cash_information_summary(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get summary statistics for all terminal cash information
+    
+    Returns fleet-wide cash statistics including:
+    - Total cash across all ATMs
+    - Average cash levels
+    - Cash status distribution
+    - Low cash alerts
+    - Recent replenishments
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Get latest cash information for each terminal
+        query = """
+            WITH latest_cash_data AS (
+                SELECT DISTINCT ON (terminal_id)
+                    terminal_id,
+                    business_code,
+                    technical_code,
+                    total_cash_amount,
+                    total_currency,
+                    has_low_cash_warning,
+                    has_cash_errors,
+                    retrieval_timestamp
+                FROM terminal_cash_information
+                WHERE retrieval_timestamp >= NOW() - INTERVAL '24 hours'
+                ORDER BY terminal_id, retrieval_timestamp DESC
+            )
+            SELECT 
+                COUNT(*) as total_terminals,
+                SUM(COALESCE(total_cash_amount, 0)) as total_fleet_cash,
+                AVG(COALESCE(total_cash_amount, 0)) as average_cash_per_atm,
+                MIN(COALESCE(total_cash_amount, 0)) as minimum_cash,
+                MAX(COALESCE(total_cash_amount, 0)) as maximum_cash,
+                COUNT(CASE WHEN has_low_cash_warning = true THEN 1 END) as low_cash_count,
+                COUNT(CASE WHEN has_cash_errors = true THEN 1 END) as error_cash_count,
+                COUNT(CASE WHEN has_low_cash_warning = false AND has_cash_errors = false THEN 1 END) as normal_cash_count,
+                COUNT(CASE WHEN total_currency = 'USD' THEN 1 END) as usd_terminals
+            FROM latest_cash_data
+        """
+        
+        result = await conn.fetchrow(query)
+        
+        if not result or result['total_terminals'] == 0:
+            return {
+                "summary": {
+                    "total_terminals_with_cash_data": 0,
+                    "total_fleet_cash": 0,
+                    "average_cash_per_atm": 0,
+                    "cash_range": {"minimum": 0, "maximum": 0},
+                    "cash_status_distribution": {
+                        "LOW": 0,
+                        "NORMAL": 0,
+                        "ERROR": 0
+                    },
+                    "currency_distribution": {
+                        "USD": 0
+                    }
+                },
+                "alerts": {
+                    "low_cash_terminals": 0,
+                    "error_terminals": 0,
+                    "terminals_needing_attention": []
+                },
+                "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
+                "data_source": "terminal_cash_information table (last 24 hours)"
+            }
+        
+        # Get specific terminals with low cash for alerts
+        low_cash_query = """
+            WITH latest_cash_data AS (
+                SELECT DISTINCT ON (terminal_id)
+                    terminal_id,
+                    business_code,
+                    total_cash_amount,
+                    has_low_cash_warning,
+                    has_cash_errors,
+                    retrieval_timestamp
+                FROM terminal_cash_information
+                WHERE retrieval_timestamp >= NOW() - INTERVAL '24 hours'
+                ORDER BY terminal_id, retrieval_timestamp DESC
+            )
+            SELECT terminal_id, business_code, total_cash_amount, retrieval_timestamp, has_low_cash_warning, has_cash_errors
+            FROM latest_cash_data
+            WHERE has_low_cash_warning = true OR has_cash_errors = true
+            ORDER BY total_cash_amount ASC
+            LIMIT 10
+        """
+        
+        terminals_needing_attention_rows = await conn.fetch(low_cash_query)
+        
+        terminals_needing_attention = []
+        for terminal in terminals_needing_attention_rows:
+            status = "ERROR" if terminal['has_cash_errors'] else "LOW" if terminal['has_low_cash_warning'] else "NORMAL"
+            terminals_needing_attention.append({
+                "terminal_id": terminal['terminal_id'],
+                "business_code": terminal['business_code'],
+                "cash_amount": float(terminal['total_cash_amount']) if terminal['total_cash_amount'] else 0,
+                "status": status,
+                "last_updated": convert_to_dili_time(terminal['retrieval_timestamp']).isoformat() if terminal['retrieval_timestamp'] else None
+            })
+        
+        summary = {
+            "total_terminals_with_cash_data": int(result['total_terminals']),
+            "total_fleet_cash": round(float(result['total_fleet_cash']), 2),
+            "average_cash_per_atm": round(float(result['average_cash_per_atm']), 2),
+            "cash_range": {
+                "minimum": round(float(result['minimum_cash']), 2),
+                "maximum": round(float(result['maximum_cash']), 2)
+            },
+            "cash_status_distribution": {
+                "LOW": int(result['low_cash_count']),
+                "NORMAL": int(result['normal_cash_count']),
+                "ERROR": int(result['error_cash_count'])
+            },
+            "currency_distribution": {
+                "USD": int(result['usd_terminals'])
+            }
+        }
+        
+        alerts = {
+            "low_cash_terminals": int(result['low_cash_count']),
+            "error_terminals": int(result['error_cash_count']),
+            "terminals_needing_attention": terminals_needing_attention
+        }
+        
+        return {
+            "summary": summary,
+            "alerts": alerts,
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat(),
+            "data_source": "terminal_cash_information table (last 24 hours)"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching cash information summary: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch cash information summary")
     finally:
         await release_db_connection(conn)
 
