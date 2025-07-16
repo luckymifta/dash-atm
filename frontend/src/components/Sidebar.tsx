@@ -17,7 +17,8 @@ import {
   TrendingUp,
   ClipboardList,
   BarChart3,
-  FolderOpen
+  FolderOpen,
+  DollarSign
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -55,7 +56,7 @@ const menuItems: MenuItem[] = [
   {
     name: 'Cash Information',
     href: '/cash-information',
-    icon: Landmark,
+    icon: DollarSign,
   },
   {
     name: 'Reports',
