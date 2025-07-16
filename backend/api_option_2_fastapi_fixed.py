@@ -2942,6 +2942,7 @@ class CashInformationData(BaseModel):
     business_code: Optional[str] = Field(None, description="Business code")
     technical_code: Optional[str] = Field(None, description="Technical code")
     external_id: Optional[str] = Field(None, description="External identifier")
+    location: Optional[str] = Field(None, description="Terminal location from terminal_details")
     total_cash_amount: Optional[float] = Field(None, description="Total cash amount in the ATM")
     total_currency: Optional[str] = Field(None, description="Currency type")
     cassette_count: Optional[int] = Field(None, description="Number of cassettes")
@@ -2986,24 +2987,32 @@ async def get_terminal_cash_information(
         raise HTTPException(status_code=503, detail="Database connection unavailable")
     
     try:
-        # Build query with dynamic filters
+        # Build query with dynamic filters - JOIN with terminal_details to get proper location
         base_query = """
             SELECT 
-                terminal_id,
-                business_code,
-                technical_code,
-                external_id,
-                total_cash_amount,
-                total_currency,
-                cassette_count,
-                cassettes_data,
-                has_low_cash_warning,
-                has_cash_errors,
-                retrieval_timestamp,
-                event_date,
-                raw_cash_data
-            FROM terminal_cash_information
-            WHERE retrieval_timestamp >= NOW() - INTERVAL '%s hours'
+                tci.terminal_id,
+                tci.business_code,
+                tci.technical_code,
+                tci.external_id,
+                tci.total_cash_amount,
+                tci.total_currency,
+                tci.cassette_count,
+                tci.cassettes_data,
+                tci.has_low_cash_warning,
+                tci.has_cash_errors,
+                tci.retrieval_timestamp,
+                tci.event_date,
+                tci.raw_cash_data,
+                td.location
+            FROM terminal_cash_information tci
+            LEFT JOIN (
+                SELECT DISTINCT ON (terminal_id) 
+                    terminal_id, 
+                    location
+                FROM terminal_details 
+                ORDER BY terminal_id, retrieved_date DESC
+            ) td ON tci.terminal_id = td.terminal_id
+            WHERE tci.retrieval_timestamp >= NOW() - INTERVAL '%s hours'
         """ % hours_back
         
         # Add filters
@@ -3011,24 +3020,25 @@ async def get_terminal_cash_information(
         params = []
         
         if terminal_id:
-            conditions.append("terminal_id = $" + str(len(params) + 1))
+            conditions.append("tci.terminal_id = $" + str(len(params) + 1))
             params.append(terminal_id)
         
         if location_filter:
-            conditions.append("business_code ILIKE $" + str(len(params) + 1))
+            # Now search in both business_code and the actual location from terminal_details
+            conditions.append("(tci.business_code ILIKE $" + str(len(params) + 1) + " OR td.location ILIKE $" + str(len(params) + 1) + ")")
             params.append(f"%{location_filter}%")
         
         if cash_status:
             # Map cash_status to our warning system
             if cash_status.upper() == "LOW":
-                conditions.append("has_low_cash_warning = true")
+                conditions.append("tci.has_low_cash_warning = true")
             elif cash_status.upper() == "ERROR":
-                conditions.append("has_cash_errors = true")
+                conditions.append("tci.has_cash_errors = true")
         
         if conditions:
             base_query += " AND " + " AND ".join(conditions)
         
-        base_query += f" ORDER BY retrieval_timestamp DESC LIMIT {limit}"
+        base_query += f" ORDER BY tci.retrieval_timestamp DESC LIMIT {limit}"
         
         rows = await conn.fetch(base_query, *params)
         
@@ -3089,6 +3099,7 @@ async def get_terminal_cash_information(
                 business_code=row['business_code'],
                 technical_code=row['technical_code'],
                 external_id=row['external_id'],
+                location=row['location'],
                 total_cash_amount=row['total_cash_amount'],
                 total_currency=row['total_currency'],
                 cassette_count=row['cassette_count'],
@@ -3241,6 +3252,7 @@ async def get_specific_terminal_cash_information(
                 business_code=row['business_code'],
                 technical_code=row['technical_code'],
                 external_id=row['external_id'],
+                location=row['location'],
                 total_cash_amount=row['total_cash_amount'],
                 total_currency=row['total_currency'],
                 cassette_count=row['cassette_count'],
@@ -3470,6 +3482,56 @@ async def get_cash_information_summary(
     except Exception as e:
         logger.error(f"Error fetching cash information summary: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch cash information summary")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/terminals", tags=["Terminals"])
+async def get_all_terminals(
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get all distinct terminals with their latest location information
+    
+    Returns a list of all terminal IDs with their corresponding locations
+    from the terminal_details table for use in dropdown filters.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Get distinct terminals with their latest location data
+        query = """
+            SELECT DISTINCT ON (terminal_id)
+                terminal_id,
+                location
+            FROM terminal_details
+            ORDER BY terminal_id, retrieved_date DESC
+        """
+        
+        results = await conn.fetch(query)
+        
+        terminals = []
+        for row in results:
+            terminals.append({
+                "terminal_id": row['terminal_id'],
+                "location": row['location'] or 'N/A',
+                "business_code": '',  # Not available in terminal_details table
+                "display_text": f"{row['terminal_id']} - {row['location'] or 'N/A'}"
+            })
+        
+        # Sort by terminal_id for consistent ordering
+        terminals.sort(key=lambda x: x['terminal_id'])
+        
+        return {
+            "terminals": terminals,
+            "total_count": len(terminals),
+            "timestamp": convert_to_dili_time(datetime.utcnow()).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching terminals list: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch terminals list")
     finally:
         await release_db_connection(conn)
 

@@ -53,6 +53,11 @@ const menuItems: MenuItem[] = [
     icon: Landmark,
   },
   {
+    name: 'Cash Information',
+    href: '/cash-information',
+    icon: Landmark,
+  },
+  {
     name: 'Reports',
     icon: FolderOpen,
     isDropdown: true,
