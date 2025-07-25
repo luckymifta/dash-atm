@@ -3285,13 +3285,21 @@ async def get_cash_usage_trends(
             date_group = "DATE_TRUNC('month', tci.retrieval_timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dili')::date"
             date_format = '%Y-%m'
         
+        # Determine interval for date series based on aggregation
+        if aggregation == 'daily':
+            interval_str = '1 day'
+        elif aggregation == 'weekly':
+            interval_str = '1 week'
+        else:  # monthly
+            interval_str = '1 month'
+        
         # Optimized query for trends with simplified aggregation
         query = f"""
             WITH date_series AS (
                 SELECT generate_series(
                     $1::date, 
                     $2::date, 
-                    '1 {aggregation}'::interval
+                    '{interval_str}'::interval
                 )::date as period_date
             ),
             terminal_daily_usage AS (
@@ -3321,6 +3329,7 @@ async def get_cash_usage_trends(
                 COALESCE(MIN(tdu.daily_usage), 0) as min_usage
             FROM date_series ds
             LEFT JOIN terminal_daily_usage tdu ON ds.period_date = tdu.period_date
+            GROUP BY ds.period_date
             ORDER BY ds.period_date ASC
         """
         
