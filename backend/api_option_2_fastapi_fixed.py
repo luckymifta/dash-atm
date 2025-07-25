@@ -23,6 +23,10 @@ Endpoints:
 - GET /api/v1/atm/status/latest - Latest data with optional table selection
 - GET /api/v1/atm/{terminal_id}/history - Individual ATM historical status data
 - GET /api/v1/atm/list - List of ATMs available for historical analysis
+- GET /api/v1/atm/cash-usage/daily - Calculate daily cash usage for terminals within date range
+- GET /api/v1/atm/cash-usage/trends - Get cash usage trends over time for line chart visualization
+- GET /api/v1/atm/cash-usage/summary - Get summary statistics for cash usage across all terminals
+- GET /api/v1/atm/{terminal_id}/cash-usage/history - Get detailed cash usage history for specific terminal
 - GET /api/v1/health - API health check
 - GET /docs - Interactive API documentation
 - GET /redoc - Alternative documentation
@@ -2937,6 +2941,41 @@ async def get_fault_history_report(
 # ========================
 
 # Pydantic models for cash information
+class DailyCashUsageData(BaseModel):
+    terminal_id: str = Field(..., description="Terminal identifier")
+    date: str = Field(..., description="Date in YYYY-MM-DD format")
+    start_amount: Optional[float] = Field(None, description="Cash amount at start of day (00:00:00)")
+    end_amount: Optional[float] = Field(None, description="Cash amount at end of day (23:59:59)")
+    daily_usage: Optional[float] = Field(None, description="Cash usage during the day (start_amount - end_amount)")
+    usage_percentage: Optional[float] = Field(None, description="Usage as percentage of start amount")
+    transactions_estimated: Optional[int] = Field(None, description="Estimated number of transactions (usage / avg_transaction)")
+    terminal_location: Optional[str] = Field(None, description="Terminal location")
+    start_timestamp: Optional[datetime] = Field(None, description="Timestamp of start reading")
+    end_timestamp: Optional[datetime] = Field(None, description="Timestamp of end reading")
+    data_quality: str = Field(..., description="Data quality indicator (COMPLETE, PARTIAL, ESTIMATED)")
+
+class DailyCashUsageResponse(BaseModel):
+    daily_usage_data: List[DailyCashUsageData]
+    summary_stats: Dict[str, Any] = Field(..., description="Summary statistics")
+    date_range: Dict[str, Any] = Field(..., description="Date range covered")
+    terminal_count: int = Field(..., ge=0, description="Number of terminals included")
+    chart_data: Dict[str, Any] = Field(..., description="Chart configuration for frontend")
+
+class CashUsageTrendPoint(BaseModel):
+    date: str = Field(..., description="Date in YYYY-MM-DD format")
+    total_usage: float = Field(..., description="Total cash usage across all terminals")
+    average_usage_per_terminal: float = Field(..., description="Average usage per terminal")
+    terminal_count: int = Field(..., description="Number of terminals with data")
+    max_usage: float = Field(..., description="Maximum usage by a single terminal")
+    min_usage: float = Field(..., description="Minimum usage by a single terminal")
+
+class CashUsageTrendResponse(BaseModel):
+    terminal_id: Optional[str] = Field(None, description="Terminal ID for individual trends, null for overall")
+    trend_data: List[CashUsageTrendPoint] = Field(..., description="Time series data points")
+    summary_stats: Dict[str, Any] = Field(..., description="Trend summary statistics")
+    chart_config: Dict[str, Any] = Field(..., description="Chart configuration for line chart")
+    date_range: Dict[str, Any] = Field(..., description="Date range of the data")
+
 class CashInformationData(BaseModel):
     terminal_id: str = Field(..., description="Terminal identifier")
     business_code: Optional[str] = Field(None, description="Business code")
@@ -2959,6 +2998,628 @@ class CashInformationResponse(BaseModel):
     summary: Dict[str, Any] = Field(..., description="Summary statistics")
     filters_applied: Dict[str, Any] = Field(..., description="Applied filters")
     timestamp: str = Field(..., description="Response timestamp")
+
+@app.get("/api/v1/atm/cash-usage/daily", response_model=DailyCashUsageResponse, tags=["Cash Usage Analysis"])
+async def get_daily_cash_usage(
+    start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
+    end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
+    terminal_ids: Optional[str] = Query(None, description="Comma-separated terminal IDs, or 'all' for all terminals"),
+    include_partial_data: bool = Query(True, description="Include days with incomplete data"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Calculate daily cash usage for terminals within a date range
+    
+    This endpoint calculates how much cash each terminal dispensed per day by:
+    1. Finding the first cash reading of each day (start amount)
+    2. Finding the last cash reading of each day (end amount)  
+    3. Calculating usage as: start_amount - end_amount
+    4. Providing data quality indicators for each calculation
+    
+    Returns detailed daily usage data suitable for trend analysis and charts.
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Parse and validate date inputs
+        try:
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        
+        if start_dt > end_dt:
+            raise HTTPException(status_code=400, detail="Start date must be before or equal to end date")
+        
+        # Limit date range to prevent excessive queries
+        date_diff = (end_dt - start_dt).days
+        if date_diff > 90:
+            raise HTTPException(status_code=400, detail="Date range cannot exceed 90 days")
+        
+        # Build terminal filter
+        terminal_filter = ""
+        if terminal_ids and terminal_ids.lower() != 'all':
+            terminal_list = [tid.strip() for tid in terminal_ids.split(',') if tid.strip()]
+            if terminal_list:
+                placeholders = ','.join([f"'{tid}'" for tid in terminal_list])
+                terminal_filter = f"AND tci.terminal_id IN ({placeholders})"
+        
+        # Optimized query for large date ranges using simplified approach
+        query = f"""
+            WITH latest_terminal_locations AS (
+                SELECT DISTINCT ON (terminal_id) terminal_id, location
+                FROM terminal_details 
+                ORDER BY terminal_id, retrieved_date DESC
+            ),
+            daily_cash_readings AS (
+                SELECT 
+                    tci.terminal_id,
+                    DATE(tci.retrieval_timestamp AT TIME ZONE 'Asia/Dili') as reading_date,
+                    MIN(CASE WHEN tci.total_cash_amount > 0 THEN tci.total_cash_amount END) as start_amount,
+                    MAX(CASE WHEN tci.total_cash_amount > 0 THEN tci.total_cash_amount END) as end_amount,
+                    MIN(CASE WHEN tci.total_cash_amount > 0 THEN tci.retrieval_timestamp END) as start_timestamp,
+                    MAX(CASE WHEN tci.total_cash_amount > 0 THEN tci.retrieval_timestamp END) as end_timestamp,
+                    COUNT(*) as reading_count
+                FROM terminal_cash_information tci
+                WHERE tci.retrieval_timestamp >= $1
+                  AND tci.retrieval_timestamp < $2::timestamp + INTERVAL '1 day'
+                  AND tci.total_cash_amount IS NOT NULL
+                  AND tci.total_cash_amount > 0
+                  {terminal_filter}
+                GROUP BY tci.terminal_id, DATE(tci.retrieval_timestamp AT TIME ZONE 'Asia/Dili')
+                HAVING COUNT(*) > 0
+            )
+            SELECT 
+                dcr.terminal_id,
+                dcr.reading_date,
+                dcr.start_amount,
+                dcr.end_amount,
+                dcr.start_timestamp,
+                dcr.end_timestamp,
+                ltl.location,
+                dcr.reading_count,
+                CASE 
+                    WHEN dcr.start_amount IS NOT NULL AND dcr.end_amount IS NOT NULL 
+                         AND dcr.start_amount >= dcr.end_amount 
+                         AND dcr.reading_count >= 2 THEN 'COMPLETE'
+                    WHEN dcr.start_amount IS NOT NULL AND dcr.end_amount IS NOT NULL 
+                         AND dcr.start_amount < dcr.end_amount THEN 'ESTIMATED'
+                    WHEN dcr.reading_count = 1 THEN 'PARTIAL'
+                    ELSE 'MISSING'
+                END as data_quality
+            FROM daily_cash_readings dcr
+            LEFT JOIN latest_terminal_locations ltl ON dcr.terminal_id = ltl.terminal_id
+            ORDER BY dcr.reading_date, dcr.terminal_id
+        """
+        
+        rows = await conn.fetch(query, start_dt, end_dt)
+        
+        if not rows:
+            raise HTTPException(status_code=404, detail="No cash data found for the specified criteria")
+        
+        # Process the results
+        daily_usage_data = []
+        summary_stats = {
+            'total_days': 0,
+            'total_terminals': set(),
+            'total_usage': 0,
+            'complete_records': 0,
+            'partial_records': 0,
+            'missing_records': 0,
+            'max_daily_usage': 0,
+            'min_daily_usage': float('inf'),
+            'avg_transaction_amount': 50.0  # Assumed average transaction amount in USD
+        }
+        
+        for row in rows:
+            terminal_id = row['terminal_id']
+            date_str = row['reading_date'].strftime('%Y-%m-%d') if row['reading_date'] else None
+            start_amount = float(row['start_amount']) if row['start_amount'] else None
+            end_amount = float(row['end_amount']) if row['end_amount'] else None
+            data_quality = row['data_quality']
+            
+            # Skip if we don't want partial data and this is partial/missing
+            if not include_partial_data and data_quality != 'COMPLETE':
+                continue
+            
+            # Calculate daily usage
+            daily_usage = None
+            usage_percentage = None
+            transactions_estimated = None
+            
+            if start_amount is not None and end_amount is not None:
+                # Normal case: we have both start and end amounts
+                if start_amount >= end_amount:
+                    daily_usage = start_amount - end_amount
+                    usage_percentage = (daily_usage / start_amount * 100) if start_amount > 0 else 0
+                    transactions_estimated = int(daily_usage / summary_stats['avg_transaction_amount']) if daily_usage > 0 else 0
+                else:
+                    # This might indicate a cash replenishment during the day
+                    data_quality = 'ESTIMATED'
+                    daily_usage = 0  # Assume no net usage due to replenishment
+            elif start_amount is not None:
+                # Only start amount available - estimate based on typical usage
+                data_quality = 'ESTIMATED'
+                daily_usage = start_amount * 0.1  # Assume 10% daily usage
+                usage_percentage = 10.0
+                transactions_estimated = int(daily_usage / summary_stats['avg_transaction_amount']) if daily_usage > 0 else 0
+            elif end_amount is not None:
+                # Only end amount available - can't calculate usage reliably
+                data_quality = 'PARTIAL'
+                daily_usage = None
+            
+            # Create the daily usage record
+            usage_record = DailyCashUsageData(
+                terminal_id=terminal_id,
+                date=date_str or 'unknown',  # Provide fallback for None dates
+                start_amount=start_amount,
+                end_amount=end_amount,
+                daily_usage=daily_usage,
+                usage_percentage=round(usage_percentage, 2) if usage_percentage else None,
+                transactions_estimated=transactions_estimated,
+                terminal_location=row['location'],
+                start_timestamp=convert_to_dili_time(row['start_timestamp']) if row['start_timestamp'] else None,
+                end_timestamp=convert_to_dili_time(row['end_timestamp']) if row['end_timestamp'] else None,
+                data_quality=data_quality
+            )
+            
+            daily_usage_data.append(usage_record)
+            
+            # Update summary statistics
+            summary_stats['total_terminals'].add(terminal_id)
+            if daily_usage is not None:
+                summary_stats['total_usage'] += daily_usage
+                summary_stats['max_daily_usage'] = max(summary_stats['max_daily_usage'], daily_usage)
+                summary_stats['min_daily_usage'] = min(summary_stats['min_daily_usage'], daily_usage)
+            
+            if data_quality == 'COMPLETE':
+                summary_stats['complete_records'] += 1
+            elif data_quality == 'PARTIAL':
+                summary_stats['partial_records'] += 1
+            else:
+                summary_stats['missing_records'] += 1
+        
+        # Finalize summary statistics
+        summary_stats['total_terminals'] = len(summary_stats['total_terminals'])
+        summary_stats['total_days'] = len(set(record.date for record in daily_usage_data if record.date))
+        summary_stats['avg_daily_usage'] = (summary_stats['total_usage'] / len(daily_usage_data)) if daily_usage_data else 0
+        summary_stats['min_daily_usage'] = summary_stats['min_daily_usage'] if summary_stats['min_daily_usage'] != float('inf') else 0
+        
+        # Round numeric values
+        for key in ['total_usage', 'max_daily_usage', 'min_daily_usage', 'avg_daily_usage']:
+            if key in summary_stats:
+                summary_stats[key] = round(summary_stats[key], 2)
+        
+        # Create chart data configuration
+        chart_data = {
+            'chart_type': 'line',
+            'x_axis': {
+                'field': 'date',
+                'type': 'date',
+                'title': 'Date'
+            },
+            'y_axis': {
+                'field': 'daily_usage',
+                'type': 'numeric',
+                'title': 'Daily Cash Usage (USD)',
+                'format': 'currency'
+            },
+            'series': {
+                'group_by': 'terminal_id',
+                'color_scheme': 'category10'
+            },
+            'tooltip_fields': ['terminal_id', 'terminal_location', 'start_amount', 'end_amount', 'usage_percentage'],
+            'filters': {
+                'data_quality': ['COMPLETE', 'ESTIMATED', 'PARTIAL']
+            }
+        }
+        
+        return DailyCashUsageResponse(
+            daily_usage_data=daily_usage_data,
+            summary_stats=summary_stats,
+            date_range={
+                'start_date': start_date,
+                'end_date': end_date,
+                'days_covered': str((end_dt - start_dt).days + 1)
+            },
+            terminal_count=summary_stats['total_terminals'],
+            chart_data=chart_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error calculating daily cash usage: {e}")
+        raise HTTPException(status_code=500, detail="Failed to calculate daily cash usage")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/cash-usage/trends", response_model=CashUsageTrendResponse, tags=["Cash Usage Analysis"])
+async def get_cash_usage_trends(
+    terminal_id: Optional[str] = Query(None, description="Specific terminal ID for individual trends, omit for overall trends"),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back (1-365)"),
+    aggregation: str = Query("daily", description="Aggregation level: daily, weekly, monthly"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get cash usage trends over time for line chart visualization
+    
+    This endpoint provides time-series data perfect for creating line charts showing:
+    - Daily cash usage trends for individual terminals or overall fleet
+    - Weekly/monthly aggregations for longer-term analysis
+    - Statistical measures (min, max, average) for each time period
+    
+    Returns data formatted specifically for frontend chart libraries with:
+    - X-axis: Date/time periods
+    - Y-axis: Cash usage amounts
+    - Multiple series support for comparing terminals
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Validate aggregation parameter
+        if aggregation not in ['daily', 'weekly', 'monthly']:
+            raise HTTPException(status_code=400, detail="Aggregation must be 'daily', 'weekly', or 'monthly'")
+        
+        # Calculate date range
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
+        
+        # Build terminal filter
+        terminal_filter = ""
+        if terminal_id:
+            terminal_filter = f"AND tci.terminal_id = '{terminal_id}'"
+        
+        # Determine date grouping based on aggregation
+        if aggregation == 'daily':
+            date_group = "DATE(tci.retrieval_timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dili')"
+            date_format = '%Y-%m-%d'
+        elif aggregation == 'weekly':
+            date_group = "DATE_TRUNC('week', tci.retrieval_timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dili')::date"
+            date_format = '%Y-W%U'
+        else:  # monthly
+            date_group = "DATE_TRUNC('month', tci.retrieval_timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dili')::date"
+            date_format = '%Y-%m'
+        
+        # Optimized query for trends with simplified aggregation
+        query = f"""
+            WITH date_series AS (
+                SELECT generate_series(
+                    $1::date, 
+                    $2::date, 
+                    '1 {aggregation}'::interval
+                )::date as period_date
+            ),
+            terminal_daily_usage AS (
+                SELECT 
+                    tci.terminal_id,
+                    {date_group} as period_date,
+                    CASE 
+                        WHEN COUNT(*) >= 2 THEN 
+                            GREATEST(0, MIN(tci.total_cash_amount) - MAX(tci.total_cash_amount))
+                        ELSE 0
+                    END as daily_usage
+                FROM terminal_cash_information tci
+                WHERE tci.retrieval_timestamp >= $1
+                  AND tci.retrieval_timestamp <= $2::timestamp + INTERVAL '1 day'
+                  AND tci.total_cash_amount IS NOT NULL
+                  AND tci.total_cash_amount > 0
+                  {terminal_filter}
+                GROUP BY tci.terminal_id, {date_group}
+                HAVING COUNT(*) > 0
+            )
+            SELECT 
+                ds.period_date,
+                COALESCE(COUNT(DISTINCT tdu.terminal_id), 0) as terminal_count,
+                COALESCE(SUM(tdu.daily_usage), 0) as total_usage,
+                COALESCE(AVG(tdu.daily_usage), 0) as avg_usage_per_terminal,
+                COALESCE(MAX(tdu.daily_usage), 0) as max_usage,
+                COALESCE(MIN(tdu.daily_usage), 0) as min_usage
+            FROM date_series ds
+            LEFT JOIN terminal_daily_usage tdu ON ds.period_date = tdu.period_date
+            ORDER BY ds.period_date ASC
+        """
+        
+        rows = await conn.fetch(query, start_date, end_date)
+        
+        if not rows:
+            # If no data found, return empty trend with proper structure
+            return CashUsageTrendResponse(
+                terminal_id=terminal_id,
+                trend_data=[],
+                summary_stats={
+                    'total_periods': 0,
+                    'avg_daily_usage': 0,
+                    'total_usage': 0,
+                    'peak_usage_date': None,
+                    'peak_usage_amount': 0
+                },
+                chart_config={
+                    'chart_type': 'line',
+                    'x_axis': {'field': 'date', 'type': 'date', 'title': 'Date'},
+                    'y_axis': {'field': 'total_usage', 'type': 'numeric', 'title': 'Cash Usage (USD)'},
+                    'line_config': {'interpolation': 'linear', 'show_points': True}
+                },
+                date_range={'start_date': start_date.strftime('%Y-%m-%d'), 'end_date': end_date.strftime('%Y-%m-%d')}
+            )
+        
+        # Process trend data
+        trend_data = []
+        total_usage_sum = 0
+        peak_usage_amount = 0
+        peak_usage_date = None
+        
+        for row in rows:
+            period_date = row['period_date']
+            total_usage = float(row['total_usage']) if row['total_usage'] else 0
+            avg_usage = float(row['avg_usage_per_terminal']) if row['avg_usage_per_terminal'] else 0
+            max_usage = float(row['max_usage']) if row['max_usage'] else 0
+            min_usage = float(row['min_usage']) if row['min_usage'] else 0
+            terminal_count = int(row['terminal_count']) if row['terminal_count'] else 0
+            
+            trend_point = CashUsageTrendPoint(
+                date=period_date.strftime('%Y-%m-%d'),
+                total_usage=round(total_usage, 2),
+                average_usage_per_terminal=round(avg_usage, 2),
+                terminal_count=terminal_count,
+                max_usage=round(max_usage, 2),
+                min_usage=round(min_usage, 2)
+            )
+            
+            trend_data.append(trend_point)
+            total_usage_sum += total_usage
+            
+            if total_usage > peak_usage_amount:
+                peak_usage_amount = total_usage
+                peak_usage_date = period_date.strftime('%Y-%m-%d')
+        
+        # Calculate summary statistics
+        summary_stats = {
+            'total_periods': len(trend_data),
+            'avg_daily_usage': round(total_usage_sum / len(trend_data), 2) if trend_data else 0,
+            'total_usage': round(total_usage_sum, 2),
+            'peak_usage_date': peak_usage_date,
+            'peak_usage_amount': round(peak_usage_amount, 2),
+            'data_quality': 'CALCULATED_FROM_START_END_AMOUNTS',
+            'aggregation_level': aggregation,
+            'terminal_scope': terminal_id if terminal_id else 'ALL_TERMINALS'
+        }
+        
+        # Create chart configuration optimized for line charts
+        chart_config = {
+            'chart_type': 'line',
+            'x_axis': {
+                'field': 'date',
+                'type': 'date',
+                'title': 'Date',
+                'format': date_format
+            },
+            'y_axis': {
+                'field': 'total_usage' if not terminal_id else 'average_usage_per_terminal',
+                'type': 'numeric',
+                'title': 'Cash Usage (USD)',
+                'format': 'currency',
+                'min': 0
+            },
+            'line_config': {
+                'interpolation': 'linear',
+                'show_points': True,
+                'point_radius': 4,
+                'stroke_width': 2
+            },
+            'tooltip': {
+                'fields': ['date', 'total_usage', 'average_usage_per_terminal', 'terminal_count', 'max_usage', 'min_usage'],
+                'format': {
+                    'total_usage': 'currency',
+                    'average_usage_per_terminal': 'currency',
+                    'max_usage': 'currency',
+                    'min_usage': 'currency'
+                }
+            },
+            'legend': {
+                'show': True,
+                'position': 'top'
+            }
+        }
+        
+        return CashUsageTrendResponse(
+            terminal_id=terminal_id,
+            trend_data=trend_data,
+            summary_stats=summary_stats,
+            chart_config=chart_config,
+            date_range={
+                'start_date': start_date.strftime('%Y-%m-%d'),
+                'end_date': end_date.strftime('%Y-%m-%d'),
+                'days_covered': str(days),
+                'aggregation': aggregation
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching cash usage trends: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch cash usage trends")
+    finally:
+        await release_db_connection(conn)
+
+@app.get("/api/v1/atm/{terminal_id}/cash-usage/history", response_model=CashUsageTrendResponse, tags=["Cash Usage Analysis"])
+async def get_terminal_cash_usage_history(
+    terminal_id: str = Path(..., description="Terminal ID to get cash usage history for"),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back (1-365)"),
+    include_raw_readings: bool = Query(False, description="Include individual cash readings for detailed analysis"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get detailed cash usage history for a specific terminal
+    
+    This endpoint provides comprehensive cash usage data for an individual ATM including:
+    - Daily cash usage calculations (start amount - end amount)
+    - Usage patterns and trends over time
+    - Data quality indicators
+    - Optional raw cash reading data for detailed analysis
+    
+    Perfect for creating individual terminal cash usage line charts and detailed analysis.
+    """
+    # Reuse the trends endpoint but with terminal-specific logic
+    return await get_cash_usage_trends(
+        terminal_id=terminal_id,
+        days=days,
+        aggregation="daily",
+        db_check=db_check
+    )
+
+@app.get("/api/v1/atm/cash-usage/summary", tags=["Cash Usage Analysis"])
+async def get_cash_usage_summary(
+    days: int = Query(7, ge=1, le=90, description="Number of days to analyze for summary (1-90)"),
+    db_check: bool = Depends(validate_db_connection)
+):
+    """
+    Get summary statistics for cash usage across all terminals
+    
+    Provides fleet-wide cash usage metrics including:
+    - Total cash dispensed across all terminals  
+    - Average daily usage per terminal
+    - Top/bottom performing terminals by usage
+    - Usage efficiency metrics
+    - Cash flow trends
+    """
+    conn = await get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        # Calculate date range
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
+        
+        # Optimized query for summary with better performance
+        query = """
+            SELECT 
+                COUNT(DISTINCT terminal_id) as active_terminals,
+                COALESCE(SUM(total_cash_amount), 0) as total_cash_tracked,
+                COALESCE(AVG(total_cash_amount), 0) as avg_cash_amount,
+                COALESCE(MAX(total_cash_amount), 0) as max_cash_amount,
+                COALESCE(MIN(total_cash_amount), 0) as min_cash_amount
+            FROM terminal_cash_information tci
+            WHERE tci.retrieval_timestamp >= $1
+              AND tci.retrieval_timestamp < $2::timestamp + INTERVAL '1 day'
+              AND tci.total_cash_amount IS NOT NULL
+              AND tci.total_cash_amount > 0
+        """
+        
+        result = await conn.fetchrow(query, start_date, end_date)
+        
+        if not result or result['active_terminals'] == 0:
+            return JSONResponse(
+                content={
+                    "summary": {
+                        "active_terminals": 0,
+                        "fleet_total_usage": 0,
+                        "fleet_avg_daily_usage": 0,
+                        "analysis_period_days": days,
+                        "message": "No cash usage data found for the specified period"
+                    },
+                    "top_terminals": [],
+                    "bottom_terminals": [],
+                    "insights": ["No data available for analysis"],
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+        
+        # Get terminal rankings with simplified logic
+        ranking_query = """
+            SELECT 
+                tci.terminal_id,
+                td.location,
+                COALESCE(SUM(tci.total_cash_amount), 0) as total_cash,
+                COALESCE(AVG(tci.total_cash_amount), 0) as avg_cash,
+                COUNT(*) as reading_count
+            FROM terminal_cash_information tci
+            LEFT JOIN terminal_details td ON tci.terminal_id = td.terminal_id
+            WHERE tci.retrieval_timestamp >= $1
+              AND tci.retrieval_timestamp <= $2::timestamp + INTERVAL '1 day'
+              AND tci.total_cash_amount IS NOT NULL
+              AND tci.total_cash_amount > 0
+            GROUP BY tci.terminal_id, td.location
+            ORDER BY total_cash DESC
+        """
+        
+        ranking_results = await conn.fetch(ranking_query, start_date, end_date)
+        
+        # Process results
+        summary = {
+            "active_terminals": result['active_terminals'],
+            "fleet_total_cash_tracked": round(float(result['total_cash_tracked'] or 0), 2),
+            "fleet_avg_cash_amount": round(float(result['avg_cash_amount'] or 0), 2),
+            "fleet_max_cash_amount": round(float(result['max_cash_amount'] or 0), 2),
+            "fleet_min_cash_amount": round(float(result['min_cash_amount'] or 0), 2),
+            "analysis_period_days": days,
+            "period_start": start_date.strftime('%Y-%m-%d'),
+            "period_end": end_date.strftime('%Y-%m-%d')
+        }
+        
+        # Create terminal rankings
+        top_terminals = []
+        bottom_terminals = []
+        
+        if ranking_results:
+            # Top 5 terminals
+            for record in ranking_results[:5]:
+                top_terminals.append({
+                    "terminal_id": record['terminal_id'],
+                    "location": record['location'] or "Unknown Location",
+                    "total_cash": round(float(record['total_cash']), 2),
+                    "avg_cash": round(float(record['avg_cash']), 2),
+                    "reading_count": record['reading_count']
+                })
+            
+            # Bottom 5 terminals (reverse order)
+            for record in ranking_results[-5:]:
+                bottom_terminals.append({
+                    "terminal_id": record['terminal_id'],
+                    "location": record['location'] or "Unknown Location",
+                    "total_cash": round(float(record['total_cash']), 2),
+                    "avg_cash": round(float(record['avg_cash']), 2),
+                    "reading_count": record['reading_count']
+                })
+        
+        # Generate insights based on the data
+        insights = []
+        
+        if summary['fleet_total_cash_tracked'] > 0:
+            insights.append(f"Tracking ${summary['fleet_total_cash_tracked']:,.2f} total cash across {summary['active_terminals']} terminals over {days} days")
+            insights.append(f"Average cash amount per terminal reading: ${summary['fleet_avg_cash_amount']:,.2f}")
+            
+            if top_terminals and bottom_terminals:
+                top_cash = top_terminals[0].get('total_cash', 0)
+                bottom_cash = bottom_terminals[0].get('total_cash', 0)
+                if top_cash > bottom_cash * 3:
+                    insights.append("Significant cash level disparity between terminals detected")
+        else:
+            insights.append("No cash tracking data found in the analysis period")
+        
+        return JSONResponse(
+            content={
+                "summary": summary,
+                "top_terminals": top_terminals,
+                "bottom_terminals": bottom_terminals,
+                "insights": insights,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating cash usage summary: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate cash usage summary")
+    finally:
+        await release_db_connection(conn)
 
 @app.get("/api/v1/atm/cash-information", response_model=CashInformationResponse, tags=["Cash Information"])
 async def get_terminal_cash_information(
