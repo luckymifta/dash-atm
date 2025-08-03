@@ -69,43 +69,55 @@ app = FastAPI(title="User Management API", version="1.0.0", lifespan=lifespan)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend URL
-    allow_credentials=True,
+    allow_origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(','),
+    allow_credentials=os.getenv('CORS_ALLOW_CREDENTIALS', 'true').lower() == 'true',
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 security = HTTPBearer()
 
-# Configuration
-SECRET_KEY = "your-secret-key-change-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_DAYS = 30
-MAX_FAILED_ATTEMPTS = 5
-ACCOUNT_LOCKOUT_MINUTES = 15
+# Configuration from environment variables
+SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("JWT_SECRET_KEY environment variable is required")
+
+ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', '30'))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', '30'))
+MAX_FAILED_ATTEMPTS = int(os.getenv('MAX_FAILED_ATTEMPTS', '5'))
+ACCOUNT_LOCKOUT_MINUTES = int(os.getenv('ACCOUNT_LOCKOUT_MINUTES', '15'))
 
 # Password reset configuration
-PASSWORD_RESET_TOKEN_EXPIRE_HOURS = 24
-PASSWORD_RESET_SECRET = "password-reset-secret-change-in-production"
+PASSWORD_RESET_TOKEN_EXPIRE_HOURS = int(os.getenv('PASSWORD_RESET_TOKEN_EXPIRE_HOURS', '24'))
+PASSWORD_RESET_SECRET = os.getenv('PASSWORD_RESET_SECRET')
+if not PASSWORD_RESET_SECRET:
+    raise ValueError("PASSWORD_RESET_SECRET environment variable is required")
 
-# Timezone configuration for Dili, East Timor (UTC+9)
-DILI_TIMEZONE = pytz.timezone('Asia/Dili')
+# Timezone configuration
+TIMEZONE_STR = os.getenv('TIMEZONE', 'Asia/Dili')
+DILI_TIMEZONE = pytz.timezone(TIMEZONE_STR)
 
 # Session management configuration
-SESSION_TIMEOUT_WARNING_MINUTES = 5  # Warn user 5 minutes before token expiration
-AUTO_LOGOUT_DILI_TIME = "00:00"  # Automatic logout at midnight Dili time
-REMEMBER_ME_DAYS = 30  # Extended session for "Remember Me"
+SESSION_TIMEOUT_WARNING_MINUTES = int(os.getenv('SESSION_TIMEOUT_WARNING_MINUTES', '5'))
+AUTO_LOGOUT_DILI_TIME = os.getenv('AUTO_LOGOUT_DILI_TIME', '00:00')
+REMEMBER_ME_DAYS = int(os.getenv('REMEMBER_ME_DAYS', '30'))
 
-# PostgreSQL configuration - Hardcoded for your development_db (no .env dependency)
+# PostgreSQL configuration from environment variables
 POSTGRES_CONFIG = {
-    "host": "88.222.214.26",
-    "port": 5432,
-    "database": "development_db",
-    "user": "timlesdev",
-    "password": "timlesdev",
-    "sslmode": "prefer"  # Added SSL configuration
+    "host": os.getenv('DB_HOST'),
+    "port": int(os.getenv('DB_PORT', '5432')),
+    "database": os.getenv('DB_NAME'),
+    "user": os.getenv('DB_USER'),
+    "password": os.getenv('DB_PASSWORD'),
+    "sslmode": "prefer"
 }
+
+# Validate required database environment variables
+required_db_vars = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']
+missing_vars = [var for var in required_db_vars if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing required database environment variables: {', '.join(missing_vars)}")
 
 # Enums
 class UserRole(str, Enum):
@@ -201,6 +213,56 @@ class AuditLogResponse(BaseModel):
     performed_by_username: Optional[str]
     target_username: Optional[str]
     created_at: datetime
+
+# Security Validation Functions
+def validate_environment_variables():
+    """Validate that all required environment variables are set"""
+    logger.info("Validating environment variables...")
+    
+    # Check for weak secrets in production
+    environment = os.getenv('ENVIRONMENT', 'development').lower()
+    
+    if environment == 'production':
+        # Validate JWT secret strength in production
+        if not SECRET_KEY or len(SECRET_KEY) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters in production")
+        
+        if "change-in-production" in SECRET_KEY.lower():
+            raise ValueError("Default JWT_SECRET_KEY detected in production environment")
+        
+        if not PASSWORD_RESET_SECRET or len(PASSWORD_RESET_SECRET) < 32:
+            raise ValueError("PASSWORD_RESET_SECRET must be at least 32 characters in production")
+        
+        if "change-in-production" in PASSWORD_RESET_SECRET.lower():
+            raise ValueError("Default PASSWORD_RESET_SECRET detected in production environment")
+    
+    # Validate CORS origins
+    cors_origins = os.getenv('CORS_ORIGINS', '').split(',')
+    if environment == 'production' and 'http://localhost:3000' in cors_origins:
+        logger.warning("localhost is allowed in CORS origins in production environment")
+    
+    logger.info("Environment validation completed successfully")
+
+def get_secure_config_summary():
+    """Return a summary of configuration (for logging, without sensitive data)"""
+    return {
+        "environment": os.getenv('ENVIRONMENT', 'development'),
+        "debug": os.getenv('DEBUG', 'false').lower() == 'true',
+        "database_host": POSTGRES_CONFIG.get('host', 'not_set')[:10] + '...',  # Only show first 10 chars
+        "cors_origins_count": len(os.getenv('CORS_ORIGINS', '').split(',')),
+        "timezone": TIMEZONE_STR,
+        "jwt_algorithm": ALGORITHM,
+        "token_expire_minutes": ACCESS_TOKEN_EXPIRE_MINUTES,
+    }
+
+# Validate environment on module load
+try:
+    validate_environment_variables()
+    logger.info(f"Application configuration: {get_secure_config_summary()}")
+except Exception as e:
+    logger.error(f"Environment validation failed: {e}")
+    # In production, you might want to exit here
+    # sys.exit(1)
 
 # Database helper functions
 def get_db_connection():
